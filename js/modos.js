@@ -17,7 +17,7 @@ var MODOS = (function () {
 
   // ---------------------------------------------------------------
   // Modo 1 — Círculos por distância: cada palpite cobre tudo num raio fixo.
-  // cfg: {raio, palpites, metrica: 'pop'|'cidades'}
+  // cfg: {raio, metrica: 'pop'|'cidades', palpites? (sem limite se ausente)}
   // ---------------------------------------------------------------
   function JogoCirculosDistancia(cfg) {
     this.cfg = cfg;
@@ -49,7 +49,7 @@ var MODOS = (function () {
     this.popCoberta += ganhoPop;
     var jogada = { mun: mun, raioKm: raio, novos: novos, ganhoPop: ganhoPop };
     this.jogadas.push(jogada);
-    if (this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
+    if (this.cfg.palpites && this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
     return { tipo: "ok", jogada: jogada };
   };
   JogoCirculosDistancia.prototype.pct = function () {
@@ -60,7 +60,8 @@ var MODOS = (function () {
 
   // ---------------------------------------------------------------
   // Modo 2 — Círculos por população: o círculo cresce a partir da cidade
-  // chutada até somar a população alvo. cfg: {popAlvo, palpites}
+  // chutada até somar a população alvo.
+  // cfg: {popAlvo, palpites? (sem limite se ausente)}
   // ---------------------------------------------------------------
   function JogoCirculosPopulacao(cfg) {
     this.cfg = cfg;
@@ -115,7 +116,7 @@ var MODOS = (function () {
       popDentro: acumulada,
     };
     this.jogadas.push(jogada);
-    if (this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
+    if (this.cfg.palpites && this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
     return { tipo: "ok", jogada: jogada };
   };
   JogoCirculosPopulacao.prototype.pct = function () {

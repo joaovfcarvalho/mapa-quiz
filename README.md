@@ -11,7 +11,8 @@ no `localStorage` do navegador.
 
 **1. Círculos por distância** — chute cidades; cada palpite cobre todos os
 municípios num raio fixo (configurável, ex.: 100 km). Cubra o máximo do país
-(por população ou por número de cidades) antes de acabarem os palpites.
+(por população ou por número de cidades) antes de acabarem os palpites — ou o
+tempo.
 
 **2. Círculos por população** — cada cidade chutada vira o centro de um círculo
 que cresce até somar a população alvo (ex.: 1 milhão de habitantes). Cidades
@@ -22,6 +23,12 @@ Estratégia: onde ancorar os círculos para cobrir o máximo do Brasil?
 anéis concêntricos em volta de uma cidade à sua escolha. Em cada faixa é
 preciso nomear as N maiores cidades. Tudo configurável: largura da faixa em km,
 quantidade de cidades por faixa e o centro dos anéis.
+
+**Limite da partida** — nos modos de círculos, escolha entre limitar por
+número de palpites (ex.: 10 chutes, sem pressa) ou por tempo (ex.: 30 minutos
+com palpites ilimitados). O modo faixas pode ser jogado livre ou contra o
+relógio. Quando o tempo esgota, a partida encerra sozinha e o resultado vale
+para o recorde daquela configuração.
 
 ## Como jogar
 

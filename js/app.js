@@ -100,10 +100,11 @@
   var jogoRotulo = null;    // descrição legível da configuração
   var inicioMs = null;
   var timerInt = null;
+  var limiteSeg = null;     // limite de tempo da partida em segundos (null = sem limite)
   var elFaixasLista = null; // itens da lista lateral do modo faixas
 
   var DESCRICOES = {
-    dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo do Brasil antes de acabarem os palpites.",
+    dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo do Brasil antes de acabarem os palpites — ou o tempo.",
     pop: "Cada cidade chutada vira o centro de um círculo que cresce até somar a população alvo. Escolha bem para cobrir o máximo do país.",
     faixas: "O mapa é dividido em faixas e você precisa nomear as maiores cidades de cada uma. Digite qualquer cidade — se ela for uma das respostas, aparece no mapa.",
   };
@@ -119,32 +120,44 @@
     return v;
   }
 
+  // Lê o limite da partida (nº de palpites ou tempo) dos modos de círculos,
+  // gravando o campo escolhido em cfg. A parte de chave preserva o formato
+  // antigo ("|palpites=N") para não invalidar recordes já salvos.
+  function lerLimite(prefixo, cfg) {
+    if ($("cfg-" + prefixo + "-limite").value === "tempo") {
+      cfg.tempoMin = num("cfg-" + prefixo + "-tempo", 1, 240);
+      return { chave: "|tempo=" + cfg.tempoMin, rotulo: cfg.tempoMin + " min (palpites ilimitados)" };
+    }
+    cfg.palpites = num("cfg-" + prefixo + "-palpites", 1, 100);
+    return { chave: "|palpites=" + cfg.palpites, rotulo: cfg.palpites + " palpites" };
+  }
+
   // Lê e valida a configuração do modo atual. Devolve {cfg, chave, rotulo}
   // ou {erro} (ex.: centro dos anéis não reconhecido).
   function lerConfig() {
     if (modoAtual === "dist") {
       var cfgD = {
         raio: num("cfg-dist-raio", 10, 2000),
-        palpites: num("cfg-dist-palpites", 1, 100),
         metrica: $("cfg-dist-metrica").value,
       };
+      var limD = lerLimite("dist", cfgD);
       return {
         cfg: cfgD,
-        chave: "dist|raio=" + cfgD.raio + "|palpites=" + cfgD.palpites + "|metrica=" + cfgD.metrica,
-        rotulo: "Círculos por distância · raio " + cfgD.raio + " km · " + cfgD.palpites +
-          " palpites · objetivo: " + (cfgD.metrica === "pop" ? "população" : "nº de cidades"),
+        chave: "dist|raio=" + cfgD.raio + limD.chave + "|metrica=" + cfgD.metrica,
+        rotulo: "Círculos por distância · raio " + cfgD.raio + " km · " + limD.rotulo +
+          " · objetivo: " + (cfgD.metrica === "pop" ? "população" : "nº de cidades"),
       };
     }
     if (modoAtual === "pop") {
       var cfgP = {
         popAlvo: num("cfg-pop-alvo", 10000, 100000000),
-        palpites: num("cfg-pop-palpites", 1, 100),
       };
+      var limP = lerLimite("pop", cfgP);
       return {
         cfg: cfgP,
-        chave: "pop|alvo=" + cfgP.popAlvo + "|palpites=" + cfgP.palpites,
+        chave: "pop|alvo=" + cfgP.popAlvo + limP.chave,
         rotulo: "Círculos por população · " + fmtInt(cfgP.popAlvo) + " hab. por círculo · " +
-          cfgP.palpites + " palpites",
+          limP.rotulo,
       };
     }
     var cfgF = {
@@ -168,6 +181,11 @@
       } else {
         return { erro: "Não encontrei a cidade do centro dos anéis. Confira o nome (ex.: Brasília, DF)." };
       }
+    }
+    if ($("cfg-faixas-limite").value === "tempo") {
+      cfgF.tempoMin = num("cfg-faixas-tempo", 1, 240);
+      chave += "|tempo=" + cfgF.tempoMin;
+      rotulo += " · contra o relógio: " + cfgF.tempoMin + " min";
     }
     return { cfg: cfgF, chave: chave, rotulo: rotulo };
   }
@@ -235,12 +253,21 @@
       desenharFaixas(jogo);
       montarListaFaixas(jogo);
     }
+    limiteSeg = jogo.cfg.tempoMin ? jogo.cfg.tempoMin * 60 : null;
+    inicioMs = Date.now();
     atualizarPlacar();
 
-    inicioMs = Date.now();
     clearInterval(timerInt);
-    timerInt = setInterval(atualizarPlacar, 1000);
+    timerInt = setInterval(tique, 1000);
     $("input-palpite").focus();
+  }
+
+  function tique() {
+    if (jogo && !jogo.encerrado && limiteSeg !== null && tempoDecorrido() >= limiteSeg) {
+      fimDeJogo(true, true);
+      return;
+    }
+    atualizarPlacar();
   }
 
   function tempoDecorrido() {
@@ -263,10 +290,15 @@
       linhas.push("Respostas certas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
         " (<b>" + fmtPct(pct) + "</b>) · " + jogo.faixas.length + " faixas");
     }
-    if (jogoModo === "dist" || jogoModo === "pop") {
+    if ((jogoModo === "dist" || jogoModo === "pop") && jogo.cfg.palpites) {
       linhas.push("Palpites restantes: <b>" + jogo.palpitesRestantes() + "</b> de " + jogo.cfg.palpites);
     }
-    linhas.push("Tempo: <b>" + fmtTempo(tempoDecorrido()) + "</b>");
+    if (limiteSeg !== null) {
+      var restante = Math.max(0, limiteSeg - tempoDecorrido());
+      linhas.push("⏱️ Tempo restante: <b>" + fmtTempo(restante) + "</b> de " + fmtTempo(limiteSeg));
+    } else {
+      linhas.push("Tempo: <b>" + fmtTempo(tempoDecorrido()) + "</b>");
+    }
     $("placar-linhas").innerHTML = linhas.map(function (l) { return "<div>" + l + "</div>"; }).join("");
     $("barra-progresso").style.width = (pct * 100).toFixed(1) + "%";
   }
@@ -368,9 +400,10 @@
     atualizarItemFaixa(faixa);
   }
 
-  function fimDeJogo(desistiu) {
+  function fimDeJogo(desistiu, porTempo) {
     clearInterval(timerInt);
     var tempoSeg = tempoDecorrido();
+    if (limiteSeg !== null && tempoSeg > limiteSeg) tempoSeg = limiteSeg;
     if (jogoModo === "faixas") {
       var faltantes = jogo.encerrar();
       if (desistiu) {
@@ -405,7 +438,8 @@
     var el = $("fim-jogo");
     el.hidden = false;
     el.className = res.melhor ? "recorde" : "";
-    el.innerHTML = "<b>Fim de jogo!</b> Resultado: <b>" + fmtPct(pct) + "</b> (" + placar +
+    el.innerHTML = (porTempo ? "⏰ <b>Tempo esgotado!</b>" : "<b>Fim de jogo!</b>") +
+      " Resultado: <b>" + fmtPct(pct) + "</b> (" + placar +
       ") em " + fmtTempo(tempoSeg) + ".<br>" +
       (res.melhor
         ? "🎉 <b>Novo recorde pessoal nesta configuração!</b>"
@@ -594,6 +628,17 @@
 
   $("cfg-faixas-tipo").addEventListener("change", function () {
     $("rotulo-centro").hidden = $("cfg-faixas-tipo").value !== "aneis";
+  });
+  function atualizarCamposLimite() {
+    ["dist", "pop"].forEach(function (p) {
+      var porTempo = $("cfg-" + p + "-limite").value === "tempo";
+      $("rotulo-" + p + "-palpites").hidden = porTempo;
+      $("rotulo-" + p + "-tempo").hidden = !porTempo;
+    });
+    $("rotulo-faixas-tempo").hidden = $("cfg-faixas-limite").value !== "tempo";
+  }
+  document.querySelectorAll(".sel-limite").forEach(function (s) {
+    s.addEventListener("change", atualizarCamposLimite);
   });
   document.querySelectorAll("#config input, #config select").forEach(function (c) {
     c.addEventListener("change", atualizarRecordeUI);

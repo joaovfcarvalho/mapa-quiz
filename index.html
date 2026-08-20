@@ -26,8 +26,17 @@
         <label>Raio do círculo (km)
           <input type="number" id="cfg-dist-raio" value="100" min="10" max="2000" step="10">
         </label>
-        <label>Número de palpites
+        <label>Limite da partida
+          <select id="cfg-dist-limite" class="sel-limite">
+            <option value="palpites">Nº de palpites</option>
+            <option value="tempo">Tempo (palpites ilimitados)</option>
+          </select>
+        </label>
+        <label id="rotulo-dist-palpites">Número de palpites
           <input type="number" id="cfg-dist-palpites" value="10" min="1" max="100">
+        </label>
+        <label id="rotulo-dist-tempo" hidden>Tempo (minutos)
+          <input type="number" id="cfg-dist-tempo" value="30" min="1" max="240">
         </label>
         <label>Objetivo
           <select id="cfg-dist-metrica">
@@ -41,8 +50,17 @@
         <label>População por círculo (hab.)
           <input type="number" id="cfg-pop-alvo" value="1000000" min="10000" max="100000000" step="50000">
         </label>
-        <label>Número de palpites
+        <label>Limite da partida
+          <select id="cfg-pop-limite" class="sel-limite">
+            <option value="palpites">Nº de palpites</option>
+            <option value="tempo">Tempo (palpites ilimitados)</option>
+          </select>
+        </label>
+        <label id="rotulo-pop-palpites">Número de palpites
           <input type="number" id="cfg-pop-palpites" value="10" min="1" max="100">
+        </label>
+        <label id="rotulo-pop-tempo" hidden>Tempo (minutos)
+          <input type="number" id="cfg-pop-tempo" value="30" min="1" max="240">
         </label>
       </div>
 
@@ -62,6 +80,15 @@
         </label>
         <label id="rotulo-centro" hidden>Centro dos anéis (cidade)
           <input type="text" id="cfg-faixas-centro" value="Brasília, DF">
+        </label>
+        <label>Limite de tempo
+          <select id="cfg-faixas-limite" class="sel-limite">
+            <option value="livre">Sem limite</option>
+            <option value="tempo">Contra o relógio</option>
+          </select>
+        </label>
+        <label id="rotulo-faixas-tempo" hidden>Tempo (minutos)
+          <input type="number" id="cfg-faixas-tempo" value="30" min="1" max="240">
         </label>
       </div>
     </form>
