@@ -18,10 +18,16 @@
       <button class="aba ativa" data-modo="dist" type="button">Círculos<br>por distância</button>
       <button class="aba" data-modo="pop" type="button">Círculos<br>por população</button>
       <button class="aba" data-modo="faixas" type="button">Faixas<br>do mapa</button>
+      <button class="aba" data-modo="topn" type="button">Top N<br>cidades</button>
     </nav>
     <p id="descricao-modo"></p>
 
     <form id="config" autocomplete="off">
+      <label>Região do jogo
+        <select id="cfg-regiao">
+          <option value="BR">Brasil inteiro</option>
+        </select>
+      </label>
       <div class="config-modo" data-modo="dist">
         <label>Raio do círculo (km)
           <input type="number" id="cfg-dist-raio" value="100" min="10" max="2000" step="10">
@@ -99,10 +105,30 @@
           <input type="number" id="cfg-faixas-tempo" value="30" min="1" max="240">
         </label>
       </div>
+
+      <div class="config-modo" data-modo="topn" hidden>
+        <label>Quantas cidades (as N maiores)
+          <input type="number" id="cfg-topn-n" value="100" min="5" max="500" step="5">
+        </label>
+        <label>Limite de tempo
+          <select id="cfg-topn-limite" class="sel-limite">
+            <option value="tempo">Contra o relógio</option>
+            <option value="livre">Sem limite</option>
+          </select>
+        </label>
+        <label id="rotulo-topn-tempo">Tempo (minutos)
+          <input type="number" id="cfg-topn-tempo" value="15" min="1" max="240">
+        </label>
+      </div>
     </form>
 
+    <div id="desafio-banner" hidden></div>
     <div id="recorde-atual"></div>
-    <button id="btn-iniciar" class="botao-pri" type="button">▶ Iniciar jogo</button>
+    <div id="linha-iniciar">
+      <button id="btn-iniciar" class="botao-pri" type="button">▶ Iniciar jogo</button>
+      <button id="btn-desafio" class="botao-sec" type="button"
+        title="Copia um link com esta configuração (e seu recorde como marca a bater) para desafiar alguém">🔗 Desafiar</button>
+    </div>
 
     <section id="area-jogo" hidden>
       <div class="barra"><div id="barra-progresso"></div></div>
@@ -133,8 +159,14 @@
       <h2>🏆 Recordes pessoais</h2>
       <button id="btn-fechar-recordes" class="botao-sec" type="button">✕</button>
     </div>
-    <p class="modal-nota">Os recordes ficam salvos neste navegador (localStorage), um por configuração de jogo.</p>
+    <p class="modal-nota">Os recordes ficam salvos neste navegador (localStorage), um por configuração de jogo. Exporte um backup para não perdê-los ou para levá-los a outro navegador.</p>
+    <p class="modal-nota" id="nota-import" hidden></p>
     <div id="lista-recordes"></div>
+    <div class="modal-acoes">
+      <button id="btn-exportar-recordes" class="botao-sec" type="button">⬇ Exportar backup</button>
+      <button id="btn-importar-recordes" class="botao-sec" type="button">⬆ Importar backup</button>
+      <input type="file" id="arquivo-recordes" accept=".json,application/json" hidden>
+    </div>
     <button id="btn-limpar-recordes" class="botao-sec" type="button">Apagar todos os recordes</button>
   </div>
 </div>

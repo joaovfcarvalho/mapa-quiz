@@ -113,6 +113,72 @@
   function nomeUF(m) { return m.nome + " (" + m.uf + ")"; }
 
   // ------------------------------------------------------------------
+  // Região do jogo (Brasil inteiro ou uma UF)
+  // ------------------------------------------------------------------
+  var NOMES_UF = {
+    AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia",
+    CE: "Ceará", DF: "Distrito Federal", ES: "Espírito Santo", GO: "Goiás",
+    MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul",
+    MG: "Minas Gerais", PA: "Pará", PB: "Paraíba", PR: "Paraná",
+    PE: "Pernambuco", PI: "Piauí", RJ: "Rio de Janeiro",
+    RN: "Rio Grande do Norte", RS: "Rio Grande do Sul", RO: "Rondônia",
+    RR: "Roraima", SC: "Santa Catarina", SE: "Sergipe", SP: "São Paulo",
+    TO: "Tocantins",
+  };
+  Object.keys(NOMES_UF).sort().forEach(function (uf) {
+    var op = document.createElement("option");
+    op.value = uf;
+    op.textContent = "Só " + NOMES_UF[uf] + " (" + uf + ")";
+    $("cfg-regiao").appendChild(op);
+  });
+  function ufDoJogo() {
+    var uf = $("cfg-regiao").value;
+    return uf === "BR" ? null : uf;
+  }
+
+  // esconde os pontos de fora da região da partida
+  function aplicarRegiao(uf) {
+    DADOS.municipios.forEach(function (m) {
+      pontos[m.idx].classList.toggle("fora", !!uf && m.uf !== uf);
+    });
+  }
+
+  function extentDe(lista, margem) {
+    var e = { latMin: 90, latMax: -90, lngMin: 180, lngMax: -180 };
+    lista.forEach(function (m) {
+      if (m.lat < e.latMin) e.latMin = m.lat;
+      if (m.lat > e.latMax) e.latMax = m.lat;
+      if (m.lng < e.lngMin) e.lngMin = m.lng;
+      if (m.lng > e.lngMax) e.lngMax = m.lng;
+    });
+    e.latMin -= margem; e.latMax += margem; e.lngMin -= margem; e.lngMax += margem;
+    return e;
+  }
+
+  // aproxima o mapa da região da partida (ou volta ao Brasil inteiro)
+  function enquadrarUniverso(jogo) {
+    if (!jogo.cfg.uf) {
+      vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
+      aplicarViewBox();
+      return;
+    }
+    var e = extentDe(jogo.universo, 0.35);
+    var x1 = proj.x(e.lngMin), x2 = proj.x(e.lngMax);
+    var y1 = proj.y(e.latMax), y2 = proj.y(e.latMin);
+    var ar = vbBase.w / vbBase.h;
+    var w = x2 - x1, h = y2 - y1;
+    if (w / h > ar) h = w / ar; else w = h * ar;
+    w = Math.min(vbBase.w, Math.max(vbBase.w / 40, w));
+    h = w / ar;
+    var cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+    vb.w = w;
+    vb.h = h;
+    vb.x = Math.max(0, Math.min(vbBase.w - w, cx - w / 2));
+    vb.y = Math.max(0, Math.min(vbBase.h - h, cy - h / 2));
+    aplicarViewBox();
+  }
+
+  // ------------------------------------------------------------------
   // Estado da interface
   // ------------------------------------------------------------------
   var modoAtual = "dist";
@@ -124,11 +190,13 @@
   var timerInt = null;
   var limiteSeg = null;     // limite de tempo da partida em segundos (null = sem limite)
   var elFaixasLista = null; // itens da lista lateral do modo faixas
+  var topnChips = null;     // rank -> chip da lista do modo Top N
 
   var DESCRICOES = {
-    dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo do Brasil antes de acabarem os palpites — ou o tempo.",
-    pop: "Cada cidade chutada vira o centro de um círculo que cresce até somar a população alvo. Escolha bem para cobrir o máximo do país.",
-    faixas: "O mapa é dividido em faixas e você precisa nomear as maiores cidades de cada uma. Digite qualquer cidade — se ela for uma das respostas, aparece no mapa.",
+    dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo da região antes de acabarem os palpites — ou o tempo.",
+    pop: "Cada cidade chutada vira o centro de um círculo que cresce até somar a população alvo. Escolha bem para cobrir o máximo da região.",
+    faixas: "O mapa é dividido em faixas e você precisa nomear as maiores cidades de cada uma. Faixa completa muda de cor no mapa.",
+    topn: "O modo raiz: cite de memória as N maiores cidades da região. Cada acerto acende a cidade no mapa e mostra a posição no ranking.",
   };
 
   // ------------------------------------------------------------------
@@ -155,42 +223,64 @@
   }
 
   // Lê e valida a configuração do modo atual. Devolve {cfg, chave, rotulo}
-  // ou {erro} (ex.: centro dos anéis não reconhecido).
+  // ou {erro} (ex.: centro dos anéis não reconhecido). A UF da região entra
+  // sempre no fim da chave ("|uf=SP"; Brasil inteiro fica sem sufixo, como
+  // nas chaves antigas).
   function lerConfig() {
+    var uf = ufDoJogo();
+    var sufChave = uf ? "|uf=" + uf : "";
+    var sufRotulo = uf ? " · só " + NOMES_UF[uf] : "";
     if (modoAtual === "dist") {
       var cfgD = {
         raio: num("cfg-dist-raio", 10, 2000),
         metrica: $("cfg-dist-metrica").value,
         homonimos: $("cfg-dist-homonimos").checked,
+        uf: uf || undefined,
       };
       var limD = lerLimite("dist", cfgD);
       return {
         cfg: cfgD,
         chave: "dist|raio=" + cfgD.raio + limD.chave + "|metrica=" + cfgD.metrica +
-          (cfgD.homonimos ? "|homonimos=1" : ""),
+          (cfgD.homonimos ? "|homonimos=1" : "") + sufChave,
         rotulo: "Círculos por distância · raio " + cfgD.raio + " km · " + limD.rotulo +
           " · objetivo: " + (cfgD.metrica === "pop" ? "população" : "nº de cidades") +
-          (cfgD.homonimos ? " · homônimas juntas" : ""),
+          (cfgD.homonimos ? " · homônimas juntas" : "") + sufRotulo,
       };
     }
     if (modoAtual === "pop") {
       var cfgP = {
         popAlvo: num("cfg-pop-alvo", 10000, 100000000),
         homonimos: $("cfg-pop-homonimos").checked,
+        uf: uf || undefined,
       };
       var limP = lerLimite("pop", cfgP);
       return {
         cfg: cfgP,
         chave: "pop|alvo=" + cfgP.popAlvo + limP.chave +
-          (cfgP.homonimos ? "|homonimos=1" : ""),
+          (cfgP.homonimos ? "|homonimos=1" : "") + sufChave,
         rotulo: "Círculos por população · " + fmtInt(cfgP.popAlvo) + " hab. por círculo · " +
-          limP.rotulo + (cfgP.homonimos ? " · homônimas juntas" : ""),
+          limP.rotulo + (cfgP.homonimos ? " · homônimas juntas" : "") + sufRotulo,
       };
+    }
+    if (modoAtual === "topn") {
+      var cfgT = {
+        n: num("cfg-topn-n", 5, 500),
+        uf: uf || undefined,
+      };
+      var chaveT = "topn|n=" + cfgT.n;
+      var rotuloT = "As " + cfgT.n + " maiores cidades";
+      if ($("cfg-topn-limite").value === "tempo") {
+        cfgT.tempoMin = num("cfg-topn-tempo", 1, 240);
+        chaveT += "|tempo=" + cfgT.tempoMin;
+        rotuloT += " · contra o relógio: " + cfgT.tempoMin + " min";
+      }
+      return { cfg: cfgT, chave: chaveT + sufChave, rotulo: rotuloT + sufRotulo };
     }
     var cfgF = {
       tipo: $("cfg-faixas-tipo").value,
       largura: num("cfg-faixas-largura", 50, 2000),
       topN: num("cfg-faixas-topn", 1, 10),
+      uf: uf || undefined,
     };
     var chave = "faixas|tipo=" + cfgF.tipo + "|largura=" + cfgF.largura + "|top=" + cfgF.topN;
     var nomeTipo = { lat: "Faixas de latitude", lng: "Faixas de longitude", aneis: "Anéis concêntricos" }[cfgF.tipo];
@@ -214,7 +304,7 @@
       chave += "|tempo=" + cfgF.tempoMin;
       rotulo += " · contra o relógio: " + cfgF.tempoMin + " min";
     }
-    return { cfg: cfgF, chave: chave, rotulo: rotulo };
+    return { cfg: cfgF, chave: chave + sufChave, rotulo: rotulo + sufRotulo };
   }
 
   function atualizarRecordeUI() {
@@ -262,7 +352,10 @@
     jogoRotulo = lido.rotulo;
     if (modoAtual === "dist") jogo = new MODOS.JogoCirculosDistancia(lido.cfg);
     else if (modoAtual === "pop") jogo = new MODOS.JogoCirculosPopulacao(lido.cfg);
+    else if (modoAtual === "topn") jogo = new MODOS.JogoTopN(lido.cfg);
     else jogo = new MODOS.JogoFaixas(lido.cfg);
+    aplicarRegiao(jogo.cfg.uf || null);
+    enquadrarUniverso(jogo);
 
     $("area-jogo").hidden = false;
     $("fim-jogo").hidden = true;
@@ -279,6 +372,8 @@
     if (jogoModo === "faixas") {
       desenharFaixas(jogo);
       montarListaFaixas(jogo);
+    } else if (jogoModo === "topn") {
+      montarListaTopN(jogo);
     }
     limiteSeg = jogo.cfg.tempoMin ? jogo.cfg.tempoMin * 60 : null;
     inicioMs = Date.now();
@@ -307,15 +402,18 @@
     var pct = jogo.pct();
     if (jogoModo === "dist" && jogo.cfg.metrica === "cidades") {
       linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b> de " +
-        fmtInt(DADOS.total) + " (<b>" + fmtPct(pct) + "</b>)");
+        fmtInt(jogo.universo.length) + " (<b>" + fmtPct(pct) + "</b>)");
       linhas.push("População coberta: <b>" + fmtPop(jogo.popCoberta) + "</b>");
     } else if (jogoModo === "dist" || jogoModo === "pop") {
       linhas.push("População coberta: <b>" + fmtPop(jogo.popCoberta) + "</b> de " +
-        fmtPop(DADOS.popTotal) + " (<b>" + fmtPct(pct) + "</b>)");
+        fmtPop(jogo.uniPop) + " (<b>" + fmtPct(pct) + "</b>)");
       linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b>");
-    } else {
+    } else if (jogoModo === "faixas") {
       linhas.push("Respostas certas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
         " (<b>" + fmtPct(pct) + "</b>) · " + jogo.faixas.length + " faixas");
+    } else {
+      linhas.push("Cidades achadas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
+        " (<b>" + fmtPct(pct) + "</b>)");
     }
     if ((jogoModo === "dist" || jogoModo === "pop") && jogo.cfg.palpites) {
       linhas.push("Palpites restantes: <b>" + jogo.palpitesRestantes() + "</b> de " + jogo.cfg.palpites);
@@ -339,7 +437,7 @@
   function palpitar() {
     if (!jogo || jogo.encerrado) return;
     var texto = $("input-palpite").value;
-    if (jogoModo === "faixas") return palpitarFaixas(texto);
+    if (jogoModo === "faixas" || jogoModo === "topn") return palpitarAlvos(texto);
 
     var res = DADOS.buscar(texto);
     if (res.status === "vazio") return;
@@ -349,15 +447,23 @@
         : "Não encontrei nenhum município com esse nome.", "erro");
       return;
     }
-    if (res.status === "ambiguo" && !jogo.cfg.homonimos) {
-      var ufs = res.municipios.map(function (m) { return m.uf; }).join(", ");
-      feedback("Há " + res.municipios.length + " municípios com esse nome (" + ufs +
-        "). Especifique: " + res.municipios[0].nome + ", UF.", "erro");
+    var muns = res.municipios;
+    if (jogo.cfg.uf) {
+      muns = muns.filter(function (m) { return m.uf === jogo.cfg.uf; });
+      if (muns.length === 0) {
+        feedback(res.municipios[0].nome + " fica fora da região do jogo (só " +
+          NOMES_UF[jogo.cfg.uf] + ").", "erro");
+        return;
+      }
+    }
+    if (muns.length > 1 && !jogo.cfg.homonimos) {
+      var ufs = muns.map(function (m) { return m.uf; }).join(", ");
+      feedback("Há " + muns.length + " municípios com esse nome (" + ufs +
+        "). Especifique: " + muns[0].nome + ", UF.", "erro");
       return;
     }
     // com a opção de homônimas ligada, um nome ambíguo entra inteiro:
     // todas as cidades daquele nome, num palpite só
-    var muns = res.municipios;
     var r = jogo.palpitar(muns);
     if (r.tipo === "repetido") {
       feedback(muns.length > 1
@@ -400,7 +506,9 @@
     if (jogo.encerrado) fimDeJogo(false);
   }
 
-  function palpitarFaixas(texto) {
+  // Palpites dos modos de alvos nomeados (faixas e Top N), cujos motores
+  // fazem a própria busca e devolvem os alvos revelados.
+  function palpitarAlvos(texto) {
     var r = jogo.palpitar(texto);
     if (r.tipo === "vazio") return;
     if (r.tipo === "nao_encontrado") {
@@ -409,16 +517,28 @@
         : "Não encontrei nenhum município com esse nome.", "erro");
       return;
     }
+    if (r.tipo === "fora_regiao") {
+      feedback(r.municipios[0].nome + " fica fora da região do jogo (só " +
+        NOMES_UF[jogo.cfg.uf] + ").", "erro");
+      return;
+    }
     if (r.tipo === "nao_alvo") {
+      var naoAlvo = jogoModo === "topn"
+        ? " não está entre as " + jogo.alvosTotal + " maiores."
+        : " não está entre as respostas.";
       feedback(r.municipios.length === 1
-        ? nomeUF(r.municipios[0]) + " não está entre as respostas."
-        : "Nenhum dos municípios chamados " + r.municipios[0].nome + " está entre as respostas.", "erro");
+        ? nomeUF(r.municipios[0]) + naoAlvo
+        : "Nenhum dos municípios chamados " + r.municipios[0].nome + naoAlvo, "erro");
       $("input-palpite").select();
       return;
     }
-    r.revelados.forEach(function (par) { revelarAlvo(par.mun, par.faixa, false); });
+    r.revelados.forEach(function (par) {
+      revelarAlvo(par.mun, par.faixa || null, false, par.rank);
+    });
     var nomes = r.revelados.map(function (par) {
-      return nomeUF(par.mun) + " — faixa " + par.faixa.rotulo;
+      return par.rank !== undefined
+        ? par.rank + "º — " + nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab."
+        : nomeUF(par.mun) + " — faixa " + par.faixa.rotulo;
     });
     feedback("✔ " + nomes.join(" · "), "ok");
     $("input-palpite").value = "";
@@ -426,27 +546,38 @@
     if (r.completo) fimDeJogo(false);
   }
 
-  function revelarAlvo(mun, faixa, faltante) {
+  function revelarAlvo(mun, faixa, faltante, rank) {
     pontos[mun.idx].setAttribute("class", "cidade " + (faltante ? "faltante" : "achada"));
     elSvg("text", {
       x: proj.x(mun.lng).toFixed(1),
       y: proj.y(mun.lat).toFixed(1),
       "class": "rotulo-cidade" + (faltante ? " faltante" : ""),
     }, gMarcas).textContent = mun.nome;
-    if (faixa._elContador) {
-      faixa._elContador.textContent = faixa.achados.size + "/" + faixa.alvos.length;
+    if (faixa) {
+      if (faixa._elContador) {
+        faixa._elContador.textContent = faixa.achados.size + "/" + faixa.alvos.length;
+      }
+      atualizarItemFaixa(faixa);
+      // faixa 100% respondida muda de cor no mapa
+      if (!faltante && faixa.achados.size === faixa.alvos.length) {
+        if (faixa._elArea) faixa._elArea.setAttribute("visibility", "visible");
+        if (faixa._elContador) faixa._elContador.classList.add("completa");
+      }
     }
-    atualizarItemFaixa(faixa);
+    if (rank !== undefined) atualizarChipTopN(rank, mun, faltante);
   }
 
   function fimDeJogo(desistiu, porTempo) {
     clearInterval(timerInt);
     var tempoSeg = tempoDecorrido();
     if (limiteSeg !== null && tempoSeg > limiteSeg) tempoSeg = limiteSeg;
-    if (jogoModo === "faixas") {
-      var faltantes = jogo.encerrar();
+    var faltantes = null;
+    if (jogoModo === "faixas" || jogoModo === "topn") {
+      faltantes = jogo.encerrar();
       if (desistiu) {
-        faltantes.forEach(function (par) { revelarAlvo(par.mun, par.faixa, true); });
+        faltantes.forEach(function (par) {
+          revelarAlvo(par.mun, par.faixa || null, true, par.rank);
+        });
       }
     } else {
       jogo.encerrado = true;
@@ -462,6 +593,8 @@
     var placar;
     if (jogoModo === "faixas") {
       placar = jogo.achadosTotal + "/" + jogo.alvosTotal + " respostas";
+    } else if (jogoModo === "topn") {
+      placar = jogo.achadosTotal + "/" + jogo.alvosTotal + " cidades";
     } else if (jogoModo === "dist" && jogo.cfg.metrica === "cidades") {
       placar = fmtInt(jogo.cobertos.size) + " cidades";
     } else {
@@ -483,32 +616,77 @@
       (res.melhor
         ? "🎉 <b>Novo recorde pessoal nesta configuração!</b>"
         : "Seu recorde nesta configuração segue " + fmtPct(res.recorde.pct) +
-          " (" + res.recorde.placar + ", " + fmtTempo(res.recorde.tempoSeg) + ").");
+          " (" + res.recorde.placar + ", " + fmtTempo(res.recorde.tempoSeg) + ").") +
+      relatorioFinal(faltantes);
     atualizarRecordeUI();
+  }
+
+  // Relatório pós-partida: o que de maior ficou de fora.
+  function relatorioFinal(faltantes) {
+    var itens;
+    if (jogoModo === "dist" || jogoModo === "pop") {
+      var fora = [];
+      for (var i = 0; i < jogo.universo.length && fora.length < 5; i++) {
+        var m = jogo.universo[i];
+        if (!jogo.cobertos.has(m.idx)) fora.push(m);
+      }
+      if (fora.length === 0) return "";
+      itens = fora.map(function (m) { return nomeUF(m) + " — " + fmtPop(m.pop); });
+      return "<div class='relatorio'>Ficou na mesa: <b>" +
+        fmtPop(jogo.uniPop - jogo.popCoberta) + " hab.</b> em " +
+        fmtInt(jogo.universo.length - jogo.cobertos.size) + " cidades.<br>" +
+        "Maiores esquecidas: " + itens.join(" · ") + ".</div>";
+    }
+    if (!faltantes || faltantes.length === 0) return "";
+    if (jogoModo === "topn") {
+      itens = faltantes.slice(0, 5).map(function (par) {
+        return par.rank + "º " + nomeUF(par.mun);
+      });
+      return "<div class='relatorio'>Maiores que faltaram: " + itens.join(" · ") +
+        (faltantes.length > 5 ? " · e mais " + (faltantes.length - 5) : "") + ".</div>";
+    }
+    var maiores = faltantes.slice().sort(function (a, b) { return b.mun.pop - a.mun.pop; });
+    itens = maiores.slice(0, 5).map(function (par) {
+      return nomeUF(par.mun) + " — " + fmtPop(par.mun.pop);
+    });
+    return "<div class='relatorio'>Maiores respostas perdidas: " + itens.join(" · ") +
+      (faltantes.length > 5 ? " · e mais " + (faltantes.length - 5) : "") + ".</div>";
   }
 
   // ---------------- desenho e lista das faixas ----------------
   function desenharFaixas(jogo) {
     var cfg = jogo.cfg;
+    // recorta sombras e linhas na área do universo (importa quando a região é
+    // uma UF só; no Brasil inteiro equivale aos limites do mapa)
+    var ext = extentDe(jogo.universo, 0.4);
+    var exX1 = proj.x(ext.lngMin), exX2 = proj.x(ext.lngMax);
+    var exY1 = proj.y(ext.latMax), exY2 = proj.y(ext.latMin);
     jogo.faixas.forEach(function (f) {
       var cx, cy;
       if (cfg.tipo === "lat") {
-        var y1 = proj.y(Math.min(f.latSup, bounds.latMax));
-        var y2 = proj.y(Math.max(f.latInf, bounds.latMin));
+        var y1 = proj.y(Math.min(f.latSup, ext.latMax));
+        var y2 = proj.y(Math.max(f.latInf, ext.latMin));
         if (f.indice % 2 === 0) {
-          elSvg("rect", { x: 0, y: y1.toFixed(1), width: proj.w, height: (y2 - y1).toFixed(1), "class": "faixa-sombra" }, gFaixas);
+          elSvg("rect", { x: exX1.toFixed(1), y: y1.toFixed(1), width: (exX2 - exX1).toFixed(1), height: (y2 - y1).toFixed(1), "class": "faixa-sombra" }, gFaixas);
         }
-        elSvg("line", { x1: 0, y1: y2.toFixed(1), x2: proj.w, y2: y2.toFixed(1), "class": "linha-faixa" }, gFaixas);
-        cx = 8; cy = (y1 + y2) / 2 + 4;
+        f._elArea = elSvg("rect", { x: exX1.toFixed(1), y: y1.toFixed(1), width: (exX2 - exX1).toFixed(1), height: (y2 - y1).toFixed(1), "class": "faixa-completa", visibility: "hidden" }, gFaixas);
+        elSvg("line", { x1: exX1.toFixed(1), y1: y2.toFixed(1), x2: exX2.toFixed(1), y2: y2.toFixed(1), "class": "linha-faixa" }, gFaixas);
+        cx = exX1 + 8; cy = (y1 + y2) / 2 + 4;
       } else if (cfg.tipo === "lng") {
-        var x1 = proj.x(Math.max(f.lngOeste, bounds.lngMin));
-        var x2 = proj.x(Math.min(f.lngLeste, bounds.lngMax));
+        var x1 = proj.x(Math.max(f.lngOeste, ext.lngMin));
+        var x2 = proj.x(Math.min(f.lngLeste, ext.lngMax));
         if (f.indice % 2 === 0) {
-          elSvg("rect", { x: x1.toFixed(1), y: 0, width: (x2 - x1).toFixed(1), height: proj.h, "class": "faixa-sombra" }, gFaixas);
+          elSvg("rect", { x: x1.toFixed(1), y: exY1.toFixed(1), width: (x2 - x1).toFixed(1), height: (exY2 - exY1).toFixed(1), "class": "faixa-sombra" }, gFaixas);
         }
-        elSvg("line", { x1: x2.toFixed(1), y1: 0, x2: x2.toFixed(1), y2: proj.h, "class": "linha-faixa" }, gFaixas);
-        cx = (x1 + x2) / 2 - 8; cy = 14;
+        f._elArea = elSvg("rect", { x: x1.toFixed(1), y: exY1.toFixed(1), width: (x2 - x1).toFixed(1), height: (exY2 - exY1).toFixed(1), "class": "faixa-completa", visibility: "hidden" }, gFaixas);
+        elSvg("line", { x1: x2.toFixed(1), y1: exY1.toFixed(1), x2: x2.toFixed(1), y2: exY2.toFixed(1), "class": "linha-faixa" }, gFaixas);
+        cx = (x1 + x2) / 2 - 8; cy = exY1 + 14;
       } else {
+        // anel: a área de completa é a coroa entre os dois raios (fill-rule
+        // evenodd faz o círculo interno virar buraco)
+        var dAnel = caminhoGeodesico(cfg.centro.lat, cfg.centro.lng, f.kmExterno) +
+          (f.kmInterno > 0 ? caminhoGeodesico(cfg.centro.lat, cfg.centro.lng, f.kmInterno) : "");
+        f._elArea = elSvg("path", { d: dAnel, "fill-rule": "evenodd", "class": "faixa-completa", visibility: "hidden" }, gFaixas);
         elSvg("path", { d: caminhoGeodesico(cfg.centro.lat, cfg.centro.lng, f.kmExterno), "class": "linha-faixa" }, gFaixas);
         var pMeio = GEO.destino(cfg.centro.lat, cfg.centro.lng, 0, (f.kmInterno + f.kmExterno) / 2);
         cx = proj.x(pMeio[1]) - 8; cy = proj.y(pMeio[0]) + 4;
@@ -545,8 +723,38 @@
       if (jogo && jogo.encerrado) return '<span class="chip faltante">' + nomeUF(m) + "</span>";
       return '<span class="chip">•••</span>';
     }).join("");
+    item.className = "item-faixa" +
+      (f.alvos.length > 0 && f.achados.size === f.alvos.length ? " completa" : "");
     item.innerHTML = '<div class="titulo-faixa"><span>' + f.rotulo + "</span><span>" +
       f.achados.size + "/" + f.alvos.length + "</span></div><div class='chips'>" + chips + "</div>";
+  }
+
+  // ---------------- lista do modo Top N ----------------
+  function montarListaTopN(jogo) {
+    var alvo = $("lista-jogo");
+    alvo.innerHTML = "";
+    var item = document.createElement("div");
+    item.className = "item-faixa";
+    var chips = jogo.alvos.map(function (m, i) {
+      return '<span class="chip" data-rank="' + (i + 1) + '">' + (i + 1) + " •••</span>";
+    }).join("");
+    item.innerHTML = "<div class='titulo-faixa'><span>As " + jogo.alvosTotal +
+      " maiores</span><span id='topn-contador'>0/" + jogo.alvosTotal +
+      "</span></div><div class='chips'>" + chips + "</div>";
+    alvo.appendChild(item);
+    topnChips = {};
+    item.querySelectorAll(".chip").forEach(function (c) {
+      topnChips[c.dataset.rank] = c;
+    });
+  }
+
+  function atualizarChipTopN(rank, mun, faltante) {
+    var chip = topnChips && topnChips[rank];
+    if (!chip) return;
+    chip.textContent = rank + ". " + nomeUF(mun);
+    chip.className = "chip " + (faltante ? "faltante" : "achado");
+    var cont = document.getElementById("topn-contador");
+    if (cont) cont.textContent = jogo.achadosTotal + "/" + jogo.alvosTotal;
   }
 
   // ------------------------------------------------------------------
@@ -581,6 +789,93 @@
       });
     }
     $("modal-recordes").hidden = false;
+  }
+
+  // ------------------------------------------------------------------
+  // Desafio por link: a chave de recorde já é a serialização canônica da
+  // configuração, então o link carrega a chave (e o recorde de quem enviou
+  // como marca a bater).
+  // ------------------------------------------------------------------
+  function copiarDesafio() {
+    var lido = lerConfig();
+    if (lido.erro) {
+      atualizarRecordeUI();
+      return;
+    }
+    var url = location.href.split("#")[0] + "#d=" + encodeURIComponent(lido.chave);
+    var rec = RECORDES.obter(lido.chave);
+    if (rec) url += "&rec=" + (Math.round(rec.pct * 1000) / 10);
+    var btn = $("btn-desafio");
+    function avisar() {
+      btn.textContent = "✔ Link copiado!";
+      setTimeout(function () { btn.textContent = "🔗 Desafiar"; }, 2500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(avisar, function () { prompt("Copie o link do desafio:", url); });
+    } else {
+      prompt("Copie o link do desafio:", url);
+    }
+  }
+
+  function aplicarDesafioDaURL() {
+    if (location.hash.indexOf("#d=") !== 0) return;
+    var partes = location.hash.slice(3).split("&");
+    var chave = decodeURIComponent(partes[0]);
+    var recAlvo = null;
+    partes.slice(1).forEach(function (p) {
+      if (p.indexOf("rec=") === 0) recAlvo = parseFloat(p.slice(4));
+    });
+    var tokens = chave.split("|");
+    var modo = tokens[0];
+    if (!DESCRICOES[modo]) return;
+    var p = {};
+    tokens.slice(1).forEach(function (t) {
+      var i = t.indexOf("=");
+      if (i > 0) p[t.slice(0, i)] = t.slice(i + 1);
+    });
+    function setVal(id, v) { if (v !== undefined) $(id).value = v; }
+    $("cfg-regiao").value = p.uf && NOMES_UF[p.uf] ? p.uf : "BR";
+    if (modo === "dist" || modo === "pop") {
+      if (modo === "dist") {
+        setVal("cfg-dist-raio", p.raio);
+        if (p.metrica) $("cfg-dist-metrica").value = p.metrica;
+      } else {
+        setVal("cfg-pop-alvo", p.alvo);
+      }
+      $("cfg-" + modo + "-homonimos").checked = p.homonimos === "1";
+      $("cfg-" + modo + "-limite").value = p.tempo ? "tempo" : "palpites";
+      setVal("cfg-" + modo + "-tempo", p.tempo);
+      setVal("cfg-" + modo + "-palpites", p.palpites);
+    } else if (modo === "faixas") {
+      if (p.tipo) $("cfg-faixas-tipo").value = p.tipo;
+      $("rotulo-centro").hidden = $("cfg-faixas-tipo").value !== "aneis";
+      setVal("cfg-faixas-largura", p.largura);
+      setVal("cfg-faixas-topn", p.top);
+      if (p.centro) {
+        var centro = null;
+        DADOS.municipios.forEach(function (m) {
+          if (String(m.id) === p.centro) centro = m;
+        });
+        if (centro) $("cfg-faixas-centro").value = centro.nome + ", " + centro.uf;
+      }
+      $("cfg-faixas-limite").value = p.tempo ? "tempo" : "livre";
+      setVal("cfg-faixas-tempo", p.tempo);
+    } else {
+      setVal("cfg-topn-n", p.n);
+      $("cfg-topn-limite").value = p.tempo ? "tempo" : "livre";
+      setVal("cfg-topn-tempo", p.tempo);
+    }
+    atualizarCamposLimite();
+    document.querySelector('#abas-modo .aba[data-modo="' + modo + '"]').click();
+    var lido = lerConfig();
+    if (lido.erro) return;
+    var banner = $("desafio-banner");
+    banner.hidden = false;
+    banner.innerHTML = "🎯 <b>Desafio recebido:</b> " + lido.rotulo + ".<br>" +
+      (recAlvo !== null && !isNaN(recAlvo)
+        ? "Marca a bater: <b>" +
+          recAlvo.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%</b> — "
+        : "") + "aperte ▶ Iniciar jogo e boa sorte!";
   }
 
   // ------------------------------------------------------------------
@@ -659,6 +954,8 @@
       }
       $("area-jogo").hidden = true;
       limparCamadasDeJogo();
+      vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
+      aplicarViewBox();
       setConfigTravada(false);
       $("btn-iniciar").textContent = "▶ Iniciar jogo";
       atualizarRecordeUI();
@@ -675,6 +972,7 @@
       $("rotulo-" + p + "-tempo").hidden = !porTempo;
     });
     $("rotulo-faixas-tempo").hidden = $("cfg-faixas-limite").value !== "tempo";
+    $("rotulo-topn-tempo").hidden = $("cfg-topn-limite").value !== "tempo";
   }
   document.querySelectorAll(".sel-limite").forEach(function (s) {
     s.addEventListener("change", atualizarCamposLimite);
@@ -697,6 +995,36 @@
     setSatelite(!svg.classList.contains("satelite"));
   });
 
+  $("btn-desafio").addEventListener("click", copiarDesafio);
+
+  $("btn-exportar-recordes").addEventListener("click", function () {
+    var blob = new Blob([RECORDES.exportarJson()], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "mapa-quiz-recordes.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  $("btn-importar-recordes").addEventListener("click", function () {
+    $("arquivo-recordes").click();
+  });
+  $("arquivo-recordes").addEventListener("change", function () {
+    var arq = this.files[0];
+    this.value = "";
+    if (!arq) return;
+    var leitor = new FileReader();
+    leitor.onload = function () {
+      var r = RECORDES.importarJson(leitor.result);
+      var nota = $("nota-import");
+      nota.hidden = false;
+      nota.textContent = r.ok ? "✔ " + r.msg : "⚠️ " + r.msg;
+      nota.style.color = r.ok ? "" : "var(--vermelho)";
+      abrirRecordes();
+      atualizarRecordeUI();
+    };
+    leitor.readAsText(arq);
+  });
+
   $("btn-recordes").addEventListener("click", abrirRecordes);
   $("btn-fechar-recordes").addEventListener("click", function () { $("modal-recordes").hidden = true; });
   $("modal-recordes").addEventListener("click", function (ev) {
@@ -712,7 +1040,11 @@
 
   // estado inicial
   $("descricao-modo").textContent = DESCRICOES[modoAtual];
+  atualizarCamposLimite();
   atualizarRecordeUI();
+  aplicarDesafioDaURL();
+  // um link de desafio colado na aba já aberta também vale
+  window.addEventListener("hashchange", aplicarDesafioDaURL);
   try {
     if (localStorage.getItem(LS_SATELITE) === "1") setSatelite(true);
   } catch (e) {}

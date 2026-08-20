@@ -4,9 +4,26 @@
 var MODOS = (function () {
   var municipios = DADOS.municipios; // já ordenados por população (desc)
 
-  function extentCidades() {
+  // Universo da partida: o Brasil inteiro ou só os municípios de uma UF
+  // (cfg.uf). O filtro preserva a ordenação por população.
+  function universoDe(cfg) {
+    var lista = cfg.uf
+      ? municipios.filter(function (m) { return m.uf === cfg.uf; })
+      : municipios;
+    var pop = 0;
+    lista.forEach(function (m) { pop += m.pop; });
+    return { lista: lista, pop: pop };
+  }
+
+  function dentroDaRegiao(cfg, muns) {
+    if (!cfg.uf) return muns;
+    var uf = cfg.uf;
+    return muns.filter(function (m) { return m.uf === uf; });
+  }
+
+  function extentCidades(lista) {
     var latMin = 90, latMax = -90, lngMin = 180, lngMax = -180;
-    municipios.forEach(function (m) {
+    lista.forEach(function (m) {
       if (m.lat < latMin) latMin = m.lat;
       if (m.lat > latMax) latMax = m.lat;
       if (m.lng < lngMin) lngMin = m.lng;
@@ -17,10 +34,14 @@ var MODOS = (function () {
 
   // ---------------------------------------------------------------
   // Modo 1 — Círculos por distância: cada palpite cobre tudo num raio fixo.
-  // cfg: {raio, metrica: 'pop'|'cidades', palpites? (sem limite se ausente)}
+  // cfg: {raio, metrica: 'pop'|'cidades', palpites? (sem limite se ausente),
+  //       uf? (só uma UF se presente)}
   // ---------------------------------------------------------------
   function JogoCirculosDistancia(cfg) {
     this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.uniPop = u.pop;
     this.jogadas = [];
     this.usados = new Set();   // idx dos municípios já chutados
     this.cobertos = new Set();
@@ -43,10 +64,11 @@ var MODOS = (function () {
     var circulos = [];
     var cobertos = this.cobertos;
     var raio = this.cfg.raio;
+    var uni = this.universo;
     lista.forEach(function (mun) {
       usados.add(mun.idx);
       circulos.push({ mun: mun, raioKm: raio });
-      municipios.forEach(function (m) {
+      uni.forEach(function (m) {
         if (cobertos.has(m.idx)) return;
         if (GEO.haversineKm(mun.lat, mun.lng, m.lat, m.lng) <= raio) {
           cobertos.add(m.idx);
@@ -63,17 +85,20 @@ var MODOS = (function () {
   };
   JogoCirculosDistancia.prototype.pct = function () {
     return this.cfg.metrica === "cidades"
-      ? this.cobertos.size / DADOS.total
-      : this.popCoberta / DADOS.popTotal;
+      ? this.cobertos.size / this.universo.length
+      : this.popCoberta / this.uniPop;
   };
 
   // ---------------------------------------------------------------
   // Modo 2 — Círculos por população: o círculo cresce a partir da cidade
   // chutada até somar a população alvo.
-  // cfg: {popAlvo, palpites? (sem limite se ausente)}
+  // cfg: {popAlvo, palpites? (sem limite se ausente), uf?}
   // ---------------------------------------------------------------
   function JogoCirculosPopulacao(cfg) {
     this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.uniPop = u.pop;
     this.jogadas = [];
     this.usados = new Set();   // idx dos municípios já chutados
     this.cobertos = new Set();
@@ -96,12 +121,13 @@ var MODOS = (function () {
     var circulos = [];
     var cobertos = this.cobertos;
     var popAlvo = this.cfg.popAlvo;
+    var uni = this.universo;
     lista.forEach(function (mun) {
       usados.add(mun.idx);
 
-      // Ordena todo o país pela distância à cidade chutada e acumula população
+      // Ordena o universo pela distância à cidade chutada e acumula população
       // (cidades já cobertas também contam para "encher" o círculo).
-      var porDist = municipios
+      var porDist = uni
         .map(function (m) {
           return { m: m, d: GEO.haversineKm(mun.lat, mun.lng, m.lat, m.lng) };
         })
@@ -130,13 +156,14 @@ var MODOS = (function () {
     return { tipo: "ok", jogada: jogada };
   };
   JogoCirculosPopulacao.prototype.pct = function () {
-    return this.popCoberta / DADOS.popTotal;
+    return this.popCoberta / this.uniPop;
   };
 
   // ---------------------------------------------------------------
   // Modo 3 — Faixas: o mapa é dividido em faixas (latitude, longitude ou
   // anéis concêntricos) e é preciso nomear as N maiores cidades de cada uma.
-  // cfg: {tipo: 'lat'|'lng'|'aneis', largura, topN, centro (município, só p/ anéis)}
+  // cfg: {tipo: 'lat'|'lng'|'aneis', largura, topN, centro (município, só p/
+  //       anéis), uf?}
   // ---------------------------------------------------------------
   function grauTxt(v, eixo) {
     var hemisferio = eixo === "lat" ? (v >= 0 ? "N" : "S") : "O";
@@ -145,10 +172,13 @@ var MODOS = (function () {
 
   function JogoFaixas(cfg) {
     this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.uniPop = u.pop;
     this.encerrado = false;
     this.achadosTotal = 0;
 
-    var ext = extentCidades();
+    var ext = extentCidades(this.universo);
     var faixas = [];
     var indicePara; // função município -> índice da faixa
 
@@ -189,7 +219,7 @@ var MODOS = (function () {
       // anéis concêntricos em volta de cfg.centro
       var centro = cfg.centro;
       var distMax = 0;
-      municipios.forEach(function (m) {
+      this.universo.forEach(function (m) {
         var d = GEO.haversineKm(centro.lat, centro.lng, m.lat, m.lng);
         m._distCentro = d;
         if (d > distMax) distMax = d;
@@ -209,9 +239,9 @@ var MODOS = (function () {
       indicePara = function (m) { return Math.floor(m._distCentro / cfg.largura); };
     }
 
-    // municipios está ordenado por população desc: os primeiros topN de cada
+    // o universo está ordenado por população desc: os primeiros topN de cada
     // faixa são exatamente as maiores cidades dela.
-    municipios.forEach(function (m) {
+    this.universo.forEach(function (m) {
       var idx = indicePara(m);
       var faixa = faixas[idx];
       if (!faixa) return;
@@ -234,10 +264,12 @@ var MODOS = (function () {
     var res = DADOS.buscar(texto);
     if (res.status === "vazio") return { tipo: "vazio" };
     if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+    var cand = dentroDaRegiao(this.cfg, res.municipios);
+    if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
 
     var revelados = [];
     var self = this;
-    res.municipios.forEach(function (m) {
+    cand.forEach(function (m) {
       var faixa = self.faixaPorAlvo.get(m.idx);
       if (faixa && !faixa.achados.has(m.idx)) {
         faixa.achados.add(m.idx);
@@ -245,7 +277,7 @@ var MODOS = (function () {
         revelados.push({ mun: m, faixa: faixa });
       }
     });
-    if (revelados.length === 0) return { tipo: "nao_alvo", municipios: res.municipios };
+    if (revelados.length === 0) return { tipo: "nao_alvo", municipios: cand };
     if (this.achadosTotal >= this.alvosTotal) this.encerrado = true;
     return { tipo: "ok", revelados: revelados, completo: this.encerrado };
   };
@@ -266,9 +298,68 @@ var MODOS = (function () {
     return this.alvosTotal === 0 ? 0 : this.achadosTotal / this.alvosTotal;
   };
 
+  // ---------------------------------------------------------------
+  // Modo 4 — Top N: citar de memória as N maiores cidades do universo.
+  // Os alvos são revelados no mapa e na lista com a posição no ranking.
+  // cfg: {n, uf?, tempoMin?}
+  // ---------------------------------------------------------------
+  function JogoTopN(cfg) {
+    this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.uniPop = u.pop;
+    this.encerrado = false;
+    this.achadosTotal = 0;
+    this.alvos = this.universo.slice(0, Math.min(cfg.n, this.universo.length));
+    this.alvosTotal = this.alvos.length;
+    this.achados = new Set();
+    this.rankPorAlvo = new Map(); // idx do município -> posição (1..N)
+    var self = this;
+    this.alvos.forEach(function (m, i) { self.rankPorAlvo.set(m.idx, i + 1); });
+  }
+
+  JogoTopN.prototype.palpitar = function (texto) {
+    if (this.encerrado) return { tipo: "encerrado" };
+    var res = DADOS.buscar(texto);
+    if (res.status === "vazio") return { tipo: "vazio" };
+    if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+    var cand = dentroDaRegiao(this.cfg, res.municipios);
+    if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
+
+    var revelados = [];
+    var self = this;
+    cand.forEach(function (m) {
+      var rank = self.rankPorAlvo.get(m.idx);
+      if (rank !== undefined && !self.achados.has(m.idx)) {
+        self.achados.add(m.idx);
+        self.achadosTotal++;
+        revelados.push({ mun: m, rank: rank });
+      }
+    });
+    if (revelados.length === 0) return { tipo: "nao_alvo", municipios: cand };
+    if (this.achadosTotal >= this.alvosTotal) this.encerrado = true;
+    return { tipo: "ok", revelados: revelados, completo: this.encerrado };
+  };
+
+  // Encerra revelando o que faltou; devolve a lista dos alvos não achados.
+  JogoTopN.prototype.encerrar = function () {
+    this.encerrado = true;
+    var faltantes = [];
+    var self = this;
+    this.alvos.forEach(function (m, i) {
+      if (!self.achados.has(m.idx)) faltantes.push({ mun: m, rank: i + 1 });
+    });
+    return faltantes;
+  };
+
+  JogoTopN.prototype.pct = function () {
+    return this.alvosTotal === 0 ? 0 : this.achadosTotal / this.alvosTotal;
+  };
+
   return {
     JogoCirculosDistancia: JogoCirculosDistancia,
     JogoCirculosPopulacao: JogoCirculosPopulacao,
     JogoFaixas: JogoFaixas,
+    JogoTopN: JogoTopN,
   };
 })();

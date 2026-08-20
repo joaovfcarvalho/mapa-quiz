@@ -70,11 +70,60 @@ var RECORDES = (function () {
     salvarTudo({});
   }
 
+  function exportarJson() {
+    return JSON.stringify({
+      formato: "mapaquiz-recordes",
+      versao: 1,
+      exportadoEm: new Date().toISOString(),
+      recordes: carregarTudo(),
+    }, null, 2);
+  }
+
+  // Mescla um backup exportado: entra o que for configuração nova ou recorde
+  // melhor que o local (mesmo critério do registrar). Nunca piora nada.
+  function importarJson(texto) {
+    var obj;
+    try {
+      obj = JSON.parse(texto);
+    } catch (e) {
+      return { ok: false, msg: "Arquivo inválido: não é um JSON." };
+    }
+    var recs = obj && obj.recordes;
+    if (!recs || typeof recs !== "object") {
+      return { ok: false, msg: "Arquivo não parece um backup de recordes deste jogo." };
+    }
+    var tudo = carregarTudo();
+    var novos = 0;
+    var melhorados = 0;
+    Object.keys(recs).forEach(function (chave) {
+      var r = recs[chave];
+      if (!r || typeof r.pct !== "number" || typeof r.tempoSeg !== "number") return;
+      var atual = tudo[chave];
+      if (!atual) {
+        tudo[chave] = r;
+        novos++;
+      } else if (r.pct > atual.pct + 1e-9 ||
+        (Math.abs(r.pct - atual.pct) <= 1e-9 && r.tempoSeg < atual.tempoSeg)) {
+        r.jogos = Math.max(r.jogos || 1, atual.jogos || 1);
+        tudo[chave] = r;
+        melhorados++;
+      }
+    });
+    salvarTudo(tudo);
+    return {
+      ok: true,
+      msg: "Backup importado: " + novos + " configuração(ões) nova(s), " +
+        melhorados + " recorde(s) melhorado(s).",
+    };
+  }
+
   return {
     obter: obter,
     registrar: registrar,
     listar: listar,
     apagar: apagar,
     limparTudo: limparTudo,
+    exportarJson: exportarJson,
+    importarJson: importarJson,
   };
 })();
