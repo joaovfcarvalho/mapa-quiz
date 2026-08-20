@@ -74,3 +74,12 @@ mapa-quiz/
 ├── data/               # dados embutidos (gerados)
 └── tools/build_data.py # regenera os dados a partir das fontes
 ```
+
+## Publicação
+
+O site é servido pelo GitHub Pages a partir da branch `gh-pages`. Para publicar
+uma atualização, envie o conteúdo da `main` para lá:
+
+```bash
+git push origin main:gh-pages
+```
