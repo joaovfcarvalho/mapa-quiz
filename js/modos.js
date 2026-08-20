@@ -22,6 +22,7 @@ var MODOS = (function () {
   function JogoCirculosDistancia(cfg) {
     this.cfg = cfg;
     this.jogadas = [];
+    this.usados = new Set();   // idx dos municípios já chutados
     this.cobertos = new Set();
     this.popCoberta = 0;
     this.encerrado = false;
@@ -29,25 +30,33 @@ var MODOS = (function () {
   JogoCirculosDistancia.prototype.palpitesRestantes = function () {
     return this.cfg.palpites - this.jogadas.length;
   };
-  JogoCirculosDistancia.prototype.palpitar = function (mun) {
+  // Recebe uma lista de municípios (homônimos entram juntos): a jogada é uma
+  // só, com um círculo por município ainda não usado.
+  JogoCirculosDistancia.prototype.palpitar = function (muns) {
     if (this.encerrado) return { tipo: "encerrado" };
-    var repetido = this.jogadas.some(function (j) { return j.mun.idx === mun.idx; });
-    if (repetido) return { tipo: "repetido", mun: mun };
+    var usados = this.usados;
+    var lista = muns.filter(function (m) { return !usados.has(m.idx); });
+    if (lista.length === 0) return { tipo: "repetido", mun: muns[0] };
 
     var novos = [];
     var ganhoPop = 0;
+    var circulos = [];
     var cobertos = this.cobertos;
     var raio = this.cfg.raio;
-    municipios.forEach(function (m) {
-      if (cobertos.has(m.idx)) return;
-      if (GEO.haversineKm(mun.lat, mun.lng, m.lat, m.lng) <= raio) {
-        cobertos.add(m.idx);
-        novos.push(m.idx);
-        ganhoPop += m.pop;
-      }
+    lista.forEach(function (mun) {
+      usados.add(mun.idx);
+      circulos.push({ mun: mun, raioKm: raio });
+      municipios.forEach(function (m) {
+        if (cobertos.has(m.idx)) return;
+        if (GEO.haversineKm(mun.lat, mun.lng, m.lat, m.lng) <= raio) {
+          cobertos.add(m.idx);
+          novos.push(m.idx);
+          ganhoPop += m.pop;
+        }
+      });
     });
     this.popCoberta += ganhoPop;
-    var jogada = { mun: mun, raioKm: raio, novos: novos, ganhoPop: ganhoPop };
+    var jogada = { muns: lista, circulos: circulos, novos: novos, ganhoPop: ganhoPop };
     this.jogadas.push(jogada);
     if (this.cfg.palpites && this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
     return { tipo: "ok", jogada: jogada };
@@ -66,6 +75,7 @@ var MODOS = (function () {
   function JogoCirculosPopulacao(cfg) {
     this.cfg = cfg;
     this.jogadas = [];
+    this.usados = new Set();   // idx dos municípios já chutados
     this.cobertos = new Set();
     this.popCoberta = 0;
     this.encerrado = false;
@@ -73,48 +83,48 @@ var MODOS = (function () {
   JogoCirculosPopulacao.prototype.palpitesRestantes = function () {
     return this.cfg.palpites - this.jogadas.length;
   };
-  JogoCirculosPopulacao.prototype.palpitar = function (mun) {
+  // Recebe uma lista de municípios (homônimos entram juntos): a jogada é uma
+  // só, com um círculo próprio crescendo em volta de cada município.
+  JogoCirculosPopulacao.prototype.palpitar = function (muns) {
     if (this.encerrado) return { tipo: "encerrado" };
-    var repetido = this.jogadas.some(function (j) { return j.mun.idx === mun.idx; });
-    if (repetido) return { tipo: "repetido", mun: mun };
-
-    // Ordena todo o país pela distância à cidade chutada e acumula população
-    // (cidades já cobertas também contam para "encher" o círculo).
-    var porDist = municipios
-      .map(function (m) {
-        return { m: m, d: GEO.haversineKm(mun.lat, mun.lng, m.lat, m.lng) };
-      })
-      .sort(function (a, b) { return a.d - b.d; });
-
-    var acumulada = 0;
-    var raio = 0;
-    var dentro = [];
-    for (var i = 0; i < porDist.length; i++) {
-      acumulada += porDist[i].m.pop;
-      dentro.push(porDist[i].m);
-      raio = porDist[i].d;
-      if (acumulada >= this.cfg.popAlvo) break;
-    }
-    raio = Math.max(raio, 8); // raio mínimo só para o círculo aparecer no mapa
+    var usados = this.usados;
+    var lista = muns.filter(function (m) { return !usados.has(m.idx); });
+    if (lista.length === 0) return { tipo: "repetido", mun: muns[0] };
 
     var novos = [];
     var ganhoPop = 0;
+    var circulos = [];
     var cobertos = this.cobertos;
-    dentro.forEach(function (m) {
-      if (!cobertos.has(m.idx)) {
-        cobertos.add(m.idx);
-        novos.push(m.idx);
-        ganhoPop += m.pop;
+    var popAlvo = this.cfg.popAlvo;
+    lista.forEach(function (mun) {
+      usados.add(mun.idx);
+
+      // Ordena todo o país pela distância à cidade chutada e acumula população
+      // (cidades já cobertas também contam para "encher" o círculo).
+      var porDist = municipios
+        .map(function (m) {
+          return { m: m, d: GEO.haversineKm(mun.lat, mun.lng, m.lat, m.lng) };
+        })
+        .sort(function (a, b) { return a.d - b.d; });
+
+      var acumulada = 0;
+      var raio = 0;
+      for (var i = 0; i < porDist.length; i++) {
+        var m = porDist[i].m;
+        acumulada += m.pop;
+        raio = porDist[i].d;
+        if (!cobertos.has(m.idx)) {
+          cobertos.add(m.idx);
+          novos.push(m.idx);
+          ganhoPop += m.pop;
+        }
+        if (acumulada >= popAlvo) break;
       }
+      raio = Math.max(raio, 8); // raio mínimo só para o círculo aparecer no mapa
+      circulos.push({ mun: mun, raioKm: raio, popDentro: acumulada });
     });
     this.popCoberta += ganhoPop;
-    var jogada = {
-      mun: mun,
-      raioKm: raio,
-      novos: novos,
-      ganhoPop: ganhoPop,
-      popDentro: acumulada,
-    };
+    var jogada = { muns: lista, circulos: circulos, novos: novos, ganhoPop: ganhoPop };
     this.jogadas.push(jogada);
     if (this.cfg.palpites && this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
     return { tipo: "ok", jogada: jogada };

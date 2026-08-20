@@ -44,6 +44,10 @@
             <option value="cidades">Cobrir número de cidades</option>
           </select>
         </label>
+        <label class="check">
+          <input type="checkbox" id="cfg-dist-homonimos">
+          Nome ambíguo marca todas as homônimas
+        </label>
       </div>
 
       <div class="config-modo" data-modo="pop" hidden>
@@ -61,6 +65,10 @@
         </label>
         <label id="rotulo-pop-tempo" hidden>Tempo (minutos)
           <input type="number" id="cfg-pop-tempo" value="30" min="1" max="240">
+        </label>
+        <label class="check">
+          <input type="checkbox" id="cfg-pop-homonimos">
+          Nome ambíguo marca todas as homônimas
         </label>
       </div>
 
@@ -112,6 +120,8 @@
 
   <div id="mapa-wrap">
     <svg id="mapa" role="img" aria-label="Mapa do Brasil"></svg>
+    <button id="btn-satelite" type="button"
+      title="Alternar fundo de satélite (imagem: NASA Blue Marble)">🛰️ Satélite</button>
     <div id="dica-zoom">roda do mouse: zoom · arrastar: mover · duplo clique: restaurar</div>
     <div id="tooltip" hidden></div>
   </div>

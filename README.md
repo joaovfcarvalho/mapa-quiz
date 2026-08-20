@@ -52,6 +52,7 @@ todos, com opção de apagar individualmente ou tudo.
 | População por município | IBGE, Censo Demográfico 2022 (agregado 4709, variável 93) |
 | Coordenadas (sede municipal) | [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros) |
 | Contorno das UFs | IBGE, API de malhas (qualidade mínima) |
+| Fundo de satélite (botão 🛰️) | NASA Blue Marble Next Generation, via [GIBS](https://earthdata.nasa.gov/gibs) (domínio público) |
 
 Os dados ficam embutidos em `data/municipios.js` e `data/brasil_uf.js` para o
 jogo funcionar offline (inclusive aberto via `file://`). Para regenerar a

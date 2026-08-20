@@ -25,6 +25,9 @@
   var vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
   function aplicarViewBox() {
     svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
+    // fração do mapa visível — o CSS multiplica traços, pontos e letras por
+    // esse fator para que fiquem sempre com o mesmo tamanho na tela
+    svg.style.setProperty("--zoom", (vb.w / vbBase.w).toFixed(4));
   }
   aplicarViewBox();
 
@@ -41,6 +44,26 @@
   var gCidades = elSvg("g", {});
   var gMarcas = elSvg("g", {});
 
+  // fundo de satélite (NASA Blue Marble, recortado nos mesmos limites do
+  // mapa — como a projeção é equiretangular, a imagem esticada no viewBox
+  // alinha com os contornos); só é baixado na primeira vez que for ligado
+  var LS_SATELITE = "mapaquiz.satelite";
+  var imgSatelite = null;
+  function setSatelite(ligado) {
+    if (ligado && !imgSatelite) {
+      imgSatelite = elSvg("image", {
+        x: 0, y: 0, width: proj.w, height: proj.h,
+        preserveAspectRatio: "none",
+        href: "data/satelite.jpg",
+      });
+      svg.insertBefore(imgSatelite, gEstados);
+    }
+    if (imgSatelite) imgSatelite.setAttribute("visibility", ligado ? "visible" : "hidden");
+    svg.classList.toggle("satelite", ligado);
+    $("btn-satelite").classList.toggle("ativo", ligado);
+    try { localStorage.setItem(LS_SATELITE, ligado ? "1" : "0"); } catch (e) {}
+  }
+
   // contorno das UFs
   BRASIL_UF.forEach(function (anel) {
     var d = anel.map(function (p, i) {
@@ -49,16 +72,15 @@
     elSvg("path", { d: d, "class": "estado" }, gEstados);
   });
 
-  // pontos das cidades (um <circle> por município, reaproveitado entre partidas)
-  function raioPonto(pop) {
-    return Math.min(0.7 + Math.sqrt(pop) / 900, 5.5);
-  }
+  // pontos das cidades (um <circle> por município, reaproveitado entre
+  // partidas); tamanho igual para todos — o tamanho não pode entregar a
+  // população — e definido de fato no CSS, na escala do zoom
   var pontos = [];
   DADOS.municipios.forEach(function (m) {
     pontos[m.idx] = elSvg("circle", {
       cx: proj.x(m.lng).toFixed(1),
       cy: proj.y(m.lat).toFixed(1),
-      r: raioPonto(m.pop).toFixed(2),
+      r: "1.2",
       "class": "cidade",
       "data-idx": m.idx,
     }, gCidades);
@@ -139,25 +161,30 @@
       var cfgD = {
         raio: num("cfg-dist-raio", 10, 2000),
         metrica: $("cfg-dist-metrica").value,
+        homonimos: $("cfg-dist-homonimos").checked,
       };
       var limD = lerLimite("dist", cfgD);
       return {
         cfg: cfgD,
-        chave: "dist|raio=" + cfgD.raio + limD.chave + "|metrica=" + cfgD.metrica,
+        chave: "dist|raio=" + cfgD.raio + limD.chave + "|metrica=" + cfgD.metrica +
+          (cfgD.homonimos ? "|homonimos=1" : ""),
         rotulo: "Círculos por distância · raio " + cfgD.raio + " km · " + limD.rotulo +
-          " · objetivo: " + (cfgD.metrica === "pop" ? "população" : "nº de cidades"),
+          " · objetivo: " + (cfgD.metrica === "pop" ? "população" : "nº de cidades") +
+          (cfgD.homonimos ? " · homônimas juntas" : ""),
       };
     }
     if (modoAtual === "pop") {
       var cfgP = {
         popAlvo: num("cfg-pop-alvo", 10000, 100000000),
+        homonimos: $("cfg-pop-homonimos").checked,
       };
       var limP = lerLimite("pop", cfgP);
       return {
         cfg: cfgP,
-        chave: "pop|alvo=" + cfgP.popAlvo + limP.chave,
+        chave: "pop|alvo=" + cfgP.popAlvo + limP.chave +
+          (cfgP.homonimos ? "|homonimos=1" : ""),
         rotulo: "Círculos por população · " + fmtInt(cfgP.popAlvo) + " hab. por círculo · " +
-          limP.rotulo,
+          limP.rotulo + (cfgP.homonimos ? " · homônimas juntas" : ""),
       };
     }
     var cfgF = {
@@ -322,40 +349,52 @@
         : "Não encontrei nenhum município com esse nome.", "erro");
       return;
     }
-    if (res.status === "ambiguo") {
+    if (res.status === "ambiguo" && !jogo.cfg.homonimos) {
       var ufs = res.municipios.map(function (m) { return m.uf; }).join(", ");
       feedback("Há " + res.municipios.length + " municípios com esse nome (" + ufs +
         "). Especifique: " + res.municipios[0].nome + ", UF.", "erro");
       return;
     }
-    var mun = res.municipios[0];
-    var r = jogo.palpitar(mun);
+    // com a opção de homônimas ligada, um nome ambíguo entra inteiro:
+    // todas as cidades daquele nome, num palpite só
+    var muns = res.municipios;
+    var r = jogo.palpitar(muns);
     if (r.tipo === "repetido") {
-      feedback("Você já usou " + nomeUF(mun) + ".", "erro");
+      feedback(muns.length > 1
+        ? "Você já usou todas as cidades chamadas " + muns[0].nome + "."
+        : "Você já usou " + nomeUF(muns[0]) + ".", "erro");
       return;
     }
     if (r.tipo !== "ok") return;
 
     var j = r.jogada;
-    elSvg("path", { d: caminhoGeodesico(mun.lat, mun.lng, j.raioKm), "class": "circulo-cobertura" }, gCirculos);
+    j.circulos.forEach(function (c) {
+      elSvg("path", { d: caminhoGeodesico(c.mun.lat, c.mun.lng, c.raioKm), "class": "circulo-cobertura" }, gCirculos);
+    });
     j.novos.forEach(function (idx) { pontos[idx].classList.add("coberta"); });
-    pontos[mun.idx].setAttribute("class", "cidade centro-palpite");
-    elSvg("text", {
-      x: (proj.x(mun.lng) + 4).toFixed(1),
-      y: (proj.y(mun.lat) - 3).toFixed(1),
-      "class": "rotulo-cidade centro-palpite",
-    }, gMarcas).textContent = mun.nome;
+    j.circulos.forEach(function (c) {
+      pontos[c.mun.idx].setAttribute("class", "cidade centro-palpite");
+      elSvg("text", {
+        x: proj.x(c.mun.lng).toFixed(1),
+        y: proj.y(c.mun.lat).toFixed(1),
+        "class": "rotulo-cidade centro-palpite",
+      }, gMarcas).textContent = c.mun.nome;
+    });
 
+    var nome = j.muns.length === 1
+      ? nomeUF(j.muns[0])
+      : j.muns[0].nome + " ×" + j.muns.length + " (" +
+        j.muns.map(function (m) { return m.uf; }).join(", ") + ")";
     var ordem = jogo.jogadas.length;
-    var detalhe = jogoModo === "pop"
-      ? "raio " + Math.round(j.raioKm) + " km · +" + fmtPop(j.ganhoPop) + " hab. novos · +" + fmtInt(j.novos.length) + " cidades"
+    var detalhe = jogoModo === "pop" && j.circulos.length === 1
+      ? "raio " + Math.round(j.circulos[0].raioKm) + " km · +" + fmtPop(j.ganhoPop) + " hab. novos · +" + fmtInt(j.novos.length) + " cidades"
       : "+" + fmtPop(j.ganhoPop) + " hab. · +" + fmtInt(j.novos.length) + " cidades";
     var item = document.createElement("div");
     item.className = "item-jogada";
-    item.innerHTML = "<b>" + ordem + ". " + nomeUF(mun) + "</b><br><small>" + detalhe + "</small>";
+    item.innerHTML = "<b>" + ordem + ". " + nome + "</b><br><small>" + detalhe + "</small>";
     $("lista-jogo").prepend(item);
 
-    feedback("✔ " + nomeUF(mun) + " — " + detalhe, "ok");
+    feedback("✔ " + nome + " — " + detalhe, "ok");
     $("input-palpite").value = "";
     atualizarPlacar();
     if (jogo.encerrado) fimDeJogo(false);
@@ -390,8 +429,8 @@
   function revelarAlvo(mun, faixa, faltante) {
     pontos[mun.idx].setAttribute("class", "cidade " + (faltante ? "faltante" : "achada"));
     elSvg("text", {
-      x: (proj.x(mun.lng) + 4).toFixed(1),
-      y: (proj.y(mun.lat) - 3).toFixed(1),
+      x: proj.x(mun.lng).toFixed(1),
+      y: proj.y(mun.lat).toFixed(1),
       "class": "rotulo-cidade" + (faltante ? " faltante" : ""),
     }, gMarcas).textContent = mun.nome;
     if (faixa._elContador) {
@@ -654,6 +693,10 @@
   });
   $("config").addEventListener("submit", function (ev) { ev.preventDefault(); });
 
+  $("btn-satelite").addEventListener("click", function () {
+    setSatelite(!svg.classList.contains("satelite"));
+  });
+
   $("btn-recordes").addEventListener("click", abrirRecordes);
   $("btn-fechar-recordes").addEventListener("click", function () { $("modal-recordes").hidden = true; });
   $("modal-recordes").addEventListener("click", function (ev) {
@@ -670,4 +713,7 @@
   // estado inicial
   $("descricao-modo").textContent = DESCRICOES[modoAtual];
   atualizarRecordeUI();
+  try {
+    if (localStorage.getItem(LS_SATELITE) === "1") setSatelite(true);
+  } catch (e) {}
 })();
