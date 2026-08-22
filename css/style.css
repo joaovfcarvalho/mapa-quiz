@@ -400,6 +400,9 @@ main {
   stroke: rgba(255,255,255,.85);
   stroke-width: calc(3px * var(--zoom, 1));
 }
+/* faixas/células estreitas demais para o rótulo no zoom atual (grade fina,
+   mapa afastado): o JS liga esta classe e os rótulos somem até aproximar */
+#mapa.sem-rotulos-faixa .contador-faixa { display: none; }
 .rotulo-cidade {
   font-size: calc(8.5px * var(--zoom, 1));
   fill: #14421f;

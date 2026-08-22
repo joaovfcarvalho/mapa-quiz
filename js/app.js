@@ -23,11 +23,18 @@
   var svg = $("mapa");
   var vbBase = { x: 0, y: 0, w: proj.w, h: proj.h };
   var vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
+  // fração visível máxima em que os rótulos das faixas ainda cabem no espaço
+  // de cada faixa/célula (calculada em desenharFaixas)
+  var zoomMaxRotulos = Infinity;
+  function atualizarRotulosFaixas() {
+    svg.classList.toggle("sem-rotulos-faixa", vb.w / vbBase.w > zoomMaxRotulos);
+  }
   function aplicarViewBox() {
     svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h);
     // fração do mapa visível — o CSS multiplica traços, pontos e letras por
     // esse fator para que fiquem sempre com o mesmo tamanho na tela
     svg.style.setProperty("--zoom", (vb.w / vbBase.w).toFixed(4));
+    atualizarRotulosFaixas();
   }
   aplicarViewBox();
 
@@ -480,6 +487,8 @@
   // Partida
   // ------------------------------------------------------------------
   function limparCamadasDeJogo() {
+    zoomMaxRotulos = Infinity;
+    atualizarRotulosFaixas();
     gFaixas.innerHTML = "";
     gCirculos.innerHTML = "";
     gMarcas.innerHTML = "";
@@ -1261,6 +1270,19 @@
     var ext = extentDe(jogo.universo, 0.4);
     var exX1 = proj.x(ext.lngMin), exX2 = proj.x(ext.lngMax);
     var exY1 = proj.y(ext.latMax), exY2 = proj.y(ext.latMin);
+    // Os rótulos ("A1 0/2") têm tamanho fixo na tela; numa faixa estreita
+    // demais (grade de 50 km no Brasil inteiro, por exemplo) eles cobririam
+    // o mapa. Até que fração visível o rótulo cabe no espaço da faixa? Além
+    // dela, aplicarViewBox esconde os rótulos até o zoom aproximar.
+    var f0 = jogo.faixas[0];
+    if (!f0) zoomMaxRotulos = Infinity;
+    else if (cfg.tipo === "lat") zoomMaxRotulos = (proj.y(f0.latInf) - proj.y(f0.latSup)) / 16;
+    else if (cfg.tipo === "lng") zoomMaxRotulos = (proj.x(f0.lngLeste) - proj.x(f0.lngOeste)) / 34;
+    else if (cfg.tipo === "grade") zoomMaxRotulos = Math.min(
+      (proj.x(f0.lngLeste) - proj.x(f0.lngOeste)) / 60,
+      (proj.y(f0.latInf) - proj.y(f0.latSup)) / 16);
+    else zoomMaxRotulos = ((proj.y(0) - proj.y(1)) / GEO.KM_POR_GRAU) * cfg.largura / 16;
+    atualizarRotulosFaixas();
     jogo.faixas.forEach(function (f) {
       var cx, cy;
       if (cfg.tipo === "lat") {
