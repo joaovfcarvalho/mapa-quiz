@@ -13,6 +13,16 @@ var GEO = (function () {
     return 2 * R_TERRA * Math.asin(Math.sqrt(a));
   }
 
+  // Rumo inicial (graus, 0 = norte, sentido horário) do ponto 1 ao ponto 2.
+  function rumo(lat1, lng1, lat2, lng2) {
+    var dLng = (lng2 - lng1) * RAD;
+    var la1 = lat1 * RAD;
+    var la2 = lat2 * RAD;
+    var y = Math.sin(dLng) * Math.cos(la2);
+    var x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dLng);
+    return (Math.atan2(y, x) / RAD + 360) % 360;
+  }
+
   // Ponto de destino a partir de (lat,lng), rumo em graus e distância em km.
   function destino(lat, lng, rumoGraus, distKm) {
     var d = distKm / R_TERRA;
@@ -52,6 +62,9 @@ var GEO = (function () {
       h: (bounds.latMax - bounds.latMin) * escala,
       x: function (lng) { return (lng - bounds.lngMin) * kx * escala; },
       y: function (lat) { return (bounds.latMax - lat) * escala; },
+      // inversas (px do mapa -> graus), para interpretar cliques no mapa
+      lngDe: function (x) { return x / (kx * escala) + bounds.lngMin; },
+      latDe: function (y) { return bounds.latMax - y / escala; },
     };
   }
 
@@ -59,6 +72,7 @@ var GEO = (function () {
     R_TERRA: R_TERRA,
     KM_POR_GRAU: 111.32,
     haversineKm: haversineKm,
+    rumo: rumo,
     destino: destino,
     circuloGeodesico: circuloGeodesico,
     criarProjecao: criarProjecao,

@@ -123,6 +123,66 @@
     p.style.fill = corPop(mun.pop);
   }
 
+  // Cor do palpite no "Onde estou?" pela distância até o secreto: azul
+  // (longe) → amarelo → vermelho (perto). Mesmos tons da legenda (CSS).
+  var COR_DIST = [[86, 119, 194], [245, 208, 76], [206, 32, 41]];
+  function corDist(distKm) {
+    var t = (1 - Math.min(distKm, 1500) / 1500) * (COR_DIST.length - 1);
+    var i = Math.min(COR_DIST.length - 2, Math.floor(t));
+    var f = t - i;
+    var a = COR_DIST[i], b = COR_DIST[i + 1];
+    return "rgb(" + Math.round(a[0] + (b[0] - a[0]) * f) + "," +
+      Math.round(a[1] + (b[1] - a[1]) * f) + "," +
+      Math.round(a[2] + (b[2] - a[2]) * f) + ")";
+  }
+
+  // ------------------------------------------------------------------
+  // Contagem local de municípios já citados (alimenta a página de
+  // estatísticas "pontos cegos"): id do IBGE -> nº de partidas em que a
+  // cidade foi citada. Cada cidade conta no máximo uma vez por partida.
+  // ------------------------------------------------------------------
+  var LS_CITADAS = "mapaquiz.citadas.v1";
+  var tallyCitadas = null;
+  var citadasPartida = new Set();
+  function registrarCitadas(muns) {
+    if (tallyCitadas === null) {
+      try { tallyCitadas = JSON.parse(localStorage.getItem(LS_CITADAS)) || {}; }
+      catch (e) { tallyCitadas = {}; }
+    }
+    var mudou = false;
+    muns.forEach(function (m) {
+      if (citadasPartida.has(m.idx)) return;
+      citadasPartida.add(m.idx);
+      tallyCitadas[m.id] = (tallyCitadas[m.id] || 0) + 1;
+      mudou = true;
+    });
+    if (mudou) {
+      try { localStorage.setItem(LS_CITADAS, JSON.stringify(tallyCitadas)); } catch (e) {}
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Progresso da maratona por região ("BR" ou sigla da UF)
+  // ------------------------------------------------------------------
+  var LS_MARATONA = "mapaquiz.maratona.v1";
+  function lerMaratonas() {
+    try { return JSON.parse(localStorage.getItem(LS_MARATONA)) || {}; }
+    catch (e) { return {}; }
+  }
+  function carregarMaratona(regiao) {
+    return lerMaratonas()[regiao] || null;
+  }
+  function salvarMaratona(regiao, dados) {
+    var tudo = lerMaratonas();
+    tudo[regiao] = dados;
+    try { localStorage.setItem(LS_MARATONA, JSON.stringify(tudo)); } catch (e) {}
+  }
+  function zerarMaratona(regiao) {
+    var tudo = lerMaratonas();
+    delete tudo[regiao];
+    try { localStorage.setItem(LS_MARATONA, JSON.stringify(tudo)); } catch (e) {}
+  }
+
   // ------------------------------------------------------------------
   // Formatação
   // ------------------------------------------------------------------
@@ -221,12 +281,18 @@
   var limiteSeg = null;     // limite de tempo da partida em segundos (null = sem limite)
   var elFaixasLista = null; // itens da lista lateral do modo faixas
   var topnChips = null;     // rank -> chip da lista do modo Top N
+  var dicasUsadas = 0;      // dicas pedidas na partida (faixas/topn: −1 acerto cada)
+  var maratonaContadores = null; // contadores da lista lateral da maratona
+  var cliqueInicio = null;  // posição do mousedown para distinguir clique de arrasto
 
   var DESCRICOES = {
     dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo da região antes de acabarem os palpites — ou o tempo.",
     pop: "Cada cidade chutada vira o centro de um círculo que cresce até somar a população alvo. Escolha bem para cobrir o máximo da região.",
     faixas: "O mapa é dividido em faixas (ou numa grade de quadrados) e você precisa nomear as maiores cidades de cada uma. A cor da faixa vai se intensificando conforme você acerta.",
     topn: "O modo raiz: cite de memória as N maiores cidades da região. Cada acerto acende a cidade no mapa e mostra a posição no ranking.",
+    ondestou: "O jogo sorteia um município secreto e cada palpite responde com a distância e a direção até ele. Encontre-o no menor número de palpites — a cor dos pontos esquenta conforme você chega perto.",
+    clique: "O jogo mostra o nome de um município e você clica no mapa onde acha que ele fica. Até 15 km de erro vale 100%; a pontuação cai até zerar em 500 km.",
+    maratona: "O desafio definitivo: cite todos os municípios da região, no seu ritmo. O progresso e o tempo ficam salvos neste navegador — pause e continue quando quiser.",
   };
 
   // ------------------------------------------------------------------
@@ -265,31 +331,71 @@
         raio: num("cfg-dist-raio", 10, 2000),
         metrica: $("cfg-dist-metrica").value,
         homonimos: $("cfg-dist-homonimos").checked,
+        bloqueio: $("cfg-dist-bloqueio").checked,
         uf: uf || undefined,
       };
       var limD = lerLimite("dist", cfgD);
       return {
         cfg: cfgD,
         chave: "dist|raio=" + cfgD.raio + limD.chave + "|metrica=" + cfgD.metrica +
-          (cfgD.homonimos ? "|homonimos=1" : "") + sufChave,
+          (cfgD.homonimos ? "|homonimos=1" : "") + (cfgD.bloqueio ? "|bloqueio=1" : "") + sufChave,
         rotulo: "Círculos por distância · raio " + cfgD.raio + " km · " + limD.rotulo +
           " · objetivo: " + (cfgD.metrica === "pop" ? "população" : "nº de cidades") +
-          (cfgD.homonimos ? " · homônimas juntas" : "") + sufRotulo,
+          (cfgD.homonimos ? " · homônimas juntas" : "") +
+          (cfgD.bloqueio ? " · coberta não vale" : "") + sufRotulo,
       };
     }
     if (modoAtual === "pop") {
       var cfgP = {
         popAlvo: num("cfg-pop-alvo", 10000, 100000000),
         homonimos: $("cfg-pop-homonimos").checked,
+        bloqueio: $("cfg-pop-bloqueio").checked,
         uf: uf || undefined,
       };
       var limP = lerLimite("pop", cfgP);
       return {
         cfg: cfgP,
         chave: "pop|alvo=" + cfgP.popAlvo + limP.chave +
-          (cfgP.homonimos ? "|homonimos=1" : "") + sufChave,
+          (cfgP.homonimos ? "|homonimos=1" : "") + (cfgP.bloqueio ? "|bloqueio=1" : "") + sufChave,
         rotulo: "Círculos por população · " + fmtInt(cfgP.popAlvo) + " hab. por círculo · " +
-          limP.rotulo + (cfgP.homonimos ? " · homônimas juntas" : "") + sufRotulo,
+          limP.rotulo + (cfgP.homonimos ? " · homônimas juntas" : "") +
+          (cfgP.bloqueio ? " · coberta não vale" : "") + sufRotulo,
+      };
+    }
+    if (modoAtual === "ondestou" || modoAtual === "clique") {
+      var minPop = parseInt($(modoAtual === "ondestou" ? "cfg-onde-pool" : "cfg-clique-pool").value, 10) || 0;
+      var pool = DADOS.municipios.filter(function (m) {
+        return m.pop >= minPop && (!uf || m.uf === uf);
+      });
+      var nomePool = {
+        500000: "500 mil+ hab.", 100000: "100 mil+ hab.", 50000: "50 mil+ hab.",
+        20000: "20 mil+ hab.", 0: "qualquer porte",
+      }[minPop];
+      if (modoAtual === "ondestou") {
+        if (pool.length < 2) {
+          return { erro: "A região não tem municípios suficientes desse porte para o sorteio — escolha um porte menor." };
+        }
+        return {
+          cfg: { minPop: minPop, uf: uf || undefined },
+          chave: "ondestou|pool=" + minPop + sufChave,
+          rotulo: "Onde estou? · secreto de " + nomePool + " (" + fmtInt(pool.length) + " possíveis)" + sufRotulo,
+        };
+      }
+      if (pool.length === 0) {
+        return { erro: "A região não tem municípios desse porte — escolha um porte menor." };
+      }
+      var rodadas = Math.min(num("cfg-clique-rodadas", 3, 50), pool.length);
+      return {
+        cfg: { minPop: minPop, rodadas: rodadas, uf: uf || undefined },
+        chave: "clique|pool=" + minPop + "|rodadas=" + rodadas + sufChave,
+        rotulo: "Onde fica? · " + rodadas + " rodadas · cidades de " + nomePool + sufRotulo,
+      };
+    }
+    if (modoAtual === "maratona") {
+      return {
+        cfg: { uf: uf || undefined },
+        chave: "maratona" + sufChave,
+        rotulo: "Maratona: todos os municípios" + (uf ? " de " + NOMES_UF[uf] : " do Brasil"),
       };
     }
     if (modoAtual === "topn") {
@@ -345,6 +451,20 @@
       el.innerHTML = "⚠️ " + lido.erro;
       return;
     }
+    if (modoAtual === "maratona") {
+      // na maratona o "recorde" é o próprio progresso salvo da região
+      var regiao = ufDoJogo() || "BR";
+      var total = ufDoJogo()
+        ? DADOS.municipios.filter(function (m) { return m.uf === regiao; }).length
+        : DADOS.total;
+      var prog = carregarMaratona(regiao);
+      var n = prog && prog.ids ? prog.ids.length : 0;
+      el.innerHTML = n === 0
+        ? "🏃 Você ainda não começou a maratona desta região (" + fmtInt(total) + " municípios te esperam)."
+        : "🏃 Progresso salvo: <b>" + fmtInt(n) + "</b> de " + fmtInt(total) +
+          " municípios (<b>" + fmtPct(n / total) + "</b>) em " + fmtTempo(prog.tempoSeg || 0) + ".";
+      return;
+    }
     var rec = RECORDES.obter(lido.chave);
     if (!rec) {
       el.innerHTML = "🏅 Você ainda não jogou nesta configuração.";
@@ -384,17 +504,28 @@
     jogoModo = modoAtual;
     jogoChave = lido.chave;
     jogoRotulo = lido.rotulo;
+    var tempoPrevio = 0;
     if (modoAtual === "dist") jogo = new MODOS.JogoCirculosDistancia(lido.cfg);
     else if (modoAtual === "pop") jogo = new MODOS.JogoCirculosPopulacao(lido.cfg);
     else if (modoAtual === "topn") jogo = new MODOS.JogoTopN(lido.cfg);
-    else jogo = new MODOS.JogoFaixas(lido.cfg);
+    else if (modoAtual === "ondestou") jogo = new MODOS.JogoOndeEstou(lido.cfg);
+    else if (modoAtual === "clique") jogo = new MODOS.JogoClique(lido.cfg);
+    else if (modoAtual === "maratona") {
+      var prog = carregarMaratona(lido.cfg.uf || "BR");
+      lido.cfg.idsIniciais = prog && prog.ids ? prog.ids : [];
+      tempoPrevio = prog && prog.tempoSeg ? prog.tempoSeg : 0;
+      jogo = new MODOS.JogoMaratona(lido.cfg);
+    } else jogo = new MODOS.JogoFaixas(lido.cfg);
     aplicarRegiao(jogo.cfg.uf || null);
     enquadrarUniverso(jogo);
 
+    citadasPartida = new Set();
+    dicasUsadas = 0;
     $("area-jogo").hidden = false;
     $("fim-jogo").hidden = true;
     $("feedback").textContent = "";
     $("feedback").className = "";
+    $("dica-atual").hidden = true;
     $("lista-jogo").innerHTML = "";
     $("input-palpite").value = "";
     $("input-palpite").disabled = false;
@@ -403,26 +534,72 @@
     $("btn-iniciar").textContent = "↺ Reiniciar";
     setConfigTravada(true);
 
+    // o modo de clique esconde o campo de texto (a resposta é no mapa) e
+    // todos os pontos de cidade — nada pode entregar as posições
+    $("linha-palpite").hidden = jogoModo === "clique";
+    svg.classList.toggle("modo-clique", jogoModo === "clique");
+    $("alvo-clique").hidden = jogoModo !== "clique";
+
+    var TEM_DICA = { faixas: 1, topn: 1, ondestou: 1, maratona: 1 };
+    $("btn-dica").hidden = !TEM_DICA[jogoModo];
+    atualizarBotaoDica();
+    $("btn-zerar-maratona").hidden = jogoModo !== "maratona";
+    $("btn-encerrar").textContent =
+      jogoModo === "maratona" ? "⏸ Pausar (o progresso fica salvo)" :
+      jogoModo === "ondestou" ? "🏳️ Desistir / revelar o município" :
+      jogoModo === "clique" ? "🏳️ Encerrar a partida" :
+      "🏳️ Encerrar / revelar respostas";
+
     if (jogoModo === "faixas") {
       desenharFaixas(jogo);
       montarListaFaixas(jogo);
     } else if (jogoModo === "topn") {
       montarListaTopN(jogo);
+    } else if (jogoModo === "maratona") {
+      // repinta o que já foi achado em sessões anteriores (sem rótulos: podem
+      // ser milhares de cidades)
+      jogo.universo.forEach(function (m) {
+        if (jogo.achados.has(m.idx)) pintarPonto(m, "achada");
+      });
+      montarListaMaratona(jogo);
+    } else if (jogoModo === "clique") {
+      mostrarAlvoClique();
     }
-    $("legenda-pop").hidden = false;
+    $("legenda-pop").hidden = jogoModo === "ondestou" || jogoModo === "clique";
+    $("legenda-dist").hidden = jogoModo !== "ondestou";
     limiteSeg = jogo.cfg.tempoMin ? jogo.cfg.tempoMin * 60 : null;
-    inicioMs = Date.now();
+    inicioMs = Date.now() - tempoPrevio * 1000;
     atualizarPlacar();
 
     clearInterval(timerInt);
     timerInt = setInterval(tique, 1000);
-    $("input-palpite").focus();
+    if (jogoModo !== "clique") $("input-palpite").focus();
+  }
+
+  function atualizarBotaoDica() {
+    var btn = $("btn-dica");
+    if (jogoModo === "maratona") {
+      btn.textContent = "💡 Dica (grátis)";
+      btn.title = "Mostra pistas do maior município que ainda falta";
+      btn.disabled = false;
+      return;
+    }
+    var restantes = Math.max(0, 3 - dicasUsadas);
+    btn.textContent = "💡 Dica (" + restantes + ")";
+    btn.title = jogoModo === "ondestou"
+      ? "Revela UF, primeira letra e população do secreto — cada dica custa +1 palpite"
+      : "Pistas do maior alvo que falta — cada dica desconta 1 acerto do resultado";
+    btn.disabled = restantes === 0 || !jogo || jogo.encerrado;
   }
 
   function tique() {
     if (jogo && !jogo.encerrado && limiteSeg !== null && tempoDecorrido() >= limiteSeg) {
       fimDeJogo(true, true);
       return;
+    }
+    // fechar o navegador no meio da maratona não pode perder o relógio
+    if (jogoModo === "maratona" && jogo && !jogo.encerrado && tempoDecorrido() % 30 === 0) {
+      salvarProgressoMaratona();
     }
     atualizarPlacar();
   }
@@ -435,6 +612,7 @@
     if (!jogo) return;
     var linhas = [];
     var pct = jogo.pct();
+    var barra = pct;
     if (jogoModo === "dist" && jogo.cfg.metrica === "cidades") {
       linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b> de " +
         fmtInt(jogo.universo.length) + " (<b>" + fmtPct(pct) + "</b>)");
@@ -447,6 +625,26 @@
       linhas.push("Respostas certas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
         " (<b>" + fmtPct(pct) + "</b>) · " + jogo.faixas.length +
         (jogo.cfg.tipo === "grade" ? " células" : " faixas"));
+    } else if (jogoModo === "ondestou") {
+      linhas.push("Palpites: <b>" + jogo.palpites.length + "</b>" +
+        (jogo.dicasDadas ? " · Dicas: <b>" + jogo.dicasDadas + "</b> (+1 palpite cada)" : ""));
+      if (jogo.melhorDist < Infinity) {
+        linhas.push("Mais perto que você chegou: <b>" + fmtInt(Math.round(jogo.melhorDist)) + " km</b>");
+      }
+      // a barra mostra a proximidade do melhor palpite, não uma % de acertos
+      barra = jogo.melhorDist === Infinity ? 0 : Math.max(0, 1 - Math.min(jogo.melhorDist, 1500) / 1500);
+    } else if (jogoModo === "clique") {
+      linhas.push("Rodada: <b>" + Math.min(jogo.resultados.length + 1, jogo.alvos.length) +
+        "</b> de " + jogo.alvos.length);
+      if (jogo.resultados.length > 0) {
+        linhas.push("Pontuação: <b>" + fmtPct(pct) + "</b> · erro médio <b>" +
+          fmtInt(Math.round(jogo.erroMedioKm())) + " km</b>");
+      }
+      barra = jogo.alvos.length === 0 ? 0 : jogo.resultados.length / jogo.alvos.length;
+    } else if (jogoModo === "maratona") {
+      linhas.push("Municípios: <b>" + fmtInt(jogo.achados.size) + "</b> de " +
+        fmtInt(jogo.alvosTotal) + " (<b>" + fmtPct(pct) + "</b>)");
+      linhas.push("Nesta sessão: <b>+" + fmtInt(jogo.achadosSessao) + "</b>");
     } else {
       linhas.push("Cidades achadas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
         " (<b>" + fmtPct(pct) + "</b>)");
@@ -458,10 +656,11 @@
       var restante = Math.max(0, limiteSeg - tempoDecorrido());
       linhas.push("⏱️ Tempo restante: <b>" + fmtTempo(restante) + "</b> de " + fmtTempo(limiteSeg));
     } else {
-      linhas.push("Tempo: <b>" + fmtTempo(tempoDecorrido()) + "</b>");
+      linhas.push((jogoModo === "maratona" ? "Tempo total: <b>" : "Tempo: <b>") +
+        fmtTempo(tempoDecorrido()) + "</b>");
     }
     $("placar-linhas").innerHTML = linhas.map(function (l) { return "<div>" + l + "</div>"; }).join("");
-    $("barra-progresso").style.width = (pct * 100).toFixed(1) + "%";
+    $("barra-progresso").style.width = (barra * 100).toFixed(1) + "%";
   }
 
   function feedback(msg, classe) {
@@ -474,6 +673,9 @@
     if (!jogo || jogo.encerrado) return;
     var texto = $("input-palpite").value;
     if (jogoModo === "faixas" || jogoModo === "topn") return palpitarAlvos(texto);
+    if (jogoModo === "maratona") return palpitarMaratona(texto);
+    if (jogoModo === "ondestou") return palpitarOnde(texto);
+    if (jogoModo === "clique") return; // a resposta é um clique no mapa
 
     var res = DADOS.buscar(texto);
     if (res.status === "vazio") return;
@@ -500,11 +702,17 @@
     }
     // com a opção de homônimas ligada, um nome ambíguo entra inteiro:
     // todas as cidades daquele nome, num palpite só
+    registrarCitadas(muns);
     var r = jogo.palpitar(muns);
     if (r.tipo === "repetido") {
       feedback(muns.length > 1
         ? "Você já usou todas as cidades chamadas " + muns[0].nome + "."
         : "Você já usou " + nomeUF(muns[0]) + ".", "erro");
+      return;
+    }
+    if (r.tipo === "coberto") {
+      feedback(nomeUF(r.mun) + " já está dentro de um círculo — cidade coberta não vale como palpite nesta partida.", "erro");
+      $("input-palpite").select();
       return;
     }
     if (r.tipo !== "ok") return;
@@ -556,11 +764,19 @@
       return;
     }
     if (r.tipo === "fora_regiao") {
+      registrarCitadas(r.municipios);
       feedback(r.municipios[0].nome + " fica fora da região do jogo (só " +
         NOMES_UF[jogo.cfg.uf] + ").", "erro");
       return;
     }
+    if (r.tipo === "repetido") {
+      registrarCitadas([r.mun]);
+      feedback("Você já acertou " + nomeUF(r.mun) + ".", "erro");
+      $("input-palpite").select();
+      return;
+    }
     if (r.tipo === "nao_alvo") {
+      registrarCitadas(r.municipios);
       var naoAlvo = jogoModo === "topn"
         ? " não está entre as " + jogo.alvosTotal + " maiores."
         : " não está entre as respostas.";
@@ -570,6 +786,7 @@
       $("input-palpite").select();
       return;
     }
+    registrarCitadas(r.revelados.map(function (par) { return par.mun; }));
     r.revelados.forEach(function (par) {
       revelarAlvo(par.mun, par.faixa || null, false, par.rank);
     });
@@ -621,6 +838,292 @@
     f._elArea.style.opacity = frac.toFixed(3);
   }
 
+  // ---------------- modo Onde estou? ----------------
+  var SETAS_RUMO = [
+    "⬆ norte", "↗ nordeste", "➡ leste", "↘ sudeste",
+    "⬇ sul", "↙ sudoeste", "⬅ oeste", "↖ noroeste",
+  ];
+  function setaDoRumo(graus) {
+    return SETAS_RUMO[Math.round(graus / 45) % 8];
+  }
+
+  function palpitarOnde(texto) {
+    var r = jogo.palpitar(texto);
+    if (r.tipo === "vazio") return;
+    if (r.tipo === "nao_encontrado") {
+      feedback(r.ufErrada
+        ? "Esse município existe, mas não nessa UF."
+        : "Não encontrei nenhum município com esse nome.", "erro");
+      return;
+    }
+    if (r.tipo === "fora_regiao") {
+      registrarCitadas(r.municipios);
+      feedback(r.municipios[0].nome + " fica fora da região do jogo (só " +
+        NOMES_UF[jogo.cfg.uf] + ").", "erro");
+      return;
+    }
+    if (r.tipo === "ambiguo") {
+      var ufs = r.municipios.map(function (m) { return m.uf; }).join(", ");
+      feedback("Há " + r.municipios.length + " municípios com esse nome (" + ufs +
+        "). Especifique: " + r.municipios[0].nome + ", UF.", "erro");
+      return;
+    }
+    if (r.tipo === "repetido") {
+      feedback("Você já chutou " + nomeUF(r.mun) + ".", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo !== "ok") return;
+
+    registrarCitadas([r.mun]);
+    var km = fmtInt(Math.round(r.distKm)) + " km";
+    var item = document.createElement("div");
+    item.className = "item-jogada";
+    if (r.acertou) {
+      pintarPonto(r.mun, "centro-palpite");
+      elSvg("text", {
+        x: proj.x(r.mun.lng).toFixed(1),
+        y: proj.y(r.mun.lat).toFixed(1),
+        "class": "rotulo-cidade centro-palpite",
+      }, gMarcas).textContent = r.mun.nome;
+      item.innerHTML = "<b>" + jogo.palpites.length + ". " + nomeUF(r.mun) + "</b><br><small>🎯 é aqui!</small>";
+      $("lista-jogo").prepend(item);
+      $("input-palpite").value = "";
+      atualizarPlacar();
+      fimDeJogo(false);
+      return;
+    }
+    var p = pontos[r.mun.idx];
+    p.setAttribute("class", "cidade achada");
+    p.style.fill = corDist(r.distKm);
+    elSvg("text", {
+      x: proj.x(r.mun.lng).toFixed(1),
+      y: proj.y(r.mun.lat).toFixed(1),
+      "class": "rotulo-cidade",
+    }, gMarcas).textContent = r.mun.nome;
+    var direcao = km + " " + setaDoRumo(r.rumo);
+    item.innerHTML = "<b>" + jogo.palpites.length + ". " + nomeUF(r.mun) +
+      "</b><br><small>" + direcao + "</small>";
+    $("lista-jogo").prepend(item);
+    feedback("📍 " + r.mun.nome + ": o secreto está a " + direcao + " daqui.", "ok");
+    $("input-palpite").value = "";
+    atualizarPlacar();
+  }
+
+  // ---------------- modo Maratona ----------------
+  function palpitarMaratona(texto) {
+    var r = jogo.palpitar(texto);
+    if (r.tipo === "vazio") return;
+    if (r.tipo === "nao_encontrado") {
+      feedback(r.ufErrada
+        ? "Esse município existe, mas não nessa UF."
+        : "Não encontrei nenhum município com esse nome.", "erro");
+      return;
+    }
+    if (r.tipo === "fora_regiao") {
+      registrarCitadas(r.municipios);
+      feedback(r.municipios[0].nome + " fica fora da região do jogo (só " +
+        NOMES_UF[jogo.cfg.uf] + ").", "erro");
+      return;
+    }
+    if (r.tipo === "repetido") {
+      registrarCitadas([r.mun]);
+      feedback("Você já citou " + nomeUF(r.mun) + ".", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo !== "ok") return;
+
+    registrarCitadas(r.revelados.map(function (par) { return par.mun; }));
+    r.revelados.forEach(function (par) {
+      pintarPonto(par.mun, "achada");
+      atualizarContadorMaratona(par.mun);
+    });
+    var nomes = r.revelados.map(function (par) {
+      return nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab.";
+    });
+    feedback("✔ " + nomes.join(" · "), "ok");
+    $("input-palpite").value = "";
+    salvarProgressoMaratona();
+    atualizarPlacar();
+    atualizarRecordeUI(); // o banner de progresso salvo acompanha em tempo real
+    if (r.completo) fimSessaoMaratona(true);
+  }
+
+  function salvarProgressoMaratona() {
+    if (jogoModo !== "maratona" || !jogo) return;
+    salvarMaratona(jogo.cfg.uf || "BR", {
+      ids: jogo.idsAchados(),
+      tempoSeg: tempoDecorrido(),
+    });
+  }
+
+  // Lista lateral da maratona: contadores por UF (Brasil) ou por porte (UF).
+  function montarListaMaratona(jogo) {
+    var alvo = $("lista-jogo");
+    alvo.innerHTML = "";
+    var item = document.createElement("div");
+    item.className = "item-faixa";
+    maratonaContadores = {};
+    var linhas;
+    if (!jogo.cfg.uf) {
+      var porUF = {};
+      jogo.universo.forEach(function (m) {
+        if (!porUF[m.uf]) porUF[m.uf] = { total: 0, achados: 0 };
+        porUF[m.uf].total++;
+        if (jogo.achados.has(m.idx)) porUF[m.uf].achados++;
+      });
+      linhas = Object.keys(porUF).sort().map(function (uf) {
+        var c = porUF[uf];
+        maratonaContadores[uf] = c;
+        return "<div class='linha-porte'><span>" + uf + "</span><b id='mar-cont-" + uf + "'>" +
+          c.achados + "/" + c.total + "</b></div>";
+      });
+    } else {
+      var portes = FAIXAS_POP.map(function (fx) {
+        return { min: fx.min, rotulo: fx.rotulo, total: 0, achados: 0 };
+      });
+      jogo.universo.forEach(function (m) {
+        for (var i = 0; i < portes.length; i++) {
+          if (m.pop >= portes[i].min) {
+            portes[i].total++;
+            if (jogo.achados.has(m.idx)) portes[i].achados++;
+            break;
+          }
+        }
+      });
+      linhas = portes.map(function (p, i) {
+        if (p.total === 0) return "";
+        maratonaContadores["porte" + i] = p;
+        return "<div class='linha-porte'><span>" + p.rotulo + "</span><b id='mar-cont-porte" + i + "'>" +
+          p.achados + "/" + p.total + "</b></div>";
+      });
+    }
+    item.innerHTML = "<div class='titulo-faixa'><span>Progresso por " +
+      (jogo.cfg.uf ? "porte" : "UF") + "</span></div><div class='portes portes-mar'>" +
+      linhas.join("") + "</div>";
+    alvo.appendChild(item);
+  }
+
+  function atualizarContadorMaratona(mun) {
+    if (!maratonaContadores) return;
+    var chave = null;
+    if (!jogo.cfg.uf) {
+      chave = mun.uf;
+    } else {
+      for (var i = 0; i < FAIXAS_POP.length; i++) {
+        if (mun.pop >= FAIXAS_POP[i].min) { chave = "porte" + i; break; }
+      }
+    }
+    var c = maratonaContadores[chave];
+    if (!c) return;
+    c.achados++;
+    var el = document.getElementById("mar-cont-" + chave);
+    if (el) {
+      el.textContent = c.achados + "/" + c.total;
+      el.classList.toggle("completo", c.achados === c.total);
+    }
+  }
+
+  function fimSessaoMaratona(completou) {
+    clearInterval(timerInt);
+    salvarProgressoMaratona();
+    jogo.encerrado = true;
+    atualizarPlacar();
+    $("input-palpite").disabled = true;
+    $("btn-palpitar").disabled = true;
+    $("btn-encerrar").hidden = true;
+    $("btn-dica").hidden = true;
+    setConfigTravada(false);
+    $("btn-iniciar").textContent = "▶ Continuar maratona";
+    var el = $("fim-jogo");
+    el.hidden = false;
+    el.className = completou ? "recorde" : "";
+    el.innerHTML = completou
+      ? "🏆 <b>MARATONA COMPLETA!</b> Você citou todos os " + fmtInt(jogo.alvosTotal) +
+        " municípios da região em " + fmtTempo(tempoDecorrido()) + ". Lenda."
+      : "⏸ <b>Sessão pausada.</b> Progresso salvo: <b>" + fmtInt(jogo.achados.size) +
+        "</b> de " + fmtInt(jogo.alvosTotal) + " (<b>" + fmtPct(jogo.pct()) + "</b>)" +
+        " — <b>+" + fmtInt(jogo.achadosSessao) + "</b> nesta sessão. Volte quando quiser.";
+    atualizarRecordeUI();
+  }
+
+  // ---------------- modo Onde fica? (clique no mapa) ----------------
+  function mostrarAlvoClique() {
+    var alvo = jogo.alvoAtual();
+    if (!alvo) return;
+    $("alvo-clique").innerHTML = "🖱️ Clique no mapa onde fica:<br><b>" + nomeUF(alvo) +
+      "</b> <small>· " + fmtPop(alvo.pop) + " hab." +
+      (alvo.capital ? " · capital" : "") + "</small>";
+  }
+
+  function responderClique(lat, lng) {
+    var r = jogo.responder(lat, lng);
+    if (!r) return;
+    // marca o clique (X), o lugar certo e a linha entre os dois
+    var cx = proj.x(lng), cy = proj.y(lat);
+    var vx = proj.x(r.mun.lng), vy = proj.y(r.mun.lat);
+    elSvg("line", { x1: cx - 4, y1: cy - 4, x2: cx + 4, y2: cy + 4, "class": "marca-clique" }, gMarcas);
+    elSvg("line", { x1: cx - 4, y1: cy + 4, x2: cx + 4, y2: cy - 4, "class": "marca-clique" }, gMarcas);
+    elSvg("line", { x1: cx.toFixed(1), y1: cy.toFixed(1), x2: vx.toFixed(1), y2: vy.toFixed(1), "class": "linha-clique" }, gMarcas);
+    pintarPonto(r.mun, "achada");
+    elSvg("text", {
+      x: vx.toFixed(1), y: vy.toFixed(1), "class": "rotulo-cidade",
+    }, gMarcas).textContent = r.mun.nome;
+
+    var rodada = jogo.resultados.length;
+    var item = document.createElement("div");
+    item.className = "item-jogada";
+    item.innerHTML = "<b>" + rodada + ". " + nomeUF(r.mun) + "</b><br><small>erro de " +
+      fmtInt(Math.round(r.distKm)) + " km · " + fmtPct(r.score) + "</small>";
+    $("lista-jogo").prepend(item);
+    feedback((r.score >= 0.995 ? "🎯 " : "") + r.mun.nome + ": erro de " +
+      fmtInt(Math.round(r.distKm)) + " km — rodada vale " + fmtPct(r.score) + ".",
+      r.score >= 0.6 ? "ok" : "erro");
+    atualizarPlacar();
+    if (jogo.encerrado) {
+      fimDeJogo(false);
+    } else {
+      mostrarAlvoClique();
+    }
+  }
+
+  // ---------------- dicas ----------------
+  function pedirDica() {
+    if (!jogo || jogo.encerrado) return;
+    var caixa = $("dica-atual");
+    if (jogoModo === "ondestou") {
+      var d = jogo.dica();
+      if (!d) return;
+      dicasUsadas = jogo.dicasDadas;
+      var texto = d.tipo === "uf" ? "o município secreto fica em <b>" + NOMES_UF[d.valor] + " (" + d.valor + ")</b>"
+        : d.tipo === "letra" ? "o nome começa com <b>«" + d.valor + "»</b>"
+        : "tem <b>" + fmtPop(d.valor) + " hab.</b>";
+      caixa.innerHTML = "💡 Dica " + d.etapa + "/3 (+1 palpite): " + texto + ".";
+      caixa.hidden = false;
+    } else if (jogoModo === "maratona") {
+      var dm = jogo.dica();
+      if (!dm) return;
+      caixa.innerHTML = "💡 O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
+        "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>";
+      caixa.hidden = false;
+    } else {
+      if (dicasUsadas >= 3) return;
+      var df = jogo.dica();
+      if (!df) return;
+      dicasUsadas++;
+      var onde = df.rank !== undefined
+        ? "é o <b>" + df.rank + "º</b> do ranking"
+        : "está na " + (jogo.cfg.tipo === "grade" ? "célula" : "faixa") + " <b>" + df.faixa.rotulo + "</b>";
+      caixa.innerHTML = "💡 Dica " + dicasUsadas + "/3 (−1 acerto): o maior alvo que falta começa com <b>«" +
+        df.mun.nome.charAt(0) + "»</b>, tem <b>" + fmtPop(df.mun.pop) + " hab.</b> e " + onde + ".";
+      caixa.hidden = false;
+    }
+    atualizarBotaoDica();
+    atualizarPlacar();
+    $("input-palpite").focus();
+  }
+
   function fimDeJogo(desistiu, porTempo) {
     clearInterval(timerInt);
     var tempoSeg = tempoDecorrido();
@@ -633,6 +1136,17 @@
           revelarAlvo(par.mun, par.faixa || null, true, par.rank);
         });
       }
+    } else if (jogoModo === "ondestou") {
+      var secreto = jogo.encerrar();
+      if (!jogo.venceu) {
+        pontos[secreto.idx].setAttribute("class", "cidade faltante");
+        pontos[secreto.idx].style.fill = "";
+        elSvg("text", {
+          x: proj.x(secreto.lng).toFixed(1),
+          y: proj.y(secreto.lat).toFixed(1),
+          "class": "rotulo-cidade faltante",
+        }, gMarcas).textContent = secreto.nome;
+      }
     } else {
       jogo.encerrado = true;
     }
@@ -640,15 +1154,29 @@
     $("input-palpite").disabled = true;
     $("btn-palpitar").disabled = true;
     $("btn-encerrar").hidden = true;
+    $("btn-dica").hidden = true;
+    $("alvo-clique").hidden = true;
+    svg.classList.remove("modo-clique"); // fim da partida: os pontos podem voltar
     setConfigTravada(false);
     $("btn-iniciar").textContent = "▶ Jogar de novo";
 
     var pct = jogo.pct();
     var placar;
-    if (jogoModo === "faixas") {
-      placar = jogo.achadosTotal + "/" + jogo.alvosTotal + " respostas";
-    } else if (jogoModo === "topn") {
-      placar = jogo.achadosTotal + "/" + jogo.alvosTotal + " cidades";
+    if (jogoModo === "faixas" || jogoModo === "topn") {
+      // cada dica pedida desconta um acerto do resultado final
+      pct = Math.max(0, (jogo.achadosTotal - dicasUsadas) / jogo.alvosTotal);
+      placar = jogo.achadosTotal + "/" + jogo.alvosTotal +
+        (jogoModo === "faixas" ? " respostas" : " cidades") +
+        (dicasUsadas > 0 ? " (" + dicasUsadas + (dicasUsadas === 1 ? " dica" : " dicas") + ")" : "");
+    } else if (jogoModo === "ondestou") {
+      placar = jogo.venceu
+        ? "acertou em " + jogo.totalPalpites() +
+          (jogo.totalPalpites() === 1 ? " palpite" : " palpites") +
+          (jogo.dicasDadas > 0 ? " (" + jogo.dicasDadas + " em dicas)" : "")
+        : "desistiu após " + jogo.palpites.length + " palpites";
+    } else if (jogoModo === "clique") {
+      placar = "erro médio " + fmtInt(Math.round(jogo.erroMedioKm())) + " km em " +
+        jogo.resultados.length + " rodadas";
     } else if (jogoModo === "dist" && jogo.cfg.metrica === "cidades") {
       placar = fmtInt(jogo.cobertos.size) + " cidades";
     } else {
@@ -678,6 +1206,24 @@
   // Relatório pós-partida: o que de maior ficou de fora.
   function relatorioFinal(faltantes) {
     var itens;
+    if (jogoModo === "ondestou") {
+      var s = jogo.secreto;
+      return "<div class='relatorio'>" +
+        (jogo.venceu ? "O município era " : "O município era <b>") + nomeUF(s) +
+        (jogo.venceu ? "" : "</b>") + " — " + fmtPop(s.pop) + " hab." +
+        (s.capital ? " (capital)" : "") + "</div>";
+    }
+    if (jogoModo === "clique") {
+      if (jogo.resultados.length === 0) return "";
+      var piores = jogo.resultados.slice().sort(function (a, b) { return b.distKm - a.distKm; });
+      itens = piores.slice(0, 3).map(function (r) {
+        return nomeUF(r.mun) + " (" + fmtInt(Math.round(r.distKm)) + " km)";
+      });
+      var acertos = jogo.resultados.filter(function (r) { return r.score >= 0.995; }).length;
+      return "<div class='relatorio'>" +
+        (acertos > 0 ? "🎯 Na mosca (até 15 km): <b>" + acertos + "</b>. " : "") +
+        "Piores erros: " + itens.join(" · ") + ".</div>";
+    }
     if (jogoModo === "dist" || jogoModo === "pop") {
       var fora = [];
       for (var i = 0; i < jogo.universo.length && fora.length < 5; i++) {
@@ -943,9 +1489,17 @@
         setVal("cfg-pop-alvo", p.alvo);
       }
       $("cfg-" + modo + "-homonimos").checked = p.homonimos === "1";
+      $("cfg-" + modo + "-bloqueio").checked = p.bloqueio === "1";
       $("cfg-" + modo + "-limite").value = p.tempo ? "tempo" : "palpites";
       setVal("cfg-" + modo + "-tempo", p.tempo);
       setVal("cfg-" + modo + "-palpites", p.palpites);
+    } else if (modo === "ondestou") {
+      setVal("cfg-onde-pool", p.pool);
+    } else if (modo === "clique") {
+      setVal("cfg-clique-pool", p.pool);
+      setVal("cfg-clique-rodadas", p.rodadas);
+    } else if (modo === "maratona") {
+      // maratona não tem parâmetros além da região
     } else if (modo === "faixas") {
       if (p.tipo) $("cfg-faixas-tipo").value = p.tipo;
       $("rotulo-centro").hidden = $("cfg-faixas-tipo").value !== "aneis";
@@ -1028,7 +1582,21 @@
   var arrasto = null;
   svg.addEventListener("mousedown", function (ev) {
     arrasto = { x: ev.clientX, y: ev.clientY, vbx: vb.x, vby: vb.y };
+    cliqueInicio = { x: ev.clientX, y: ev.clientY };
     svg.classList.add("arrastando");
+  });
+
+  // clique (sem arrasto) no modo "Onde fica?": vira a resposta da rodada
+  svg.addEventListener("mouseup", function (ev) {
+    if (!cliqueInicio) return;
+    var moveu = Math.abs(ev.clientX - cliqueInicio.x) + Math.abs(ev.clientY - cliqueInicio.y);
+    cliqueInicio = null;
+    if (moveu > 5) return;
+    if (jogoModo !== "clique" || !jogo || jogo.encerrado) return;
+    var rect = svg.getBoundingClientRect();
+    var px = vb.x + ((ev.clientX - rect.left) / rect.width) * vb.w;
+    var py = vb.y + ((ev.clientY - rect.top) / rect.height) * vb.h;
+    responderClique(proj.latDe(py), proj.lngDe(px));
   });
   window.addEventListener("mousemove", function (ev) {
     if (!arrasto) return;
@@ -1039,9 +1607,13 @@
   });
   window.addEventListener("mouseup", function () {
     arrasto = null;
+    cliqueInicio = null; // soltar fora do mapa não deixa clique pendente
     svg.classList.remove("arrastando");
   });
   svg.addEventListener("dblclick", function () {
+    // no meio de uma partida de clique, dois cliques são duas respostas — não
+    // podem também resetar o zoom
+    if (jogoModo === "clique" && jogo && !jogo.encerrado) return;
     vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
     aplicarViewBox();
   });
@@ -1059,13 +1631,18 @@
         div.hidden = div.dataset.modo !== modoAtual;
       });
       $("descricao-modo").textContent = DESCRICOES[modoAtual];
-      // trocar de modo abandona a partida em andamento
+      // trocar de modo abandona a partida em andamento (a maratona salva antes)
       if (jogo && !jogo.encerrado) {
+        salvarProgressoMaratona();
         clearInterval(timerInt);
         jogo = null;
       }
       $("area-jogo").hidden = true;
       $("legenda-pop").hidden = true;
+      $("legenda-dist").hidden = true;
+      $("btn-desafio").hidden = modoAtual === "maratona";
+      svg.classList.remove("modo-clique");
+      $("linha-palpite").hidden = false;
       limparCamadasDeJogo();
       vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
       aplicarViewBox();
@@ -1100,7 +1677,25 @@
     if (ev.key === "Enter") { ev.preventDefault(); palpitar(); }
   });
   $("btn-encerrar").addEventListener("click", function () {
-    if (jogo && !jogo.encerrado) fimDeJogo(true);
+    if (!jogo || jogo.encerrado) return;
+    if (jogoModo === "maratona") fimSessaoMaratona(false);
+    else fimDeJogo(true);
+  });
+  $("btn-dica").addEventListener("click", pedirDica);
+  $("btn-zerar-maratona").addEventListener("click", function () {
+    var regiao = ufDoJogo() || "BR";
+    var nome = regiao === "BR" ? "do Brasil inteiro" : "de " + NOMES_UF[regiao];
+    if (!confirm("Apagar TODO o progresso da maratona " + nome + "? Isso não tem volta.")) return;
+    zerarMaratona(regiao);
+    if (jogo && jogoModo === "maratona") {
+      clearInterval(timerInt);
+      jogo = null;
+      $("area-jogo").hidden = true;
+      limparCamadasDeJogo();
+      setConfigTravada(false);
+      $("btn-iniciar").textContent = "▶ Iniciar jogo";
+    }
+    atualizarRecordeUI();
   });
   $("config").addEventListener("submit", function (ev) { ev.preventDefault(); });
 

@@ -10,6 +10,7 @@
 <header>
   <h1>🗺️ Quiz do Mapa do Brasil</h1>
   <div style="display:flex; gap:8px">
+    <a href="estatisticas.html" class="botao-sec" style="text-decoration:none">📊 Pontos cegos</a>
     <a href="densidade.html" class="botao-sec" style="text-decoration:none">📍 Densidade</a>
     <button id="btn-recordes" class="botao-sec" type="button">🏆 Recordes</button>
   </div>
@@ -18,10 +19,13 @@
 <main>
   <aside id="painel">
     <nav id="abas-modo">
-      <button class="aba ativa" data-modo="dist" type="button">Círculos<br>por distância</button>
-      <button class="aba" data-modo="pop" type="button">Círculos<br>por população</button>
+      <button class="aba ativa" data-modo="dist" type="button">Círculos<br>distância</button>
+      <button class="aba" data-modo="pop" type="button">Círculos<br>população</button>
       <button class="aba" data-modo="faixas" type="button">Faixas<br>do mapa</button>
       <button class="aba" data-modo="topn" type="button">Top N<br>cidades</button>
+      <button class="aba" data-modo="ondestou" type="button">Onde<br>estou?</button>
+      <button class="aba" data-modo="clique" type="button">Onde fica?<br>(clique)</button>
+      <button class="aba" data-modo="maratona" type="button">Maratona<br>completa</button>
     </nav>
     <p id="descricao-modo"></p>
 
@@ -57,6 +61,10 @@
           <input type="checkbox" id="cfg-dist-homonimos">
           Nome ambíguo marca todas as homônimas
         </label>
+        <label class="check" title="Modo difícil: uma cidade que já está dentro de um círculo não pode mais ser usada como palpite">
+          <input type="checkbox" id="cfg-dist-bloqueio" checked>
+          Cidade já coberta não vale como palpite
+        </label>
       </div>
 
       <div class="config-modo" data-modo="pop" hidden>
@@ -78,6 +86,10 @@
         <label class="check">
           <input type="checkbox" id="cfg-pop-homonimos">
           Nome ambíguo marca todas as homônimas
+        </label>
+        <label class="check" title="Modo difícil: uma cidade que já está dentro de um círculo não pode mais ser usada como palpite">
+          <input type="checkbox" id="cfg-pop-bloqueio" checked>
+          Cidade já coberta não vale como palpite
         </label>
       </div>
 
@@ -124,6 +136,43 @@
           <input type="number" id="cfg-topn-tempo" value="15" min="1" max="240">
         </label>
       </div>
+
+      <div class="config-modo" data-modo="ondestou" hidden>
+        <label>Porte do município secreto
+          <select id="cfg-onde-pool">
+            <option value="500000">Grandes — 500 mil+ hab.</option>
+            <option value="100000" selected>Médias e grandes — 100 mil+</option>
+            <option value="50000">50 mil+ hab.</option>
+            <option value="20000">20 mil+ hab.</option>
+            <option value="0">Qualquer município</option>
+          </select>
+        </label>
+        <p class="nota-config">Você pode chutar qualquer município da região —
+        cidades pequenas também servem de bússola.</p>
+      </div>
+
+      <div class="config-modo" data-modo="clique" hidden>
+        <label>Porte das cidades perguntadas
+          <select id="cfg-clique-pool">
+            <option value="500000">Grandes — 500 mil+ hab.</option>
+            <option value="100000" selected>Médias e grandes — 100 mil+</option>
+            <option value="50000">50 mil+ hab.</option>
+            <option value="20000">20 mil+ hab.</option>
+            <option value="0">Qualquer município</option>
+          </select>
+        </label>
+        <label>Rodadas
+          <input type="number" id="cfg-clique-rodadas" value="10" min="3" max="50">
+        </label>
+        <p class="nota-config">Os pontos dos municípios somem do mapa durante a
+        partida — só o contorno das UFs fica de guia.</p>
+      </div>
+
+      <div class="config-modo" data-modo="maratona" hidden>
+        <p class="nota-config">Cite <b>todos</b> os municípios da região
+        escolhida acima, no seu ritmo. O progresso (e o tempo) fica salvo
+        neste navegador — pause e continue quando quiser.</p>
+      </div>
     </form>
 
     <div id="desafio-banner" hidden></div>
@@ -137,13 +186,19 @@
     <section id="area-jogo" hidden>
       <div class="barra"><div id="barra-progresso"></div></div>
       <div id="placar-linhas"></div>
+      <div id="alvo-clique" hidden></div>
       <div id="linha-palpite">
         <input type="text" id="input-palpite" placeholder="Digite uma cidade… (ex.: Campinas ou Bom Jesus, RS)" autocomplete="off" spellcheck="false">
         <button id="btn-palpitar" class="botao-pri" type="button">OK</button>
       </div>
       <div id="feedback"></div>
+      <div id="dica-atual" hidden></div>
       <div id="fim-jogo" hidden></div>
-      <button id="btn-encerrar" class="botao-sec" type="button">🏳️ Encerrar / revelar respostas</button>
+      <div id="linha-acoes">
+        <button id="btn-dica" class="botao-sec" type="button" hidden>💡 Dica</button>
+        <button id="btn-encerrar" class="botao-sec" type="button">🏳️ Encerrar / revelar respostas</button>
+      </div>
+      <button id="btn-zerar-maratona" class="botao-sec" type="button" hidden>🗑 Zerar progresso desta região</button>
       <div id="lista-jogo"></div>
     </section>
   </aside>
@@ -164,6 +219,11 @@
       <span>1 mil</span>
       <div class="grad" title="Cor dos pontos descobertos: população do município (escala logarítmica)"></div>
       <span>10 mi+</span>
+    </div>
+    <div id="legenda-dist" hidden>
+      <span>longe</span>
+      <div class="grad" title="Cor dos palpites: distância até o município secreto"></div>
+      <span>perto</span>
     </div>
     <div id="dica-zoom">botões ou roda do mouse: zoom · arrastar: mover · duplo clique: restaurar</div>
     <div id="tooltip" hidden></div>

@@ -54,7 +54,7 @@ main {
   gap: 12px;
 }
 
-#abas-modo { display: flex; gap: 6px; }
+#abas-modo { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .aba {
   flex: 1;
   padding: 8px 4px;
@@ -96,6 +96,7 @@ main {
 #config input:disabled, #config select:disabled { background: #eef1f4; color: #8a97a3; }
 #config label.check { flex-direction: row; align-items: center; gap: 7px; }
 #config label.check input { width: 15px; height: 15px; padding: 0; accent-color: var(--azul); }
+.nota-config { margin: 0; font-size: 12.5px; color: var(--texto-suave); line-height: 1.45; }
 
 #recorde-atual {
   font-size: 13px;
@@ -160,6 +161,28 @@ main {
 #feedback { font-size: 13px; min-height: 17px; color: var(--texto-suave); }
 #feedback.ok { color: var(--verde); font-weight: 600; }
 #feedback.erro { color: var(--vermelho); }
+
+/* pergunta do modo "Onde fica?" (clique no mapa) */
+#alvo-clique {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #e8f1fb;
+  border: 1px solid #bcd6ee;
+}
+#alvo-clique b { font-size: 16px; }
+
+/* última dica pedida (fica visível até a próxima) */
+#dica-atual {
+  padding: 8px 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  background: #fff8e6;
+  border: 1px solid #eadfb8;
+}
+
+#linha-acoes { display: flex; gap: 6px; }
+#linha-acoes .botao-sec { flex: 1; }
 
 #fim-jogo {
   padding: 10px 12px;
@@ -228,6 +251,9 @@ main {
 .linha-porte b { font-variant-numeric: tabular-nums; }
 .linha-porte b.completo { color: var(--verde); }
 
+/* na maratona do Brasil são 27 linhas (uma por UF): duas colunas */
+.portes-mar { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
+
 /* ---------- mapa ---------- */
 #mapa-wrap { flex: 1; position: relative; min-width: 0; background: #dbe9f4; }
 #mapa { width: 100%; height: 100%; display: block; cursor: grab; }
@@ -278,7 +304,7 @@ main {
 }
 #botoes-zoom button:hover { background: #fff; }
 
-#legenda-pop {
+#legenda-pop, #legenda-dist {
   position: absolute;
   left: 10px;
   bottom: 8px;
@@ -293,12 +319,16 @@ main {
   border-radius: 6px;
   pointer-events: none;
 }
-#legenda-pop .grad {
+#legenda-pop .grad, #legenda-dist .grad {
   width: 90px;
   height: 8px;
   border-radius: 4px;
   /* mesmos tons de corPop() no js/app.js */
   background: linear-gradient(90deg, rgb(245,208,76), rgb(238,108,47) 50%, rgb(122,16,32));
+}
+#legenda-dist .grad {
+  /* mesmos tons de corDist() no js/app.js */
+  background: linear-gradient(90deg, rgb(86,119,194), rgb(245,208,76) 55%, rgb(206,32,41));
 }
 
 #dica-zoom {
@@ -347,6 +377,13 @@ main {
 #mapa.sem-pontos .cidade:not(.coberta):not(.centro-palpite):not(.achada):not(.faltante) {
   opacity: 0;
 }
+
+/* partida de "Onde fica?": nenhum ponto pode entregar onde ficam as cidades */
+#mapa.modo-clique .cidade:not(.achada):not(.faltante) { opacity: 0; }
+
+/* marcações do modo "Onde fica?": o X do clique e a linha até o lugar certo */
+.marca-clique { stroke: var(--azul-escuro); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.linha-clique { stroke: rgba(20, 82, 138, .55); stroke-width: 1; stroke-dasharray: 4 3; fill: none; vector-effect: non-scaling-stroke; }
 
 .circulo-cobertura { fill: rgba(29, 111, 184, .16); stroke: var(--azul); stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 
@@ -397,6 +434,8 @@ main {
 #mapa.satelite .rotulo-cidade.faltante { fill: #ffb3ad; }
 #mapa.satelite .rotulo-cidade.centro-palpite { fill: #ffe9a8; }
 #mapa.satelite .marca-centro { stroke: #ffcf4d; }
+#mapa.satelite .marca-clique { stroke: #ffcf4d; }
+#mapa.satelite .linha-clique { stroke: rgba(255,255,255,.65); }
 
 /* ---------- modal ---------- */
 .modal {

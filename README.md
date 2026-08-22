@@ -12,12 +12,15 @@ no `localStorage` do navegador.
 **1. Círculos por distância** — chute cidades; cada palpite cobre todos os
 municípios num raio fixo (configurável, ex.: 100 km). Cubra o máximo do país
 (por população ou por número de cidades) antes de acabarem os palpites — ou o
-tempo.
+tempo. Por padrão vale a regra dura: uma cidade que já caiu dentro de um
+círculo não pode mais ser usada como palpite (desligável na configuração).
 
 **2. Círculos por população** — cada cidade chutada vira o centro de um círculo
 que cresce até somar a população alvo (ex.: 1 milhão de habitantes). Cidades
 grandes geram círculos pequenos; cidades vazias geram círculos enormes.
-Estratégia: onde ancorar os círculos para cobrir o máximo do Brasil?
+Estratégia: onde ancorar os círculos para cobrir o máximo do Brasil? Aqui a
+ordem importa ainda mais: com a regra padrão, cidade coberta não vale mais
+como palpite — gaste as grandes antes que um círculo vizinho as engula.
 
 **3. Faixas do mapa** — o mapa é dividido em faixas de latitude, longitude,
 anéis concêntricos em volta de uma cidade à sua escolha ou uma grade de
@@ -32,9 +35,31 @@ a cidade no mapa com a posição no ranking, e um placar por porte mostra
 quantas você já achou em cada faixa de população (ex.: 3/10 entre 500 mil e
 1 milhão).
 
+**5. Onde estou?** — o jogo sorteia um município secreto (com o porte mínimo
+que você escolher) e cada palpite responde com a distância e a direção até
+ele; a cor dos pontos esquenta do azul ao vermelho conforme você se aproxima.
+Encontre-o no menor número de palpites: acertar de primeira vale 100%, e cada
+palpite (ou dica) extra desconta 4 pontos.
+
+**6. Onde fica? (clique)** — o inverso: o jogo mostra o nome de um município
+e você clica no mapa onde acha que ele fica. Até 15 km de erro vale 100% da
+rodada; a pontuação cai linearmente até zerar em 500 km. Durante a partida os
+pontos dos municípios somem do mapa — só o contorno das UFs fica de guia.
+
+**7. Maratona completa** — cite **todos** os municípios da região (os 5.571
+do Brasil, se tiver coragem), no seu ritmo. O progresso e o relógio ficam
+salvos no navegador: pause e continue quando quiser, acompanhando contadores
+por UF (ou por porte, jogando uma UF só).
+
 **Região do jogo** — qualquer modo pode ser jogado com o Brasil inteiro ou só
 com uma UF (o mapa aproxima o estado e municípios de fora somem). Raio de
 30 km em Minas é outro jogo.
+
+**Dicas** — nos modos de alvos nomeados (faixas, Top N, Onde estou?,
+maratona), o botão 💡 dá pistas do maior alvo que falta (primeira letra,
+população, onde). Nos modos com recorde cada dica tem custo: −1 acerto no
+resultado (faixas/Top N) ou +1 palpite no placar (Onde estou?); na maratona
+é de graça.
 
 **Limite da partida** — nos modos de círculos, escolha entre limitar por
 número de palpites (ex.: 10 chutes, sem pressa) ou por tempo (ex.: 30 minutos
@@ -48,6 +73,15 @@ mesmo desafio.
 
 **Relatório pós-partida** — ao final, o jogo mostra o que de maior ficou de
 fora: população na mesa e as maiores cidades esquecidas.
+
+## Seus pontos cegos
+
+A página `estatisticas.html` (botão 📊 Pontos cegos no topo) guarda, só no
+seu navegador, cada município que você já citou em qualquer partida — e
+desenha o mapa do que falta: as regiões que nunca aparecem nos seus palpites,
+as maiores cidades que você nunca citou e a cobertura por UF. Cada cidade
+conta no máximo uma vez por partida, então a cor mostra em quantas partidas
+diferentes ela apareceu.
 
 ## Mapa de densidade de municípios
 
@@ -111,13 +145,15 @@ por não existir no Censo 2022.
 mapa-quiz/
 ├── index.html          # página única do jogo
 ├── densidade.html      # mapa de densidade de municípios
+├── estatisticas.html   # mapa dos seus pontos cegos
 ├── css/style.css
 ├── js/
-│   ├── geo.js          # haversine, círculos geodésicos, projeção
+│   ├── geo.js          # haversine, rumo, círculos geodésicos, projeção
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
-│   ├── modos.js        # motores dos 4 modos de jogo
+│   ├── modos.js        # motores dos 7 modos de jogo
 │   ├── recordes.js     # recordes no localStorage
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
+│   ├── estatisticas.js # mapa e listas dos pontos cegos
 │   └── app.js          # interface, mapa SVG, zoom/pan
 ├── data/               # dados embutidos (gerados)
 └── tools/              # build_data.py e build_satelite.py (regeram os dados)

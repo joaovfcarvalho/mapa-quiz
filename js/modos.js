@@ -58,6 +58,12 @@ var MODOS = (function () {
     var usados = this.usados;
     var lista = muns.filter(function (m) { return !usados.has(m.idx); });
     if (lista.length === 0) return { tipo: "repetido", mun: muns[0] };
+    if (this.cfg.bloqueio) {
+      var cobertosB = this.cobertos;
+      var livres = lista.filter(function (m) { return !cobertosB.has(m.idx); });
+      if (livres.length === 0) return { tipo: "coberto", mun: lista[0] };
+      lista = livres;
+    }
 
     var novos = [];
     var ganhoPop = 0;
@@ -115,6 +121,12 @@ var MODOS = (function () {
     var usados = this.usados;
     var lista = muns.filter(function (m) { return !usados.has(m.idx); });
     if (lista.length === 0) return { tipo: "repetido", mun: muns[0] };
+    if (this.cfg.bloqueio) {
+      var cobertosB = this.cobertos;
+      var livres = lista.filter(function (m) { return !cobertosB.has(m.idx); });
+      if (livres.length === 0) return { tipo: "coberto", mun: lista[0] };
+      lista = livres;
+    }
 
     var novos = [];
     var ganhoPop = 0;
@@ -311,17 +323,36 @@ var MODOS = (function () {
 
     var revelados = [];
     var self = this;
+    var jaTinha = false;
     cand.forEach(function (m) {
       var faixa = self.faixaPorAlvo.get(m.idx);
-      if (faixa && !faixa.achados.has(m.idx)) {
-        faixa.achados.add(m.idx);
-        self.achadosTotal++;
-        revelados.push({ mun: m, faixa: faixa });
-      }
+      if (!faixa) return;
+      if (faixa.achados.has(m.idx)) { jaTinha = true; return; }
+      faixa.achados.add(m.idx);
+      self.achadosTotal++;
+      revelados.push({ mun: m, faixa: faixa });
     });
-    if (revelados.length === 0) return { tipo: "nao_alvo", municipios: cand };
+    if (revelados.length === 0) {
+      return jaTinha
+        ? { tipo: "repetido", mun: cand[0] }
+        : { tipo: "nao_alvo", municipios: cand };
+    }
     if (this.achadosTotal >= this.alvosTotal) this.encerrado = true;
     return { tipo: "ok", revelados: revelados, completo: this.encerrado };
+  };
+
+  // Dica: descreve o maior alvo ainda não achado (o universo está ordenado
+  // por população, então a primeira faixa com alvo faltante já serve).
+  JogoFaixas.prototype.dica = function () {
+    var melhor = null;
+    this.faixas.forEach(function (f) {
+      f.alvos.forEach(function (m) {
+        if (!f.achados.has(m.idx) && (!melhor || m.pop > melhor.mun.pop)) {
+          melhor = { mun: m, faixa: f };
+        }
+      });
+    });
+    return melhor;
   };
 
   // Encerra revelando o que faltou; devolve a lista dos alvos não achados.
@@ -370,17 +401,31 @@ var MODOS = (function () {
 
     var revelados = [];
     var self = this;
+    var jaTinha = false;
     cand.forEach(function (m) {
       var rank = self.rankPorAlvo.get(m.idx);
-      if (rank !== undefined && !self.achados.has(m.idx)) {
-        self.achados.add(m.idx);
-        self.achadosTotal++;
-        revelados.push({ mun: m, rank: rank });
-      }
+      if (rank === undefined) return;
+      if (self.achados.has(m.idx)) { jaTinha = true; return; }
+      self.achados.add(m.idx);
+      self.achadosTotal++;
+      revelados.push({ mun: m, rank: rank });
     });
-    if (revelados.length === 0) return { tipo: "nao_alvo", municipios: cand };
+    if (revelados.length === 0) {
+      return jaTinha
+        ? { tipo: "repetido", mun: cand[0] }
+        : { tipo: "nao_alvo", municipios: cand };
+    }
     if (this.achadosTotal >= this.alvosTotal) this.encerrado = true;
     return { tipo: "ok", revelados: revelados, completo: this.encerrado };
+  };
+
+  // Dica: o maior alvo ainda não achado (alvos já estão em ordem de população).
+  JogoTopN.prototype.dica = function () {
+    for (var i = 0; i < this.alvos.length; i++) {
+      var m = this.alvos[i];
+      if (!this.achados.has(m.idx)) return { mun: m, rank: i + 1 };
+    }
+    return null;
   };
 
   // Encerra revelando o que faltou; devolve a lista dos alvos não achados.
@@ -398,10 +443,182 @@ var MODOS = (function () {
     return this.alvosTotal === 0 ? 0 : this.achadosTotal / this.alvosTotal;
   };
 
+  // ---------------------------------------------------------------
+  // Modo 5 — Onde estou?: o jogo sorteia um município secreto (com população
+  // mínima cfg.minPop) e cada palpite responde com distância e direção.
+  // cfg: {minPop, uf?}
+  // ---------------------------------------------------------------
+  function JogoOndeEstou(cfg) {
+    this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.pool = this.universo.filter(function (m) { return m.pop >= cfg.minPop; });
+    this.secreto = this.pool[Math.floor(Math.random() * this.pool.length)];
+    this.palpites = [];          // {mun, distKm, rumo}
+    this.usados = new Set();
+    this.dicasDadas = 0;         // cada dica custa +1 palpite no placar
+    this.melhorDist = Infinity;
+    this.encerrado = false;
+    this.venceu = false;
+  }
+  JogoOndeEstou.prototype.totalPalpites = function () {
+    return this.palpites.length + this.dicasDadas;
+  };
+  JogoOndeEstou.prototype.palpitar = function (texto) {
+    if (this.encerrado) return { tipo: "encerrado" };
+    var res = DADOS.buscar(texto);
+    if (res.status === "vazio") return { tipo: "vazio" };
+    if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+    var cand = dentroDaRegiao(this.cfg, res.municipios);
+    if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
+    if (cand.length > 1) return { tipo: "ambiguo", municipios: cand };
+    var mun = cand[0];
+    if (this.usados.has(mun.idx)) return { tipo: "repetido", mun: mun };
+    this.usados.add(mun.idx);
+    var s = this.secreto;
+    var d = GEO.haversineKm(mun.lat, mun.lng, s.lat, s.lng);
+    var r = GEO.rumo(mun.lat, mun.lng, s.lat, s.lng);
+    if (d < this.melhorDist) this.melhorDist = d;
+    var jogada = { mun: mun, distKm: d, rumo: r };
+    this.palpites.push(jogada);
+    if (mun.idx === s.idx) {
+      this.encerrado = true;
+      this.venceu = true;
+    }
+    return { tipo: "ok", mun: mun, distKm: d, rumo: r, acertou: this.venceu };
+  };
+  // Dicas progressivas sobre o secreto: UF, primeira letra, população.
+  JogoOndeEstou.prototype.dica = function () {
+    if (this.dicasDadas >= 3) return null;
+    var etapa = this.dicasDadas++;
+    var s = this.secreto;
+    if (etapa === 0) return { etapa: 1, tipo: "uf", valor: s.uf };
+    if (etapa === 1) return { etapa: 2, tipo: "letra", valor: s.nome.charAt(0) };
+    return { etapa: 3, tipo: "pop", valor: s.pop };
+  };
+  JogoOndeEstou.prototype.encerrar = function () {
+    this.encerrado = true;
+    return this.secreto;
+  };
+  // Pontuação: 100% acertando de primeira, −4 pontos por palpite (ou dica)
+  // extra, piso de 4%; desistir vale 0.
+  JogoOndeEstou.prototype.pct = function () {
+    if (!this.venceu) return 0;
+    return Math.max(0.04, 1 - 0.04 * (this.totalPalpites() - 1));
+  };
+
+  // ---------------------------------------------------------------
+  // Modo 6 — Onde fica?: o jogo mostra um nome e o jogador clica no mapa;
+  // a rodada vale mais pontos quanto menor o erro em km.
+  // cfg: {minPop, rodadas, uf?}
+  // ---------------------------------------------------------------
+  function JogoClique(cfg) {
+    this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    var pool = this.universo.filter(function (m) { return m.pop >= cfg.minPop; });
+    // sorteio sem reposição (Fisher–Yates parcial)
+    var copia = pool.slice();
+    for (var i = copia.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = copia[i]; copia[i] = copia[j]; copia[j] = tmp;
+    }
+    this.alvos = copia.slice(0, Math.min(cfg.rodadas, copia.length));
+    this.resultados = [];        // {mun, lat, lng, distKm, score}
+    this.encerrado = false;
+  }
+  JogoClique.prototype.alvoAtual = function () {
+    return this.encerrado ? null : this.alvos[this.resultados.length] || null;
+  };
+  // Pontuação da rodada: 100% até 15 km de erro, caindo linearmente a 0 em 500 km.
+  JogoClique.prototype.responder = function (lat, lng) {
+    var alvo = this.alvoAtual();
+    if (!alvo) return null;
+    var d = GEO.haversineKm(lat, lng, alvo.lat, alvo.lng);
+    var score = Math.max(0, Math.min(1, 1 - (d - 15) / 485));
+    var r = { mun: alvo, lat: lat, lng: lng, distKm: d, score: score };
+    this.resultados.push(r);
+    if (this.resultados.length >= this.alvos.length) this.encerrado = true;
+    return r;
+  };
+  JogoClique.prototype.erroMedioKm = function () {
+    if (this.resultados.length === 0) return 0;
+    var s = 0;
+    this.resultados.forEach(function (r) { s += r.distKm; });
+    return s / this.resultados.length;
+  };
+  // Rodadas não respondidas valem 0 — desistir no meio conta contra a média.
+  JogoClique.prototype.pct = function () {
+    var s = 0;
+    this.resultados.forEach(function (r) { s += r.score; });
+    return this.alvos.length === 0 ? 0 : s / this.alvos.length;
+  };
+
+  // ---------------------------------------------------------------
+  // Modo 7 — Maratona: citar todos os municípios da região, com progresso
+  // persistente entre sessões (a interface injeta/salva os ids achados).
+  // cfg: {uf?, idsIniciais?: array de ids do IBGE já achados}
+  // ---------------------------------------------------------------
+  function JogoMaratona(cfg) {
+    this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.alvosTotal = this.universo.length;
+    this.achados = new Set();
+    this.achadosSessao = 0;
+    this.encerrado = false;
+    if (cfg.idsIniciais && cfg.idsIniciais.length) {
+      var ids = new Set(cfg.idsIniciais);
+      var achados = this.achados;
+      this.universo.forEach(function (m) {
+        if (ids.has(m.id)) achados.add(m.idx);
+      });
+    }
+  }
+  JogoMaratona.prototype.palpitar = function (texto) {
+    if (this.encerrado) return { tipo: "encerrado" };
+    var res = DADOS.buscar(texto);
+    if (res.status === "vazio") return { tipo: "vazio" };
+    if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+    var cand = dentroDaRegiao(this.cfg, res.municipios);
+    if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
+    var revelados = [];
+    var self = this;
+    cand.forEach(function (m) {
+      if (self.achados.has(m.idx)) return;
+      self.achados.add(m.idx);
+      self.achadosSessao++;
+      revelados.push({ mun: m });
+    });
+    if (revelados.length === 0) return { tipo: "repetido", mun: cand[0] };
+    if (this.achados.size >= this.alvosTotal) this.encerrado = true;
+    return { tipo: "ok", revelados: revelados, completo: this.encerrado };
+  };
+  // Dica (grátis na maratona): o maior município que ainda falta.
+  JogoMaratona.prototype.dica = function () {
+    for (var i = 0; i < this.universo.length; i++) {
+      var m = this.universo[i];
+      if (!this.achados.has(m.idx)) return { mun: m };
+    }
+    return null;
+  };
+  JogoMaratona.prototype.idsAchados = function () {
+    var achados = this.achados;
+    return this.universo
+      .filter(function (m) { return achados.has(m.idx); })
+      .map(function (m) { return m.id; });
+  };
+  JogoMaratona.prototype.pct = function () {
+    return this.alvosTotal === 0 ? 0 : this.achados.size / this.alvosTotal;
+  };
+
   return {
     JogoCirculosDistancia: JogoCirculosDistancia,
     JogoCirculosPopulacao: JogoCirculosPopulacao,
     JogoFaixas: JogoFaixas,
     JogoTopN: JogoTopN,
+    JogoOndeEstou: JogoOndeEstou,
+    JogoClique: JogoClique,
+    JogoMaratona: JogoMaratona,
   };
 })();
