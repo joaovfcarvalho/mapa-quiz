@@ -49,6 +49,16 @@ mesmo desafio.
 **Relatório pós-partida** — ao final, o jogo mostra o que de maior ficou de
 fora: população na mesa e as maiores cidades esquecidas.
 
+## Mapa de densidade de municípios
+
+Além do quiz, a página `densidade.html` (botão 📍 Densidade no topo) mostra um
+mapa de calor do Brasil: cada ponto do território é colorido pela quantidade
+de municípios (sedes municipais) existentes num raio de X km dele — raio
+ajustável de 20 a 500 km. Passe o mouse para ler o valor em qualquer ponto e
+clique para fixar um círculo e listar os municípios dentro dele. O painel
+mostra ainda o pico de densidade do país para o raio escolhido (com 100 km, o
+recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
+
 ## Como jogar
 
 - Digite o nome da cidade e aperte Enter. Acentos, maiúsculas, hífens e até
@@ -100,12 +110,14 @@ por não existir no Censo 2022.
 ```
 mapa-quiz/
 ├── index.html          # página única do jogo
+├── densidade.html      # mapa de densidade de municípios
 ├── css/style.css
 ├── js/
 │   ├── geo.js          # haversine, círculos geodésicos, projeção
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
 │   ├── modos.js        # motores dos 4 modos de jogo
 │   ├── recordes.js     # recordes no localStorage
+│   ├── densidade.js    # cálculo e desenho do mapa de densidade
 │   └── app.js          # interface, mapa SVG, zoom/pan
 ├── data/               # dados embutidos (gerados)
 └── tools/              # build_data.py e build_satelite.py (regeram os dados)
