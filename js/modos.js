@@ -160,14 +160,27 @@ var MODOS = (function () {
   };
 
   // ---------------------------------------------------------------
-  // Modo 3 — Faixas: o mapa é dividido em faixas (latitude, longitude ou
-  // anéis concêntricos) e é preciso nomear as N maiores cidades de cada uma.
-  // cfg: {tipo: 'lat'|'lng'|'aneis', largura, topN, centro (município, só p/
-  //       anéis), uf?}
+  // Modo 3 — Faixas: o mapa é dividido em faixas (latitude, longitude,
+  // anéis concêntricos ou uma grade lat × lng) e é preciso nomear as N
+  // maiores cidades de cada uma.
+  // cfg: {tipo: 'lat'|'lng'|'aneis'|'grade', largura, topN, centro
+  //       (município, só p/ anéis), uf?}
   // ---------------------------------------------------------------
   function grauTxt(v, eixo) {
     var hemisferio = eixo === "lat" ? (v >= 0 ? "N" : "S") : "O";
     return Math.abs(v).toFixed(1).replace(".", ",") + "°" + hemisferio;
+  }
+
+  // rótulo de coluna estilo planilha: 0 -> A, 25 -> Z, 26 -> AA…
+  function letraColuna(n) {
+    var s = "";
+    n++;
+    while (n > 0) {
+      var r = (n - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
   }
 
   function JogoFaixas(cfg) {
@@ -215,6 +228,35 @@ var MODOS = (function () {
         });
       }
       indicePara = function (m) { return Math.floor((m.lng - oeste) / deltaLng); };
+    } else if (cfg.tipo === "grade") {
+      // grade: células de largura × largura km (lat × lng juntas)
+      var dLat = cfg.largura / GEO.KM_POR_GRAU;
+      var latRefG = (ext.latMin + ext.latMax) / 2;
+      var dLng = cfg.largura / (GEO.KM_POR_GRAU * Math.cos((latRefG * Math.PI) / 180));
+      var topoG = ext.latMax + 1e-9;
+      var oesteG = ext.lngMin - 1e-9;
+      var nLin = Math.ceil((topoG - ext.latMin) / dLat);
+      var nCol = Math.ceil((ext.lngMax - oesteG) / dLng);
+      for (var g = 0; g < nLin * nCol; g++) {
+        var li = Math.floor(g / nCol);
+        var co = g % nCol;
+        faixas.push({
+          indice: g,
+          celula: letraColuna(co) + (li + 1),
+          latSup: topoG - li * dLat,
+          latInf: topoG - (li + 1) * dLat,
+          lngOeste: oesteG + co * dLng,
+          lngLeste: oesteG + (co + 1) * dLng,
+          rotulo: letraColuna(co) + (li + 1) + " · " +
+            grauTxt(topoG - li * dLat, "lat") + " × " + grauTxt(oesteG + co * dLng, "lng"),
+          alvos: [],
+          achados: new Set(),
+          nCidades: 0,
+        });
+      }
+      indicePara = function (m) {
+        return Math.floor((topoG - m.lat) / dLat) * nCol + Math.floor((m.lng - oesteG) / dLng);
+      };
     } else {
       // anéis concêntricos em volta de cfg.centro
       var centro = cfg.centro;

@@ -6,7 +6,7 @@ Fontes:
   - População: IBGE, Censo 2022 (agregado 4709, variável 93, N6[all])
     https://servicodados.ibge.gov.br/api/v3/agregados/4709/periodos/2022/variaveis/93?localidades=N6[all]
   - Contorno das UFs: IBGE malhas
-    https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=minima&formato=application/vnd.geo+json
+    https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json
 
 Uso:
   python3 build_data.py --municipios municipios.csv --estados estados.csv \
@@ -24,7 +24,7 @@ import urllib.request
 URL_MUNICIPIOS = "https://raw.githubusercontent.com/kelvins/municipios-brasileiros/main/csv/municipios.csv"
 URL_ESTADOS = "https://raw.githubusercontent.com/kelvins/municipios-brasileiros/main/csv/estados.csv"
 URL_POP = "https://servicodados.ibge.gov.br/api/v3/agregados/4709/periodos/2022/variaveis/93?localidades=N6[all]"
-URL_MALHA = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=minima&formato=application/vnd.geo+json"
+URL_MALHA = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json"
 
 
 def read_source(path, url, binary=False):
@@ -98,11 +98,13 @@ def main():
         polys = geom["coordinates"] if geom["type"] == "MultiPolygon" else [geom["coordinates"]]
         for poly in polys:
             for anel in poly:
-                poligonos.append([[round(x, 3), round(y, 3)] for x, y in anel])
+                pts = [[round(x, 3), round(y, 3)] for x, y in anel]
+                # remove pontos consecutivos que o arredondamento igualou
+                poligonos.append([p for i, p in enumerate(pts) if i == 0 or p != pts[i - 1]])
     out_malha = os.path.join(args.out, "brasil_uf.js")
     with open(out_malha, "w", encoding="utf-8") as f:
         f.write("// Gerado por tools/build_data.py — não editar à mão.\n")
-        f.write("// Anéis de polígonos das UFs (IBGE, qualidade mínima): [[lng,lat],...]\n")
+        f.write("// Anéis de polígonos das UFs (IBGE, qualidade máxima): [[lng,lat],...]\n")
         f.write("var BRASIL_UF = ")
         f.write(json.dumps(poligonos, separators=(",", ":")))
         f.write(";\n")

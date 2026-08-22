@@ -215,16 +215,35 @@ main {
 .chip.achado { background: #dcefe1; color: var(--verde); font-weight: 600; letter-spacing: 0; }
 .chip.faltante { background: #fbe3e3; color: var(--vermelho); font-weight: 600; letter-spacing: 0; }
 
+/* contadores por porte (faixa de população) no modo Top N */
+.portes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--texto-suave);
+}
+.linha-porte { display: flex; justify-content: space-between; }
+.linha-porte b { font-variant-numeric: tabular-nums; }
+.linha-porte b.completo { color: var(--verde); }
+
 /* ---------- mapa ---------- */
 #mapa-wrap { flex: 1; position: relative; min-width: 0; background: #dbe9f4; }
 #mapa { width: 100%; height: 100%; display: block; cursor: grab; }
 #mapa.arrastando { cursor: grabbing; }
 
-#btn-satelite {
+#botoes-mapa {
   position: absolute;
   top: 10px;
   right: 10px;
   z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+#botoes-mapa button {
   padding: 6px 11px;
   font-size: 12.5px;
   font-weight: 600;
@@ -234,7 +253,53 @@ main {
   color: var(--texto);
   cursor: pointer;
 }
-#btn-satelite.ativo { background: var(--azul); border-color: var(--azul); color: #fff; }
+#botoes-mapa button.ativo { background: var(--azul); border-color: var(--azul); color: #fff; }
+
+#botoes-zoom {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#botoes-zoom button {
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 650;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: rgba(255,255,255,.92);
+  color: var(--texto);
+  cursor: pointer;
+}
+#botoes-zoom button:hover { background: #fff; }
+
+#legenda-pop {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #47637a;
+  background: rgba(255,255,255,.75);
+  padding: 3px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+#legenda-pop .grad {
+  width: 90px;
+  height: 8px;
+  border-radius: 4px;
+  /* mesmos tons de corPop() no js/app.js */
+  background: linear-gradient(90deg, rgb(245,208,76), rgb(238,108,47) 50%, rgb(122,16,32));
+}
 
 #dica-zoom {
   position: absolute;
@@ -267,15 +332,27 @@ main {
 
 .cidade { fill: #c2b7a4; opacity: .5; pointer-events: none; r: calc(1.2px * var(--zoom, 1)); }
 .cidade.fora { display: none; } /* município fora da região do jogo */
-.cidade.coberta { fill: var(--verde); opacity: .92; pointer-events: auto; r: calc(1.6px * var(--zoom, 1)); }
+/* pontos descobertos: a cor de preenchimento vem inline do JS (população);
+   o contorno fino dá contraste sobre qualquer fundo */
+.cidade.coberta { fill: var(--verde); opacity: .95; pointer-events: auto; r: calc(1.6px * var(--zoom, 1)); }
 .cidade.centro-palpite { fill: var(--azul-escuro); opacity: 1; pointer-events: auto; r: calc(2.4px * var(--zoom, 1)); }
 .cidade.achada { fill: var(--verde); opacity: 1; pointer-events: auto; r: calc(2.4px * var(--zoom, 1)); }
 .cidade.faltante { fill: var(--vermelho); opacity: 1; pointer-events: auto; r: calc(2.4px * var(--zoom, 1)); }
+.cidade.coberta, .cidade.centro-palpite, .cidade.achada {
+  stroke: rgba(0, 0, 0, .35);
+  stroke-width: calc(.4px * var(--zoom, 1));
+}
+
+/* modo "pontos ocultos": some com o que ainda não foi descoberto */
+#mapa.sem-pontos .cidade:not(.coberta):not(.centro-palpite):not(.achada):not(.faltante) {
+  opacity: 0;
+}
 
 .circulo-cobertura { fill: rgba(29, 111, 184, .16); stroke: var(--azul); stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 
-.faixa-sombra { fill: rgba(29, 111, 184, .05); pointer-events: none; }
-.faixa-completa { fill: rgba(26, 127, 55, .14); pointer-events: none; }
+/* área da faixa/célula: o JS controla a opacidade (fração respondida), então
+   a cor caminha do transparente até este tom final conforme os acertos */
+.faixa-area { fill: rgba(26, 127, 55, .2); pointer-events: none; }
 .contador-faixa.completa { fill: var(--verde); }
 .linha-faixa { stroke: rgba(20, 82, 138, .45); stroke-width: .8; fill: none; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
 .contador-faixa {
@@ -308,9 +385,11 @@ main {
 #mapa.satelite .cidade.centro-palpite { fill: #ffcf4d; }
 #mapa.satelite .cidade.achada { fill: #67e88c; }
 #mapa.satelite .cidade.faltante { fill: #ff7a70; }
+#mapa.satelite .cidade.coberta, #mapa.satelite .cidade.centro-palpite, #mapa.satelite .cidade.achada {
+  stroke: rgba(255, 255, 255, .55);
+}
 #mapa.satelite .circulo-cobertura { fill: rgba(124, 192, 255, .18); stroke: #7cc0ff; }
-#mapa.satelite .faixa-sombra { fill: rgba(255,255,255,.07); }
-#mapa.satelite .faixa-completa { fill: rgba(103, 232, 140, .2); }
+#mapa.satelite .faixa-area { fill: rgba(103, 232, 140, .28); }
 #mapa.satelite .contador-faixa.completa { fill: #67e88c; }
 #mapa.satelite .linha-faixa { stroke: rgba(255,255,255,.6); }
 #mapa.satelite .contador-faixa { fill: #fff; stroke: rgba(8,18,28,.7); }

@@ -19,15 +19,18 @@ que cresce até somar a população alvo (ex.: 1 milhão de habitantes). Cidades
 grandes geram círculos pequenos; cidades vazias geram círculos enormes.
 Estratégia: onde ancorar os círculos para cobrir o máximo do Brasil?
 
-**3. Faixas do mapa** — o mapa é dividido em faixas de latitude, longitude ou
-anéis concêntricos em volta de uma cidade à sua escolha. Em cada faixa é
-preciso nomear as N maiores cidades; faixa 100% respondida muda de cor no
-mapa. Tudo configurável: largura da faixa em km, quantidade de cidades por
-faixa e o centro dos anéis.
+**3. Faixas do mapa** — o mapa é dividido em faixas de latitude, longitude,
+anéis concêntricos em volta de uma cidade à sua escolha ou uma grade de
+quadrados (latitude × longitude). Em cada faixa/célula é preciso nomear as N
+maiores cidades; a cor da faixa vai se intensificando conforme você acerta,
+até o tom cheio quando ela está 100% respondida. Tudo configurável: largura
+em km, quantidade de cidades por faixa e o centro dos anéis.
 
 **4. Top N cidades** — o modo raiz do HugeQuiz: cite de memória as N maiores
 cidades (100 por padrão), de preferência contra o relógio. Cada acerto acende
-a cidade no mapa com a posição no ranking.
+a cidade no mapa com a posição no ranking, e um placar por porte mostra
+quantas você já achou em cada faixa de população (ex.: 3/10 entre 500 mil e
+1 milhão).
 
 **Região do jogo** — qualquer modo pode ser jogado com o Brasil inteiro ou só
 com uma UF (o mapa aproxima o estado e municípios de fora somem). Raio de
@@ -48,11 +51,17 @@ fora: população na mesa e as maiores cidades esquecidas.
 
 ## Como jogar
 
-- Digite o nome da cidade e aperte Enter. Acentos, maiúsculas e hífens são
-  ignorados (`sao jose dos campos` funciona).
+- Digite o nome da cidade e aperte Enter. Acentos, maiúsculas, hífens e até
+  espaços são ignorados (`sao jose dos campos` e `riodejaneiro` funcionam).
 - Se houver mais de um município com o mesmo nome, especifique a UF:
   `Bom Jesus, RS` (ou `bom jesus rs`).
-- Roda do mouse dá zoom no mapa, arrastar move, duplo clique restaura.
+- Zoom pelos botões +/− no canto do mapa ou pela roda do mouse; arrastar
+  move, duplo clique (ou ⌂) restaura.
+- Os pontos descobertos são coloridos pela população do município — do
+  amarelo (cidade pequena) ao vinho (São Paulo); a legenda fica no canto do
+  mapa.
+- O botão ● Pontos escolhe se os municípios ainda não descobertos aparecem
+  esmaecidos (padrão) ou ficam ocultos até você acertá-los.
 - Passe o mouse sobre uma cidade já revelada/coberta para ver nome e população.
 
 ## Recordes
@@ -69,8 +78,8 @@ cada configuração).
 |---|---|
 | População por município | IBGE, Censo Demográfico 2022 (agregado 4709, variável 93) |
 | Coordenadas (sede municipal) | [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros) |
-| Contorno das UFs | IBGE, API de malhas (qualidade mínima) |
-| Fundo de satélite (botão 🛰️) | NASA Blue Marble Next Generation, via [GIBS](https://earthdata.nasa.gov/gibs) (domínio público) |
+| Contorno das UFs | IBGE, API de malhas (qualidade máxima) |
+| Fundo de satélite (botão 🛰️) | NASA Blue Marble Next Generation, 500 m/pixel (domínio público) |
 
 Os dados ficam embutidos em `data/municipios.js` e `data/brasil_uf.js` para o
 jogo funcionar offline (inclusive aberto via `file://`). Para regenerar a
@@ -79,6 +88,7 @@ partir das fontes:
 ```bash
 cd tools
 python3 build_data.py          # baixa tudo da internet
+python3 build_satelite.py      # recorta o fundo de satélite dos tiles da NASA
 ```
 
 Observações: as distâncias usam o centroide (sede) de cada município, não o
@@ -98,7 +108,7 @@ mapa-quiz/
 │   ├── recordes.js     # recordes no localStorage
 │   └── app.js          # interface, mapa SVG, zoom/pan
 ├── data/               # dados embutidos (gerados)
-└── tools/build_data.py # regenera os dados a partir das fontes
+└── tools/              # build_data.py e build_satelite.py (regeram os dados)
 ```
 
 ## Publicação

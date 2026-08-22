@@ -34,17 +34,27 @@ var DADOS = (function () {
     lista.push(m);
   });
 
+  // índice sem espaços, para aceitar "riodejaneiro" como "rio de janeiro"
+  var porChaveJunta = new Map();
+  porChave.forEach(function (lista, chave) {
+    var junta = chave.replace(/ /g, "");
+    var acum = porChaveJunta.get(junta);
+    if (!acum) porChaveJunta.set(junta, (acum = []));
+    lista.forEach(function (m) { acum.push(m); });
+  });
+
   var siglasUF = new Set(municipios.map(function (m) { return m.uf.toLowerCase(); }));
   var popTotal = municipios.reduce(function (s, m) { return s + m.pop; }, 0);
 
-  // Interpreta o texto digitado. Aceita "nome", "nome, uf" e "nome uf".
+  // Interpreta o texto digitado. Aceita "nome", "nome, uf" e "nome uf";
+  // espaços são opcionais ("riodejaneiro" vale por "rio de janeiro").
   // Retorna {status: 'vazio'|'nao_encontrado'|'ok'|'ambiguo', municipios, texto}
   function buscar(texto) {
     var t = normalizar(texto);
     if (!t) return { status: "vazio", municipios: [] };
 
     // 1) o texto inteiro é um nome de município conhecido
-    var exato = porChave.get(t);
+    var exato = porChave.get(t) || porChaveJunta.get(t.replace(/ /g, ""));
     if (exato) {
       return exato.length === 1
         ? { status: "ok", municipios: exato }
@@ -57,13 +67,14 @@ var DADOS = (function () {
       var sigla = partes[partes.length - 1];
       if (sigla.length === 2 && siglasUF.has(sigla)) {
         var nome = partes.slice(0, -1).join(" ");
-        var candidatos = (porChave.get(nome) || []).filter(function (m) {
+        var lista = porChave.get(nome) || porChaveJunta.get(nome.replace(/ /g, "")) || [];
+        var candidatos = lista.filter(function (m) {
           return m.uf.toLowerCase() === sigla;
         });
         if (candidatos.length >= 1) {
           return { status: "ok", municipios: [candidatos[0]] };
         }
-        if (porChave.has(nome)) {
+        if (lista.length > 0) {
           return { status: "nao_encontrado", municipios: [], ufErrada: true };
         }
       }

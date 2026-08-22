@@ -64,6 +64,17 @@
     try { localStorage.setItem(LS_SATELITE, ligado ? "1" : "0"); } catch (e) {}
   }
 
+  // pontos ainda não descobertos: esmaecidos (padrão) ou ocultos de vez
+  var LS_PONTOS = "mapaquiz.pontos";
+  function setPontosOcultos(ocultos) {
+    svg.classList.toggle("sem-pontos", ocultos);
+    $("btn-pontos").classList.toggle("ativo", ocultos);
+    $("btn-pontos").title = ocultos
+      ? "Pontos não descobertos estão ocultos — clique para mostrá-los esmaecidos"
+      : "Pontos não descobertos aparecem esmaecidos — clique para ocultá-los";
+    try { localStorage.setItem(LS_PONTOS, ocultos ? "1" : "0"); } catch (e) {}
+  }
+
   // contorno das UFs
   BRASIL_UF.forEach(function (anel) {
     var d = anel.map(function (p, i) {
@@ -91,6 +102,25 @@
     return pts.map(function (p, i) {
       return (i === 0 ? "M" : "L") + proj.x(p[1]).toFixed(1) + " " + proj.y(p[0]).toFixed(1);
     }).join("") + "Z";
+  }
+
+  // Cor do ponto pela população (escala log de 1 mil a ~11,5 mi = São Paulo):
+  // amarelo → laranja → vinho. Os mesmos tons estão na legenda (CSS).
+  var COR_POP = [[245, 208, 76], [238, 108, 47], [122, 16, 32]];
+  function corPop(pop) {
+    var t = (Math.log(Math.max(pop, 1000)) / Math.LN10 - 3) / (7.06 - 3);
+    t = Math.max(0, Math.min(1, t)) * (COR_POP.length - 1);
+    var i = Math.min(COR_POP.length - 2, Math.floor(t));
+    var f = t - i;
+    var a = COR_POP[i], b = COR_POP[i + 1];
+    return "rgb(" + Math.round(a[0] + (b[0] - a[0]) * f) + "," +
+      Math.round(a[1] + (b[1] - a[1]) * f) + "," +
+      Math.round(a[2] + (b[2] - a[2]) * f) + ")";
+  }
+  function pintarPonto(mun, classe) {
+    var p = pontos[mun.idx];
+    p.setAttribute("class", "cidade " + classe);
+    p.style.fill = corPop(mun.pop);
   }
 
   // ------------------------------------------------------------------
@@ -195,7 +225,7 @@
   var DESCRICOES = {
     dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo da região antes de acabarem os palpites — ou o tempo.",
     pop: "Cada cidade chutada vira o centro de um círculo que cresce até somar a população alvo. Escolha bem para cobrir o máximo da região.",
-    faixas: "O mapa é dividido em faixas e você precisa nomear as maiores cidades de cada uma. Faixa completa muda de cor no mapa.",
+    faixas: "O mapa é dividido em faixas (ou numa grade de quadrados) e você precisa nomear as maiores cidades de cada uma. A cor da faixa vai se intensificando conforme você acerta.",
     topn: "O modo raiz: cite de memória as N maiores cidades da região. Cada acerto acende a cidade no mapa e mostra a posição no ranking.",
   };
 
@@ -283,8 +313,9 @@
       uf: uf || undefined,
     };
     var chave = "faixas|tipo=" + cfgF.tipo + "|largura=" + cfgF.largura + "|top=" + cfgF.topN;
-    var nomeTipo = { lat: "Faixas de latitude", lng: "Faixas de longitude", aneis: "Anéis concêntricos" }[cfgF.tipo];
-    var rotulo = nomeTipo + " · " + cfgF.largura + " km · " + cfgF.topN + " maiores cidades por faixa";
+    var nomeTipo = { lat: "Faixas de latitude", lng: "Faixas de longitude", aneis: "Anéis concêntricos", grade: "Grade lat × lng" }[cfgF.tipo];
+    var rotulo = nomeTipo + " · " + cfgF.largura + " km · " + cfgF.topN + " maiores cidades por " +
+      (cfgF.tipo === "grade" ? "célula" : "faixa");
     if (cfgF.tipo === "aneis") {
       var res = DADOS.buscar($("cfg-faixas-centro").value);
       if (res.status === "ok") {
@@ -332,7 +363,10 @@
     gFaixas.innerHTML = "";
     gCirculos.innerHTML = "";
     gMarcas.innerHTML = "";
-    pontos.forEach(function (p) { p.setAttribute("class", "cidade"); });
+    pontos.forEach(function (p) {
+      p.setAttribute("class", "cidade");
+      p.style.fill = "";
+    });
   }
 
   function setConfigTravada(travada) {
@@ -375,6 +409,7 @@
     } else if (jogoModo === "topn") {
       montarListaTopN(jogo);
     }
+    $("legenda-pop").hidden = false;
     limiteSeg = jogo.cfg.tempoMin ? jogo.cfg.tempoMin * 60 : null;
     inicioMs = Date.now();
     atualizarPlacar();
@@ -410,7 +445,8 @@
       linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b>");
     } else if (jogoModo === "faixas") {
       linhas.push("Respostas certas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
-        " (<b>" + fmtPct(pct) + "</b>) · " + jogo.faixas.length + " faixas");
+        " (<b>" + fmtPct(pct) + "</b>) · " + jogo.faixas.length +
+        (jogo.cfg.tipo === "grade" ? " células" : " faixas"));
     } else {
       linhas.push("Cidades achadas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
         " (<b>" + fmtPct(pct) + "</b>)");
@@ -477,9 +513,11 @@
     j.circulos.forEach(function (c) {
       elSvg("path", { d: caminhoGeodesico(c.mun.lat, c.mun.lng, c.raioKm), "class": "circulo-cobertura" }, gCirculos);
     });
-    j.novos.forEach(function (idx) { pontos[idx].classList.add("coberta"); });
+    j.novos.forEach(function (idx) {
+      pintarPonto(DADOS.municipios[idx], "coberta");
+    });
     j.circulos.forEach(function (c) {
-      pontos[c.mun.idx].setAttribute("class", "cidade centro-palpite");
+      pintarPonto(c.mun, "centro-palpite");
       elSvg("text", {
         x: proj.x(c.mun.lng).toFixed(1),
         y: proj.y(c.mun.lat).toFixed(1),
@@ -538,7 +576,7 @@
     var nomes = r.revelados.map(function (par) {
       return par.rank !== undefined
         ? par.rank + "º — " + nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab."
-        : nomeUF(par.mun) + " — faixa " + par.faixa.rotulo;
+        : nomeUF(par.mun) + " — " + (jogo.cfg.tipo === "grade" ? "célula " : "faixa ") + par.faixa.rotulo;
     });
     feedback("✔ " + nomes.join(" · "), "ok");
     $("input-palpite").value = "";
@@ -547,7 +585,12 @@
   }
 
   function revelarAlvo(mun, faixa, faltante, rank) {
-    pontos[mun.idx].setAttribute("class", "cidade " + (faltante ? "faltante" : "achada"));
+    if (faltante) {
+      pontos[mun.idx].setAttribute("class", "cidade faltante");
+      pontos[mun.idx].style.fill = "";
+    } else {
+      pintarPonto(mun, "achada");
+    }
     elSvg("text", {
       x: proj.x(mun.lng).toFixed(1),
       y: proj.y(mun.lat).toFixed(1),
@@ -555,16 +598,27 @@
     }, gMarcas).textContent = mun.nome;
     if (faixa) {
       if (faixa._elContador) {
-        faixa._elContador.textContent = faixa.achados.size + "/" + faixa.alvos.length;
+        faixa._elContador.textContent = rotuloContador(faixa);
       }
       atualizarItemFaixa(faixa);
-      // faixa 100% respondida muda de cor no mapa
+      atualizarAreaFaixa(faixa);
       if (!faltante && faixa.achados.size === faixa.alvos.length) {
-        if (faixa._elArea) faixa._elArea.setAttribute("visibility", "visible");
         if (faixa._elContador) faixa._elContador.classList.add("completa");
       }
     }
     if (rank !== undefined) atualizarChipTopN(rank, mun, faltante);
+  }
+
+  function rotuloContador(f) {
+    return (f.celula ? f.celula + " " : "") + f.achados.size + "/" + f.alvos.length;
+  }
+
+  // A cor da faixa caminha para o tom final conforme os acertos: a área verde
+  // fica com opacidade proporcional à fração respondida.
+  function atualizarAreaFaixa(f) {
+    if (!f._elArea) return;
+    var frac = f.alvos.length === 0 ? 0 : f.achados.size / f.alvos.length;
+    f._elArea.style.opacity = frac.toFixed(3);
   }
 
   function fimDeJogo(desistiu, porTempo) {
@@ -666,33 +720,36 @@
       if (cfg.tipo === "lat") {
         var y1 = proj.y(Math.min(f.latSup, ext.latMax));
         var y2 = proj.y(Math.max(f.latInf, ext.latMin));
-        if (f.indice % 2 === 0) {
-          elSvg("rect", { x: exX1.toFixed(1), y: y1.toFixed(1), width: (exX2 - exX1).toFixed(1), height: (y2 - y1).toFixed(1), "class": "faixa-sombra" }, gFaixas);
-        }
-        f._elArea = elSvg("rect", { x: exX1.toFixed(1), y: y1.toFixed(1), width: (exX2 - exX1).toFixed(1), height: (y2 - y1).toFixed(1), "class": "faixa-completa", visibility: "hidden" }, gFaixas);
+        f._elArea = elSvg("rect", { x: exX1.toFixed(1), y: y1.toFixed(1), width: (exX2 - exX1).toFixed(1), height: (y2 - y1).toFixed(1), "class": "faixa-area" }, gFaixas);
         elSvg("line", { x1: exX1.toFixed(1), y1: y2.toFixed(1), x2: exX2.toFixed(1), y2: y2.toFixed(1), "class": "linha-faixa" }, gFaixas);
         cx = exX1 + 8; cy = (y1 + y2) / 2 + 4;
       } else if (cfg.tipo === "lng") {
         var x1 = proj.x(Math.max(f.lngOeste, ext.lngMin));
         var x2 = proj.x(Math.min(f.lngLeste, ext.lngMax));
-        if (f.indice % 2 === 0) {
-          elSvg("rect", { x: x1.toFixed(1), y: exY1.toFixed(1), width: (x2 - x1).toFixed(1), height: (exY2 - exY1).toFixed(1), "class": "faixa-sombra" }, gFaixas);
-        }
-        f._elArea = elSvg("rect", { x: x1.toFixed(1), y: exY1.toFixed(1), width: (x2 - x1).toFixed(1), height: (exY2 - exY1).toFixed(1), "class": "faixa-completa", visibility: "hidden" }, gFaixas);
+        f._elArea = elSvg("rect", { x: x1.toFixed(1), y: exY1.toFixed(1), width: (x2 - x1).toFixed(1), height: (exY2 - exY1).toFixed(1), "class": "faixa-area" }, gFaixas);
         elSvg("line", { x1: x2.toFixed(1), y1: exY1.toFixed(1), x2: x2.toFixed(1), y2: exY2.toFixed(1), "class": "linha-faixa" }, gFaixas);
         cx = (x1 + x2) / 2 - 8; cy = exY1 + 14;
+      } else if (cfg.tipo === "grade") {
+        var gx1 = proj.x(Math.max(f.lngOeste, ext.lngMin));
+        var gx2 = proj.x(Math.min(f.lngLeste, ext.lngMax));
+        var gy1 = proj.y(Math.min(f.latSup, ext.latMax));
+        var gy2 = proj.y(Math.max(f.latInf, ext.latMin));
+        f._elArea = elSvg("rect", { x: gx1.toFixed(1), y: gy1.toFixed(1), width: (gx2 - gx1).toFixed(1), height: (gy2 - gy1).toFixed(1), "class": "faixa-area" }, gFaixas);
+        elSvg("rect", { x: gx1.toFixed(1), y: gy1.toFixed(1), width: (gx2 - gx1).toFixed(1), height: (gy2 - gy1).toFixed(1), "class": "linha-faixa" }, gFaixas);
+        cx = gx1 + 3; cy = gy1 + 12;
       } else {
-        // anel: a área de completa é a coroa entre os dois raios (fill-rule
-        // evenodd faz o círculo interno virar buraco)
+        // anel: a área é a coroa entre os dois raios (fill-rule evenodd faz o
+        // círculo interno virar buraco)
         var dAnel = caminhoGeodesico(cfg.centro.lat, cfg.centro.lng, f.kmExterno) +
           (f.kmInterno > 0 ? caminhoGeodesico(cfg.centro.lat, cfg.centro.lng, f.kmInterno) : "");
-        f._elArea = elSvg("path", { d: dAnel, "fill-rule": "evenodd", "class": "faixa-completa", visibility: "hidden" }, gFaixas);
+        f._elArea = elSvg("path", { d: dAnel, "fill-rule": "evenodd", "class": "faixa-area" }, gFaixas);
         elSvg("path", { d: caminhoGeodesico(cfg.centro.lat, cfg.centro.lng, f.kmExterno), "class": "linha-faixa" }, gFaixas);
         var pMeio = GEO.destino(cfg.centro.lat, cfg.centro.lng, 0, (f.kmInterno + f.kmExterno) / 2);
         cx = proj.x(pMeio[1]) - 8; cy = proj.y(pMeio[0]) + 4;
       }
+      atualizarAreaFaixa(f);
       f._elContador = elSvg("text", { x: cx.toFixed(1), y: cy.toFixed(1), "class": "contador-faixa" }, gFaixas);
-      f._elContador.textContent = "0/" + f.alvos.length;
+      f._elContador.textContent = rotuloContador(f);
     });
     if (cfg.tipo === "aneis") {
       var cxC = proj.x(cfg.centro.lng), cyC = proj.y(cfg.centro.lat);
@@ -730,6 +787,17 @@
   }
 
   // ---------------- lista do modo Top N ----------------
+  // Faixas de tamanho para o placar "quantas já acertei desse porte"
+  var FAIXAS_POP = [
+    { min: 1e6, rotulo: "1 mi ou mais" },
+    { min: 5e5, rotulo: "500 mil a 1 mi" },
+    { min: 2e5, rotulo: "200 a 500 mil" },
+    { min: 1e5, rotulo: "100 a 200 mil" },
+    { min: 5e4, rotulo: "50 a 100 mil" },
+    { min: 0, rotulo: "menos de 50 mil" },
+  ];
+  var topnPorte = null; // linhas de contagem por faixa de população
+
   function montarListaTopN(jogo) {
     var alvo = $("lista-jogo");
     alvo.innerHTML = "";
@@ -738,13 +806,32 @@
     var chips = jogo.alvos.map(function (m, i) {
       return '<span class="chip" data-rank="' + (i + 1) + '">' + (i + 1) + " •••</span>";
     }).join("");
+    var portes = FAIXAS_POP.map(function (fx) {
+      return { min: fx.min, rotulo: fx.rotulo, total: 0, achados: 0 };
+    });
+    // cada alvo cai na primeira faixa (de cima para baixo) que a população alcança
+    jogo.alvos.forEach(function (m) {
+      for (var i = 0; i < portes.length; i++) {
+        if (m.pop >= portes[i].min) { portes[i].total++; break; }
+      }
+    });
+    var htmlPortes = portes.map(function (p, i) {
+      if (p.total === 0) return "";
+      return "<div class='linha-porte'><span>" + p.rotulo +
+        "</span><b id='topn-porte-" + i + "'>0/" + p.total + "</b></div>";
+    }).join("");
     item.innerHTML = "<div class='titulo-faixa'><span>As " + jogo.alvosTotal +
       " maiores</span><span id='topn-contador'>0/" + jogo.alvosTotal +
-      "</span></div><div class='chips'>" + chips + "</div>";
+      "</span></div><div class='portes'>" + htmlPortes +
+      "</div><div class='chips'>" + chips + "</div>";
     alvo.appendChild(item);
     topnChips = {};
     item.querySelectorAll(".chip").forEach(function (c) {
       topnChips[c.dataset.rank] = c;
+    });
+    topnPorte = portes.map(function (p, i) {
+      p.el = document.getElementById("topn-porte-" + i);
+      return p;
     });
   }
 
@@ -755,6 +842,19 @@
     chip.className = "chip " + (faltante ? "faltante" : "achado");
     var cont = document.getElementById("topn-contador");
     if (cont) cont.textContent = jogo.achadosTotal + "/" + jogo.alvosTotal;
+    if (!faltante && topnPorte) {
+      for (var i = 0; i < topnPorte.length; i++) {
+        var p = topnPorte[i];
+        if (mun.pop >= p.min) {
+          p.achados++;
+          if (p.el) {
+            p.el.textContent = p.achados + "/" + p.total;
+            p.el.classList.toggle("completo", p.achados === p.total);
+          }
+          break;
+        }
+      }
+    }
   }
 
   // ------------------------------------------------------------------
@@ -898,12 +998,9 @@
   });
   svg.addEventListener("mouseleave", function () { tooltip.hidden = true; });
 
-  svg.addEventListener("wheel", function (ev) {
-    ev.preventDefault();
-    var rect = svg.getBoundingClientRect();
-    var fx = (ev.clientX - rect.left) / rect.width;
-    var fy = (ev.clientY - rect.top) / rect.height;
-    var fator = ev.deltaY < 0 ? 1 / 1.25 : 1.25;
+  // aplica um fator de zoom mantendo o ponto (fx, fy) — frações 0..1 da área
+  // visível — parado na tela
+  function zoomEm(fator, fx, fy) {
     var novoW = Math.min(vbBase.w, Math.max(vbBase.w / 40, vb.w * fator));
     var novoH = novoW * (vbBase.h / vbBase.w);
     vb.x = Math.max(0, Math.min(vbBase.w - novoW, vb.x + fx * (vb.w - novoW)));
@@ -911,7 +1008,22 @@
     vb.w = novoW;
     vb.h = novoH;
     aplicarViewBox();
+  }
+
+  svg.addEventListener("wheel", function (ev) {
+    ev.preventDefault();
+    var rect = svg.getBoundingClientRect();
+    zoomEm(ev.deltaY < 0 ? 1 / 1.25 : 1.25,
+      (ev.clientX - rect.left) / rect.width,
+      (ev.clientY - rect.top) / rect.height);
   }, { passive: false });
+
+  $("btn-zoom-mais").addEventListener("click", function () { zoomEm(1 / 1.5, 0.5, 0.5); });
+  $("btn-zoom-menos").addEventListener("click", function () { zoomEm(1.5, 0.5, 0.5); });
+  $("btn-zoom-zerar").addEventListener("click", function () {
+    vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
+    aplicarViewBox();
+  });
 
   var arrasto = null;
   svg.addEventListener("mousedown", function (ev) {
@@ -953,6 +1065,7 @@
         jogo = null;
       }
       $("area-jogo").hidden = true;
+      $("legenda-pop").hidden = true;
       limparCamadasDeJogo();
       vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
       aplicarViewBox();
@@ -993,6 +1106,10 @@
 
   $("btn-satelite").addEventListener("click", function () {
     setSatelite(!svg.classList.contains("satelite"));
+  });
+
+  $("btn-pontos").addEventListener("click", function () {
+    setPontosOcultos(!svg.classList.contains("sem-pontos"));
   });
 
   $("btn-desafio").addEventListener("click", copiarDesafio);
@@ -1047,5 +1164,8 @@
   window.addEventListener("hashchange", aplicarDesafioDaURL);
   try {
     if (localStorage.getItem(LS_SATELITE) === "1") setSatelite(true);
-  } catch (e) {}
+    setPontosOcultos(localStorage.getItem(LS_PONTOS) === "1");
+  } catch (e) {
+    setPontosOcultos(false);
+  }
 })();

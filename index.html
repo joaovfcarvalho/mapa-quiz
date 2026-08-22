@@ -84,6 +84,7 @@
             <option value="lat">Faixas de latitude</option>
             <option value="lng">Faixas de longitude</option>
             <option value="aneis">Anéis concêntricos</option>
+            <option value="grade">Grade (lat × lng)</option>
           </select>
         </label>
         <label>Largura de cada faixa (km)
@@ -146,9 +147,22 @@
 
   <div id="mapa-wrap">
     <svg id="mapa" role="img" aria-label="Mapa do Brasil"></svg>
-    <button id="btn-satelite" type="button"
-      title="Alternar fundo de satélite (imagem: NASA Blue Marble)">🛰️ Satélite</button>
-    <div id="dica-zoom">roda do mouse: zoom · arrastar: mover · duplo clique: restaurar</div>
+    <div id="botoes-mapa">
+      <button id="btn-satelite" type="button"
+        title="Alternar fundo de satélite (imagem: NASA Blue Marble)">🛰️ Satélite</button>
+      <button id="btn-pontos" type="button">● Pontos</button>
+    </div>
+    <div id="botoes-zoom">
+      <button id="btn-zoom-mais" type="button" title="Aproximar">+</button>
+      <button id="btn-zoom-menos" type="button" title="Afastar">−</button>
+      <button id="btn-zoom-zerar" type="button" title="Restaurar o mapa inteiro">⌂</button>
+    </div>
+    <div id="legenda-pop" hidden>
+      <span>1 mil</span>
+      <div class="grad" title="Cor dos pontos descobertos: população do município (escala logarítmica)"></div>
+      <span>10 mi+</span>
+    </div>
+    <div id="dica-zoom">botões ou roda do mouse: zoom · arrastar: mover · duplo clique: restaurar</div>
     <div id="tooltip" hidden></div>
   </div>
 </main>
