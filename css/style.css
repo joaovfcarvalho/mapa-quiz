@@ -381,6 +381,16 @@ main {
 /* partida de "Onde fica?": nenhum ponto pode entregar onde ficam as cidades */
 #mapa.modo-clique .cidade:not(.achada):not(.faltante) { opacity: 0; }
 
+/* forma dos municípios (botão ⬡ Formas): o polígono do território acompanha
+   o ponto — mesmas classes de marcação e mesma cor inline (vinda do JS);
+   translúcido para faixas e círculos por baixo continuarem legíveis */
+.municipio { display: none; pointer-events: none; fill-opacity: .4; stroke: rgba(0, 0, 0, .3); stroke-width: .5; vector-effect: non-scaling-stroke; }
+.municipio.coberta, .municipio.centro-palpite, .municipio.achada, .municipio.faltante { display: inline; }
+.municipio.fora { display: none; } /* município fora da região do jogo */
+.municipio.coberta, .municipio.achada { fill: var(--verde); }
+.municipio.centro-palpite { fill: var(--azul-escuro); }
+.municipio.faltante { fill: var(--vermelho); }
+
 /* marcações do modo "Onde fica?": o X do clique e a linha até o lugar certo */
 .marca-clique { stroke: var(--azul-escuro); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
 .linha-clique { stroke: rgba(20, 82, 138, .55); stroke-width: 1; stroke-dasharray: 4 3; fill: none; vector-effect: non-scaling-stroke; }
@@ -428,6 +438,10 @@ main {
 #mapa.satelite .cidade.coberta, #mapa.satelite .cidade.centro-palpite, #mapa.satelite .cidade.achada {
   stroke: rgba(255, 255, 255, .55);
 }
+#mapa.satelite .municipio { stroke: rgba(255, 255, 255, .5); }
+#mapa.satelite .municipio.coberta, #mapa.satelite .municipio.achada { fill: #67e88c; }
+#mapa.satelite .municipio.centro-palpite { fill: #ffcf4d; }
+#mapa.satelite .municipio.faltante { fill: #ff7a70; }
 #mapa.satelite .circulo-cobertura { fill: rgba(124, 192, 255, .18); stroke: #7cc0ff; }
 #mapa.satelite .faixa-area { fill: rgba(103, 232, 140, .28); }
 #mapa.satelite .contador-faixa.completa { fill: #67e88c; }

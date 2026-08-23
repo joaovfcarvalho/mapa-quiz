@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Gera os arquivos de dados embutidos do quiz (data/municipios.js e data/brasil_uf.js).
+"""Gera os arquivos de dados embutidos do quiz (data/municipios.js,
+data/brasil_uf.js e data/malha_municipios.js).
 
 Fontes:
   - Coordenadas dos municípios: https://github.com/kelvins/municipios-brasileiros (csv/municipios.csv, csv/estados.csv)
@@ -7,10 +8,14 @@ Fontes:
     https://servicodados.ibge.gov.br/api/v3/agregados/4709/periodos/2022/variaveis/93?localidades=N6[all]
   - Contorno das UFs: IBGE malhas
     https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json
+  - Forma dos municípios: IBGE malhas (qualidade mínima, senão o arquivo
+    passa de 9 MB — na escala do mapa a diferença não aparece)
+    https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/vnd.geo+json
 
 Uso:
   python3 build_data.py --municipios municipios.csv --estados estados.csv \
-      --pop pop2022.json --malha br_uf.geojson --out ../data
+      --pop pop2022.json --malha br_uf.geojson \
+      --malha-municipios br_mun.geojson --out ../data
 Sem argumentos, baixa as fontes da internet.
 """
 import argparse
@@ -25,6 +30,7 @@ URL_MUNICIPIOS = "https://raw.githubusercontent.com/kelvins/municipios-brasileir
 URL_ESTADOS = "https://raw.githubusercontent.com/kelvins/municipios-brasileiros/main/csv/estados.csv"
 URL_POP = "https://servicodados.ibge.gov.br/api/v3/agregados/4709/periodos/2022/variaveis/93?localidades=N6[all]"
 URL_MALHA = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json"
+URL_MALHA_MUN = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/vnd.geo+json"
 
 
 def read_source(path, url, binary=False):
@@ -37,12 +43,49 @@ def read_source(path, url, binary=False):
         return data if binary else data.decode("utf-8-sig")
 
 
+# Anéis de um polígono GeoJSON, arredondados a 3 casas (~110 m) e sem os
+# pontos que o arredondamento igualou nem o fecho repetido (o "Z" do path fecha).
+def compactar_aneis(geom):
+    aneis = []
+    polys = geom["coordinates"] if geom["type"] == "MultiPolygon" else [geom["coordinates"]]
+    for poly in polys:
+        for anel in poly:
+            pts = [[round(x, 3), round(y, 3)] for x, y in anel]
+            pts = [p for i, p in enumerate(pts) if i == 0 or p != pts[i - 1]]
+            if len(pts) > 1 and pts[0] == pts[-1]:
+                pts.pop()
+            aneis.append(pts)
+    return aneis
+
+
+def gerar_malha_municipios(malha_mun, codigos_jogo, out_dir):
+    formas = {}
+    for feat in malha_mun["features"]:
+        formas[feat["properties"]["codarea"]] = compactar_aneis(feat["geometry"])
+    sem_forma = sorted(codigos_jogo - set(formas))
+    if sem_forma:
+        print(f"AVISO: {len(sem_forma)} municípios sem forma na malha "
+              f"(ficam só com o ponto): {sem_forma}", file=sys.stderr)
+    out_formas = os.path.join(out_dir, "malha_municipios.js")
+    with open(out_formas, "w", encoding="utf-8") as f:
+        f.write("// Gerado por tools/build_data.py — não editar à mão.\n")
+        f.write("// Forma dos municípios (IBGE, qualidade mínima), por código IBGE:\n")
+        f.write("// lista de anéis [[lng,lat],...]; anéis internos são buracos "
+                "(desenhar com fill-rule evenodd).\n")
+        f.write("var MALHA_MUNICIPIOS = {\n")
+        for cod in sorted(formas):
+            f.write('"%s":%s,\n' % (cod, json.dumps(formas[cod], separators=(",", ":"))))
+        f.write("};\n")
+    print(f"{out_formas}: {len(formas)} municípios, {os.path.getsize(out_formas) // 1024} KB")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--municipios")
     ap.add_argument("--estados")
     ap.add_argument("--pop")
     ap.add_argument("--malha")
+    ap.add_argument("--malha-municipios")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "data"))
     args = ap.parse_args()
 
@@ -109,6 +152,9 @@ def main():
         f.write(json.dumps(poligonos, separators=(",", ":")))
         f.write(";\n")
     print(f"{out_malha}: {len(poligonos)} anéis, {os.path.getsize(out_malha) // 1024} KB")
+
+    malha_mun = json.loads(read_source(args.malha_municipios, URL_MALHA_MUN))
+    gerar_malha_municipios(malha_mun, {str(l[0]) for l in linhas}, args.out)
 
 
 if __name__ == "__main__":

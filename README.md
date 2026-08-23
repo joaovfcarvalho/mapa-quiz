@@ -106,6 +106,10 @@ recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
   mapa.
 - O botão ● Pontos escolhe se os municípios ainda não descobertos aparecem
   esmaecidos (padrão) ou ficam ocultos até você acertá-los.
+- O botão ⬡ Formas pinta também o território dos municípios marcados, não só
+  o ponto da sede — acertou Rio de Janeiro, acende o polígono inteiro do
+  município. A malha dos 5.570 municípios (~2,4 MB) só é carregada na
+  primeira vez que o botão é ligado; quem não usa não paga nada.
 - Passe o mouse sobre uma cidade já revelada/coberta para ver nome e população.
 
 ## Recordes
@@ -123,11 +127,13 @@ cada configuração).
 | População por município | IBGE, Censo Demográfico 2022 (agregado 4709, variável 93) |
 | Coordenadas (sede municipal) | [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros) |
 | Contorno das UFs | IBGE, API de malhas (qualidade máxima) |
+| Forma dos municípios (botão ⬡) | IBGE, API de malhas (qualidade mínima) |
 | Fundo de satélite (botão 🛰️) | NASA Blue Marble Next Generation, 500 m/pixel (domínio público) |
 
-Os dados ficam embutidos em `data/municipios.js` e `data/brasil_uf.js` para o
-jogo funcionar offline (inclusive aberto via `file://`). Para regenerar a
-partir das fontes:
+Os dados ficam embutidos em `data/municipios.js`, `data/brasil_uf.js` e
+`data/malha_municipios.js` para o jogo funcionar offline (inclusive aberto
+via `file://`) — o último só é carregado se o botão ⬡ Formas for ligado.
+Para regenerar a partir das fontes:
 
 ```bash
 cd tools
@@ -137,7 +143,8 @@ python3 build_satelite.py      # recorta o fundo de satélite dos tiles da NASA
 
 Observações: as distâncias usam o centroide (sede) de cada município, não o
 polígono; Boa Esperança do Norte (MT), criado em 2023, consta com população 0
-por não existir no Censo 2022.
+por não existir no Censo 2022 — e, por não existir na malha municipal do
+IBGE, é o único município sem forma no botão ⬡ (fica só o ponto).
 
 ## Estrutura
 
