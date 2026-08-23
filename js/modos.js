@@ -11,8 +11,9 @@ var MODOS = (function () {
       ? municipios.filter(function (m) { return m.uf === cfg.uf; })
       : municipios;
     var pop = 0;
-    lista.forEach(function (m) { pop += m.pop; });
-    return { lista: lista, pop: pop };
+    var area = 0;
+    lista.forEach(function (m) { pop += m.pop; area += m.area; });
+    return { lista: lista, pop: pop, area: area };
   }
 
   function dentroDaRegiao(cfg, muns) {
@@ -34,18 +35,20 @@ var MODOS = (function () {
 
   // ---------------------------------------------------------------
   // Modo 1 — Círculos por distância: cada palpite cobre tudo num raio fixo.
-  // cfg: {raio, metrica: 'pop'|'cidades', palpites? (sem limite se ausente),
-  //       uf? (só uma UF se presente)}
+  // cfg: {raio, metrica: 'pop'|'cidades'|'area', palpites? (sem limite se
+  //       ausente), uf? (só uma UF se presente)}
   // ---------------------------------------------------------------
   function JogoCirculosDistancia(cfg) {
     this.cfg = cfg;
     var u = universoDe(cfg);
     this.universo = u.lista;
     this.uniPop = u.pop;
+    this.uniArea = u.area;
     this.jogadas = [];
     this.usados = new Set();   // idx dos municípios já chutados
     this.cobertos = new Set();
     this.popCoberta = 0;
+    this.areaCoberta = 0;      // km²: um município coberto conta o território inteiro
     this.encerrado = false;
   }
   JogoCirculosDistancia.prototype.palpitesRestantes = function () {
@@ -67,6 +70,7 @@ var MODOS = (function () {
 
     var novos = [];
     var ganhoPop = 0;
+    var ganhoArea = 0;
     var circulos = [];
     var cobertos = this.cobertos;
     var raio = this.cfg.raio;
@@ -80,19 +84,21 @@ var MODOS = (function () {
           cobertos.add(m.idx);
           novos.push(m.idx);
           ganhoPop += m.pop;
+          ganhoArea += m.area;
         }
       });
     });
     this.popCoberta += ganhoPop;
-    var jogada = { muns: lista, circulos: circulos, novos: novos, ganhoPop: ganhoPop };
+    this.areaCoberta += ganhoArea;
+    var jogada = { muns: lista, circulos: circulos, novos: novos, ganhoPop: ganhoPop, ganhoArea: ganhoArea };
     this.jogadas.push(jogada);
     if (this.cfg.palpites && this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
     return { tipo: "ok", jogada: jogada };
   };
   JogoCirculosDistancia.prototype.pct = function () {
-    return this.cfg.metrica === "cidades"
-      ? this.cobertos.size / this.universo.length
-      : this.popCoberta / this.uniPop;
+    if (this.cfg.metrica === "cidades") return this.cobertos.size / this.universo.length;
+    if (this.cfg.metrica === "area") return this.areaCoberta / this.uniArea;
+    return this.popCoberta / this.uniPop;
   };
 
   // ---------------------------------------------------------------

@@ -11,7 +11,7 @@ no `localStorage` do navegador.
 
 **1. Círculos por distância** — chute cidades; cada palpite cobre todos os
 municípios num raio fixo (configurável, ex.: 100 km). Cubra o máximo do país
-(por população ou por número de cidades) antes de acabarem os palpites — ou o
+(por população, por número de cidades ou por área em km²) antes de acabarem os palpites — ou o
 tempo. Por padrão vale a regra dura: uma cidade que já caiu dentro de um
 círculo não pode mais ser usada como palpite (desligável na configuração).
 
@@ -125,6 +125,7 @@ cada configuração).
 | Dado | Fonte |
 |---|---|
 | População por município | IBGE, Censo Demográfico 2022 (agregado 4709, variável 93) |
+| Área territorial por município | IBGE, Censo Demográfico 2022 (agregado 4714, variável 6318) |
 | Coordenadas (sede municipal) | [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros) |
 | Contorno das UFs | IBGE, API de malhas (qualidade máxima) |
 | Forma dos municípios (botão ⬡) | IBGE, API de malhas (qualidade mínima) |
@@ -142,9 +143,11 @@ python3 build_satelite.py      # recorta o fundo de satélite dos tiles da NASA
 ```
 
 Observações: as distâncias usam o centroide (sede) de cada município, não o
-polígono; Boa Esperança do Norte (MT), criado em 2023, consta com população 0
-por não existir no Censo 2022 — e, por não existir na malha municipal do
-IBGE, é o único município sem forma no botão ⬡ (fica só o ponto).
+polígono; no objetivo "cobrir área", município coberto conta o território
+inteiro (a sede caiu no círculo → a área toda soma); Boa Esperança do Norte
+(MT), criado em 2023, consta com população e área 0 por não existir no Censo
+2022 — e, por não existir na malha municipal do IBGE, é o único município
+sem forma no botão ⬡ (fica só o ponto).
 
 ## Estrutura
 

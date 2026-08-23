@@ -23,6 +23,7 @@ var DADOS = (function () {
       lng: m[4],
       pop: m[5],
       capital: m[6] === 1,
+      area: m[7], // km² (IBGE 2022)
       chave: normalizar(m[1]),
     };
   });
