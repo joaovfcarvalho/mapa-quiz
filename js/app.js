@@ -38,6 +38,29 @@
   }
   aplicarViewBox();
 
+  // O <svg> estica para preencher o painel, mas o conteúdo do viewBox é
+  // encaixado com escala uniforme e centralizado (preserveAspectRatio padrão,
+  // "xMidYMid meet"), deixando sobras vazias num dos eixos. Toda conversão
+  // tela -> mapa precisa descontar essas sobras, senão o ponto desliza em
+  // direção ao centro — pior perto das bordas.
+  function medidaMapa() {
+    var rect = svg.getBoundingClientRect();
+    var escala = Math.min(rect.width / vb.w, rect.height / vb.h);
+    return {
+      escala: escala,
+      x0: rect.left + (rect.width - vb.w * escala) / 2,
+      y0: rect.top + (rect.height - vb.h * escala) / 2,
+    };
+  }
+  // pixel da tela (clientX/Y) -> coordenadas do viewBox do mapa
+  function pontoDoMapa(clientX, clientY) {
+    var m = medidaMapa();
+    return {
+      x: vb.x + (clientX - m.x0) / m.escala,
+      y: vb.y + (clientY - m.y0) / m.escala,
+    };
+  }
+
   function elSvg(tag, attrs, pai) {
     var e = document.createElementNS(SVG_NS, tag);
     for (var k in attrs) e.setAttribute(k, attrs[k]);
@@ -1662,10 +1685,10 @@
 
   svg.addEventListener("wheel", function (ev) {
     ev.preventDefault();
-    var rect = svg.getBoundingClientRect();
+    var p = pontoDoMapa(ev.clientX, ev.clientY);
     zoomEm(ev.deltaY < 0 ? 1 / 1.25 : 1.25,
-      (ev.clientX - rect.left) / rect.width,
-      (ev.clientY - rect.top) / rect.height);
+      Math.max(0, Math.min(1, (p.x - vb.x) / vb.w)),
+      Math.max(0, Math.min(1, (p.y - vb.y) / vb.h)));
   }, { passive: false });
 
   $("btn-zoom-mais").addEventListener("click", function () { zoomEm(1 / 1.5, 0.5, 0.5); });
@@ -1689,16 +1712,14 @@
     cliqueInicio = null;
     if (moveu > 5) return;
     if (jogoModo !== "clique" || !jogo || jogo.encerrado) return;
-    var rect = svg.getBoundingClientRect();
-    var px = vb.x + ((ev.clientX - rect.left) / rect.width) * vb.w;
-    var py = vb.y + ((ev.clientY - rect.top) / rect.height) * vb.h;
-    responderClique(proj.latDe(py), proj.lngDe(px));
+    var p = pontoDoMapa(ev.clientX, ev.clientY);
+    responderClique(proj.latDe(p.y), proj.lngDe(p.x));
   });
   window.addEventListener("mousemove", function (ev) {
     if (!arrasto) return;
-    var rect = svg.getBoundingClientRect();
-    vb.x = Math.max(0, Math.min(vbBase.w - vb.w, arrasto.vbx - (ev.clientX - arrasto.x) * (vb.w / rect.width)));
-    vb.y = Math.max(0, Math.min(vbBase.h - vb.h, arrasto.vby - (ev.clientY - arrasto.y) * (vb.h / rect.height)));
+    var escala = medidaMapa().escala;
+    vb.x = Math.max(0, Math.min(vbBase.w - vb.w, arrasto.vbx - (ev.clientX - arrasto.x) / escala));
+    vb.y = Math.max(0, Math.min(vbBase.h - vb.h, arrasto.vby - (ev.clientY - arrasto.y) / escala));
     aplicarViewBox();
   });
   window.addEventListener("mouseup", function () {
