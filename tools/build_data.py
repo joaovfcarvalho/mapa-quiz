@@ -6,6 +6,8 @@ Fontes:
   - Coordenadas dos municípios: https://github.com/kelvins/municipios-brasileiros (csv/municipios.csv, csv/estados.csv)
   - População: IBGE, Censo 2022 (agregado 4709, variável 93, N6[all])
     https://servicodados.ibge.gov.br/api/v3/agregados/4709/periodos/2022/variaveis/93?localidades=N6[all]
+  - Área territorial: IBGE, Censo 2022 (agregado 4714, variável 6318, N6[all])
+    https://servicodados.ibge.gov.br/api/v3/agregados/4714/periodos/2022/variaveis/6318?localidades=N6[all]
   - Contorno das UFs: IBGE malhas
     https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json
   - Forma dos municípios: IBGE malhas (qualidade mínima, senão o arquivo
@@ -14,7 +16,7 @@ Fontes:
 
 Uso:
   python3 build_data.py --municipios municipios.csv --estados estados.csv \
-      --pop pop2022.json --malha br_uf.geojson \
+      --pop pop2022.json --area area2022.json --malha br_uf.geojson \
       --malha-municipios br_mun.geojson --out ../data
 Sem argumentos, baixa as fontes da internet.
 """
@@ -29,6 +31,7 @@ import urllib.request
 URL_MUNICIPIOS = "https://raw.githubusercontent.com/kelvins/municipios-brasileiros/main/csv/municipios.csv"
 URL_ESTADOS = "https://raw.githubusercontent.com/kelvins/municipios-brasileiros/main/csv/estados.csv"
 URL_POP = "https://servicodados.ibge.gov.br/api/v3/agregados/4709/periodos/2022/variaveis/93?localidades=N6[all]"
+URL_AREA = "https://servicodados.ibge.gov.br/api/v3/agregados/4714/periodos/2022/variaveis/6318?localidades=N6[all]"
 URL_MALHA = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json"
 URL_MALHA_MUN = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/vnd.geo+json"
 
@@ -84,6 +87,7 @@ def main():
     ap.add_argument("--municipios")
     ap.add_argument("--estados")
     ap.add_argument("--pop")
+    ap.add_argument("--area")
     ap.add_argument("--malha")
     ap.add_argument("--malha-municipios")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "data"))
@@ -101,15 +105,27 @@ def main():
         if valor not in ("-", "...", "X", None):
             pop_por_ibge[serie["localidade"]["id"]] = int(valor)
 
+    area_json = json.loads(read_source(args.area, URL_AREA))
+    area_por_ibge = {}
+    for serie in area_json[0]["resultados"][0]["series"]:
+        valor = list(serie["serie"].values())[0]
+        if valor not in ("-", "...", "X", None):
+            area_por_ibge[serie["localidade"]["id"]] = round(float(valor), 1)
+
     municipios_csv = read_source(args.municipios, URL_MUNICIPIOS)
     linhas = []
     sem_pop = []
+    sem_area = []
     for row in csv.DictReader(io.StringIO(municipios_csv)):
         ibge = row["codigo_ibge"]
         pop = pop_por_ibge.get(ibge)
         if pop is None:
             sem_pop.append(f"{row['nome']} ({ibge})")
             pop = 0
+        area = area_por_ibge.get(ibge)
+        if area is None:
+            sem_area.append(f"{row['nome']} ({ibge})")
+            area = 0
         linhas.append([
             int(ibge),
             row["nome"],
@@ -118,16 +134,19 @@ def main():
             round(float(row["longitude"]), 4),
             pop,
             int(row["capital"]),
+            area,
         ])
     linhas.sort(key=lambda l: -l[5])
     if sem_pop:
         print(f"AVISO: {len(sem_pop)} municípios sem população: {sem_pop[:10]}", file=sys.stderr)
+    if sem_area:
+        print(f"AVISO: {len(sem_area)} municípios sem área: {sem_area[:10]}", file=sys.stderr)
 
     os.makedirs(args.out, exist_ok=True)
     out_mun = os.path.join(args.out, "municipios.js")
     with open(out_mun, "w", encoding="utf-8") as f:
         f.write("// Gerado por tools/build_data.py — não editar à mão.\n")
-        f.write("// Campos: [codigo_ibge, nome, uf, lat, lng, populacao_censo_2022, capital]\n")
+        f.write("// Campos: [codigo_ibge, nome, uf, lat, lng, populacao_censo_2022, capital, area_km2_2022]\n")
         f.write("var MUNICIPIOS = [\n")
         for l in linhas:
             f.write(json.dumps(l, ensure_ascii=False, separators=(",", ":")) + ",\n")

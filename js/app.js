@@ -292,6 +292,11 @@
     if (n >= 1e3) return Math.round(n / 1e3).toLocaleString("pt-BR") + " mil";
     return fmtInt(n);
   }
+  function fmtArea(km2) {
+    if (km2 >= 1e6) return (km2 / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " mi km²";
+    if (km2 >= 1e3) return Math.round(km2 / 1e3).toLocaleString("pt-BR") + " mil km²";
+    return Math.round(km2).toLocaleString("pt-BR") + " km²";
+  }
   function fmtTempo(seg) {
     var m = Math.floor(seg / 60);
     var s = seg % 60;
@@ -437,7 +442,8 @@
         chave: "dist|raio=" + cfgD.raio + limD.chave + "|metrica=" + cfgD.metrica +
           (cfgD.homonimos ? "|homonimos=1" : "") + (cfgD.bloqueio ? "|bloqueio=1" : "") + sufChave,
         rotulo: "Círculos por distância · raio " + cfgD.raio + " km · " + limD.rotulo +
-          " · objetivo: " + (cfgD.metrica === "pop" ? "população" : "nº de cidades") +
+          " · objetivo: " + (cfgD.metrica === "pop" ? "população" :
+            cfgD.metrica === "area" ? "área" : "nº de cidades") +
           (cfgD.homonimos ? " · homônimas juntas" : "") +
           (cfgD.bloqueio ? " · coberta não vale" : "") + sufRotulo,
       };
@@ -720,6 +726,10 @@
       linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b> de " +
         fmtInt(jogo.universo.length) + " (<b>" + fmtPct(pct) + "</b>)");
       linhas.push("População coberta: <b>" + fmtPop(jogo.popCoberta) + "</b>");
+    } else if (jogoModo === "dist" && jogo.cfg.metrica === "area") {
+      linhas.push("Área coberta: <b>" + fmtArea(jogo.areaCoberta) + "</b> de " +
+        fmtArea(jogo.uniArea) + " (<b>" + fmtPct(pct) + "</b>)");
+      linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b>");
     } else if (jogoModo === "dist" || jogoModo === "pop") {
       linhas.push("População coberta: <b>" + fmtPop(jogo.popCoberta) + "</b> de " +
         fmtPop(jogo.uniPop) + " (<b>" + fmtPct(pct) + "</b>)");
@@ -843,6 +853,8 @@
     var ordem = jogo.jogadas.length;
     var detalhe = jogoModo === "pop" && j.circulos.length === 1
       ? "raio " + Math.round(j.circulos[0].raioKm) + " km · +" + fmtPop(j.ganhoPop) + " hab. novos · +" + fmtInt(j.novos.length) + " cidades"
+      : jogoModo === "dist" && jogo.cfg.metrica === "area"
+      ? "+" + fmtArea(j.ganhoArea) + " · +" + fmtInt(j.novos.length) + " cidades"
       : "+" + fmtPop(j.ganhoPop) + " hab. · +" + fmtInt(j.novos.length) + " cidades";
     var item = document.createElement("div");
     item.className = "item-jogada";
@@ -1285,6 +1297,8 @@
         jogo.resultados.length + " rodadas";
     } else if (jogoModo === "dist" && jogo.cfg.metrica === "cidades") {
       placar = fmtInt(jogo.cobertos.size) + " cidades";
+    } else if (jogoModo === "dist" && jogo.cfg.metrica === "area") {
+      placar = fmtArea(jogo.areaCoberta);
     } else {
       placar = fmtPop(jogo.popCoberta) + " hab.";
     }
@@ -1331,16 +1345,20 @@
         "Piores erros: " + itens.join(" · ") + ".</div>";
     }
     if (jogoModo === "dist" || jogoModo === "pop") {
-      var fora = [];
-      for (var i = 0; i < jogo.universo.length && fora.length < 5; i++) {
-        var m = jogo.universo[i];
-        if (!jogo.cobertos.has(m.idx)) fora.push(m);
-      }
+      // no objetivo de área, "maior" é por território; nos demais, por população
+      var porArea = jogoModo === "dist" && jogo.cfg.metrica === "area";
+      var fora = jogo.universo.filter(function (m) { return !jogo.cobertos.has(m.idx); });
       if (fora.length === 0) return "";
-      itens = fora.map(function (m) { return nomeUF(m) + " — " + fmtPop(m.pop); });
+      var maiores = porArea
+        ? fora.slice().sort(function (a, b) { return b.area - a.area; }).slice(0, 5)
+        : fora.slice(0, 5);
+      itens = maiores.map(function (m) {
+        return nomeUF(m) + " — " + (porArea ? fmtArea(m.area) : fmtPop(m.pop));
+      });
       return "<div class='relatorio'>Ficou na mesa: <b>" +
-        fmtPop(jogo.uniPop - jogo.popCoberta) + " hab.</b> em " +
-        fmtInt(jogo.universo.length - jogo.cobertos.size) + " cidades.<br>" +
+        (porArea ? fmtArea(jogo.uniArea - jogo.areaCoberta)
+          : fmtPop(jogo.uniPop - jogo.popCoberta) + " hab.") + "</b> em " +
+        fmtInt(fora.length) + " cidades.<br>" +
         "Maiores esquecidas: " + itens.join(" · ") + ".</div>";
     }
     if (!faltantes || faltantes.length === 0) return "";
@@ -1660,7 +1678,7 @@
     if (t.tagName === "circle" && t.dataset.idx !== undefined &&
         t.getAttribute("class") !== "cidade") {
       var m = DADOS.municipios[+t.dataset.idx];
-      tooltip.innerHTML = "<b>" + nomeUF(m) + "</b> · " + fmtInt(m.pop) + " hab.";
+      tooltip.innerHTML = "<b>" + nomeUF(m) + "</b> · " + fmtInt(m.pop) + " hab. · " + fmtArea(m.area);
       tooltip.hidden = false;
       var wrap = $("mapa-wrap").getBoundingClientRect();
       tooltip.style.left = ev.clientX - wrap.left + 14 + "px";
