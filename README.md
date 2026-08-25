@@ -48,8 +48,11 @@ pontos dos municípios somem do mapa — só o contorno das UFs fica de guia.
 
 **7. Maratona completa** — cite **todos** os municípios da região (os 5.571
 do Brasil, se tiver coragem), no seu ritmo. O progresso e o relógio ficam
-salvos no navegador: pause e continue quando quiser, acompanhando contadores
-por UF (ou por porte, jogando uma UF só). O último município acertado fica
+salvos no navegador: pause e continue quando quiser. O placar acompanha também
+a população já citada, e a lista lateral traz contadores por porte (1 mi+,
+500 mil–1 mi, …) e por UF — cada UF mostra quantas das 10 maiores cidades
+você já citou (★), e clicar na linha revela a posição da maior que ainda
+falta ("a 3ª do estado"), sem entregar o nome. O último município acertado fica
 destacado em rosa no mapa — ponto pulsante com o nome ao lado (e o território,
 com ⬡ Formas ligado) — até o próximo acerto, para você ver na hora onde fica
 o que acabou de digitar.
