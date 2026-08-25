@@ -385,6 +385,8 @@
   var topnChips = null;     // rank -> chip da lista do modo Top N
   var dicasUsadas = 0;      // dicas pedidas na partida (faixas/topn: −1 acerto cada)
   var maratonaContadores = null; // contadores da lista lateral da maratona
+  var maratonaTop = null;        // uf -> {idxs, total, achados} das 10 maiores
+  var maratonaDetalheUF = null;  // UF cujo detalhe (maior que falta) está aberto
   var recentes = [];        // idx dos municípios do último acerto da maratona
   var rotulosRecentes = []; // rótulos <text> desses acertos (somem no próximo)
   var cliqueInicio = null;  // posição do mousedown para distinguir clique de arrasto
@@ -761,6 +763,9 @@
     } else if (jogoModo === "maratona") {
       linhas.push("Municípios: <b>" + fmtInt(jogo.achados.size) + "</b> de " +
         fmtInt(jogo.alvosTotal) + " (<b>" + fmtPct(pct) + "</b>)");
+      linhas.push("População: <b>" + fmtPop(jogo.popAchada) + "</b> de " +
+        fmtPop(jogo.uniPop) +
+        " (<b>" + fmtPct(jogo.uniPop ? jogo.popAchada / jogo.uniPop : 0) + "</b>)");
       linhas.push("Nesta sessão: <b>+" + fmtInt(jogo.achadosSessao) + "</b>");
     } else {
       linhas.push("Cidades achadas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
@@ -1105,63 +1110,130 @@
     });
   }
 
-  // Lista lateral da maratona: contadores por UF (Brasil) ou por porte (UF).
+  // Lista lateral da maratona: contadores por porte (sempre) e por UF (no
+  // Brasil inteiro). Cada UF mostra também quantas das 10 maiores cidades já
+  // saíram (★), e clicar na linha abre a posição da maior que falta — pista
+  // sem revelar o nome (para isso existe o botão 💡).
+  function contadorHtml(id, c) {
+    return "<b id='" + id + "'" + (c.achados === c.total ? " class='completo'" : "") + ">" +
+      c.achados + "/" + c.total + "</b>";
+  }
+
   function montarListaMaratona(jogo) {
     var alvo = $("lista-jogo");
     alvo.innerHTML = "";
-    var item = document.createElement("div");
-    item.className = "item-faixa";
     maratonaContadores = {};
-    var linhas;
-    if (!jogo.cfg.uf) {
-      var porUF = {};
-      jogo.universo.forEach(function (m) {
-        if (!porUF[m.uf]) porUF[m.uf] = { total: 0, achados: 0 };
-        porUF[m.uf].total++;
-        if (jogo.achados.has(m.idx)) porUF[m.uf].achados++;
-      });
-      linhas = Object.keys(porUF).sort().map(function (uf) {
-        var c = porUF[uf];
-        maratonaContadores[uf] = c;
-        return "<div class='linha-porte'><span>" + uf + "</span><b id='mar-cont-" + uf + "'>" +
-          c.achados + "/" + c.total + "</b></div>";
-      });
-    } else {
-      var portes = FAIXAS_POP.map(function (fx) {
-        return { min: fx.min, rotulo: fx.rotulo, total: 0, achados: 0 };
-      });
-      jogo.universo.forEach(function (m) {
-        for (var i = 0; i < portes.length; i++) {
-          if (m.pop >= portes[i].min) {
-            portes[i].total++;
-            if (jogo.achados.has(m.idx)) portes[i].achados++;
-            break;
-          }
-        }
-      });
-      linhas = portes.map(function (p, i) {
-        if (p.total === 0) return "";
-        maratonaContadores["porte" + i] = p;
-        return "<div class='linha-porte'><span>" + p.rotulo + "</span><b id='mar-cont-porte" + i + "'>" +
-          p.achados + "/" + p.total + "</b></div>";
-      });
-    }
-    item.innerHTML = "<div class='titulo-faixa'><span>Progresso por " +
-      (jogo.cfg.uf ? "porte" : "UF") + "</span></div><div class='portes portes-mar'>" +
-      linhas.join("") + "</div>";
-    alvo.appendChild(item);
-  }
+    maratonaTop = {};
+    maratonaDetalheUF = null;
 
-  function atualizarContadorMaratona(mun) {
-    if (!maratonaContadores) return;
-    var chave = null;
-    if (!jogo.cfg.uf) {
-      chave = mun.uf;
-    } else {
-      for (var i = 0; i < FAIXAS_POP.length; i++) {
-        if (mun.pop >= FAIXAS_POP[i].min) { chave = "porte" + i; break; }
+    // uma passada só pelo universo (ordenado por população): portes, totais
+    // por UF e as 10 maiores de cada UF
+    var portes = FAIXAS_POP.map(function (fx) {
+      return { min: fx.min, rotulo: fx.rotulo, total: 0, achados: 0 };
+    });
+    var porUF = {};
+    jogo.universo.forEach(function (m) {
+      for (var i = 0; i < portes.length; i++) {
+        if (m.pop >= portes[i].min) {
+          portes[i].total++;
+          if (jogo.achados.has(m.idx)) portes[i].achados++;
+          break;
+        }
+      }
+      var c = porUF[m.uf];
+      if (!c) {
+        c = porUF[m.uf] = { total: 0, achados: 0 };
+        maratonaTop[m.uf] = { idxs: new Set(), total: 0, achados: 0 };
+      }
+      c.total++;
+      if (jogo.achados.has(m.idx)) c.achados++;
+      var t = maratonaTop[m.uf];
+      if (t.total < 10) {
+        t.total++;
+        t.idxs.add(m.idx);
+        if (jogo.achados.has(m.idx)) t.achados++;
+      }
+    });
+
+    var itemPorte = document.createElement("div");
+    itemPorte.className = "item-faixa";
+    var linhasPorte = portes.map(function (p, i) {
+      if (p.total === 0) return "";
+      maratonaContadores["porte" + i] = p;
+      return "<div class='linha-porte'><span>" + p.rotulo + "</span>" +
+        contadorHtml("mar-cont-porte" + i, p) + "</div>";
+    });
+    // jogando uma UF só, a linha das 10 maiores do estado entra aqui em cima
+    if (jogo.cfg.uf) {
+      var tUF = maratonaTop[jogo.cfg.uf];
+      if (tUF) {
+        linhasPorte.unshift("<div class='linha-porte linha-uf' data-uf='" + jogo.cfg.uf +
+          "' title='Clique: pista da maior cidade que falta'><span>As " + tUF.total +
+          " maiores do estado</span>" + contadorHtml("mar-top-" + jogo.cfg.uf, tUF) + "</div>");
       }
     }
+    itemPorte.innerHTML = "<div class='titulo-faixa'><span>Progresso por porte</span></div>" +
+      "<div class='portes'>" + linhasPorte.join("") + "</div>";
+    itemPorte.addEventListener("click", cliqueLinhaUF);
+    alvo.appendChild(itemPorte);
+
+    if (jogo.cfg.uf) return;
+
+    var itemUF = document.createElement("div");
+    itemUF.className = "item-faixa";
+    var linhasUF = Object.keys(porUF).sort().map(function (uf) {
+      var c = porUF[uf];
+      maratonaContadores[uf] = c;
+      var t = maratonaTop[uf];
+      return "<div class='linha-porte linha-uf' data-uf='" + uf +
+        "' title='Clique: pista da maior cidade que falta'><span>" + uf + "</span>" +
+        "<span class='top-uf" + (t.achados === t.total ? " completo" : "") +
+        "' id='mar-top-" + uf + "'>★" + t.achados + "/" + t.total + "</span>" +
+        contadorHtml("mar-cont-" + uf, c) + "</div>";
+    });
+    itemUF.innerHTML = "<div class='titulo-faixa'><span>Progresso por UF</span>" +
+      "<span>★ = 10 maiores</span></div><div class='portes portes-mar'>" +
+      linhasUF.join("") + "</div>";
+    itemUF.addEventListener("click", cliqueLinhaUF);
+    alvo.appendChild(itemUF);
+  }
+
+  // Posição (no ranking do estado) da maior cidade que ainda falta.
+  function textoDetalheUF(uf) {
+    var pos = 0;
+    for (var i = 0; i < jogo.universo.length; i++) {
+      var m = jogo.universo[i];
+      if (m.uf !== uf) continue;
+      pos++;
+      if (!jogo.achados.has(m.idx)) {
+        return "Maior que falta: a <b>" + pos + "ª</b> do estado · " + fmtPop(m.pop) + " hab.";
+      }
+    }
+    return "✓ Todos os municípios do estado!";
+  }
+
+  function fecharDetalheUF() {
+    var det = document.getElementById("mar-det");
+    if (det) det.remove();
+    maratonaDetalheUF = null;
+  }
+
+  function cliqueLinhaUF(ev) {
+    var linha = ev.target.closest(".linha-uf");
+    if (!linha || !jogo) return;
+    var uf = linha.dataset.uf;
+    var estavaAberto = maratonaDetalheUF;
+    fecharDetalheUF();
+    if (estavaAberto === uf) return; // segundo clique na mesma UF só fecha
+    var det = document.createElement("div");
+    det.className = "detalhe-uf";
+    det.id = "mar-det";
+    det.innerHTML = textoDetalheUF(uf);
+    linha.insertAdjacentElement("afterend", det);
+    maratonaDetalheUF = uf;
+  }
+
+  function bumpContadorMaratona(chave) {
     var c = maratonaContadores[chave];
     if (!c) return;
     c.achados++;
@@ -1169,6 +1241,28 @@
     if (el) {
       el.textContent = c.achados + "/" + c.total;
       el.classList.toggle("completo", c.achados === c.total);
+    }
+  }
+
+  function atualizarContadorMaratona(mun) {
+    if (!maratonaContadores) return;
+    for (var i = 0; i < FAIXAS_POP.length; i++) {
+      if (mun.pop >= FAIXAS_POP[i].min) { bumpContadorMaratona("porte" + i); break; }
+    }
+    if (!jogo.cfg.uf) bumpContadorMaratona(mun.uf);
+    var t = maratonaTop && maratonaTop[mun.uf];
+    if (t && t.idxs.has(mun.idx)) {
+      t.achados++;
+      var el = document.getElementById("mar-top-" + mun.uf);
+      if (el) {
+        el.textContent = (jogo.cfg.uf ? "" : "★") + t.achados + "/" + t.total;
+        el.classList.toggle("completo", t.achados === t.total);
+      }
+    }
+    // a pista aberta acompanha os acertos da própria UF
+    if (maratonaDetalheUF === mun.uf) {
+      var det = document.getElementById("mar-det");
+      if (det) det.innerHTML = textoDetalheUF(mun.uf);
     }
   }
 

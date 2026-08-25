@@ -570,15 +570,19 @@ var MODOS = (function () {
     var u = universoDe(cfg);
     this.universo = u.lista;
     this.alvosTotal = this.universo.length;
+    this.uniPop = u.pop;
+    this.popAchada = 0;
     this.achados = new Set();
     this.achadosSessao = 0;
     this.encerrado = false;
     if (cfg.idsIniciais && cfg.idsIniciais.length) {
       var ids = new Set(cfg.idsIniciais);
       var achados = this.achados;
+      var pop = 0;
       this.universo.forEach(function (m) {
-        if (ids.has(m.id)) achados.add(m.idx);
+        if (ids.has(m.id)) { achados.add(m.idx); pop += m.pop; }
       });
+      this.popAchada = pop;
     }
   }
   JogoMaratona.prototype.palpitar = function (texto) {
@@ -594,6 +598,7 @@ var MODOS = (function () {
       if (self.achados.has(m.idx)) return;
       self.achados.add(m.idx);
       self.achadosSessao++;
+      self.popAchada += m.pop;
       revelados.push({ mun: m });
     });
     if (revelados.length === 0) return { tipo: "repetido", mun: cand[0] };

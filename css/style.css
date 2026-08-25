@@ -254,6 +254,24 @@ main {
 /* na maratona do Brasil são 27 linhas (uma por UF): duas colunas */
 .portes-mar { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 
+/* maratona: linha de UF clicável (abre a pista da maior cidade que falta) */
+.linha-uf { cursor: pointer; border-radius: 4px; }
+.linha-uf:hover { background: #eef3f8; }
+/* ★ das 10 maiores: a margem automática empurra o contador para junto do
+   total, deixando a sigla sozinha à esquerda */
+.top-uf { margin-left: auto; margin-right: 10px; color: #8a97a3; font-variant-numeric: tabular-nums; }
+.top-uf.completo { color: var(--verde); font-weight: 600; }
+.detalhe-uf {
+  grid-column: 1 / -1; /* ocupa as duas colunas da grade de UFs */
+  font-size: 12px;
+  color: var(--texto-suave);
+  background: #fff8e6;
+  border: 1px solid #eadfb8;
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin: 2px 0 4px;
+}
+
 /* ---------- mapa ---------- */
 #mapa-wrap { flex: 1; position: relative; min-width: 0; background: #dbe9f4; }
 #mapa { width: 100%; height: 100%; display: block; cursor: grab; }
