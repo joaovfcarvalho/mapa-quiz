@@ -385,11 +385,35 @@ main {
    o ponto — mesmas classes de marcação e mesma cor inline (vinda do JS);
    translúcido para faixas e círculos por baixo continuarem legíveis */
 .municipio { display: none; pointer-events: none; fill-opacity: .4; stroke: rgba(0, 0, 0, .3); stroke-width: .5; vector-effect: non-scaling-stroke; }
-.municipio.coberta, .municipio.centro-palpite, .municipio.achada, .municipio.faltante { display: inline; }
+/* município marcado responde ao mouse no território inteiro: o tooltip não
+   exige acertar o pontinho da sede */
+.municipio.coberta, .municipio.centro-palpite, .municipio.achada, .municipio.faltante { display: inline; pointer-events: auto; }
 .municipio.fora { display: none; } /* município fora da região do jogo */
 .municipio.coberta, .municipio.achada { fill: var(--verde); }
 .municipio.centro-palpite { fill: var(--azul-escuro); }
 .municipio.faltante { fill: var(--vermelho); }
+
+/* sobre uma cidade marcada o cursor vira seta: mira mais fina que a mãozinha
+   de arrastar para ler o tooltip (a mãozinha volta durante o arrasto) */
+.cidade.coberta, .cidade.centro-palpite, .cidade.achada, .cidade.faltante,
+.municipio.coberta, .municipio.centro-palpite, .municipio.achada, .municipio.faltante { cursor: default; }
+#mapa.arrastando .cidade, #mapa.arrastando .municipio { cursor: grabbing; }
+
+/* último acerto da maratona: rosa vivo com anel pulsante — nenhuma outra
+   marcação do mapa usa esse tom, então a cidade recém-digitada salta aos
+   olhos. O !important vence a cor inline de população vinda do JS. */
+.cidade.recente {
+  fill: #f0287e !important;
+  stroke: #f0287e;
+  r: calc(3.2px * var(--zoom, 1));
+  animation: pulso-recente 1.5s ease-out infinite;
+}
+@keyframes pulso-recente {
+  from { stroke-width: calc(1.2px * var(--zoom, 1)); stroke-opacity: .85; }
+  to { stroke-width: calc(7px * var(--zoom, 1)); stroke-opacity: 0; }
+}
+.municipio.recente { fill: #f0287e !important; fill-opacity: .5; stroke: #c01060; }
+.rotulo-cidade.recente { fill: #a30d54; }
 
 /* marcações do modo "Onde fica?": o X do clique e a linha até o lugar certo */
 .marca-clique { stroke: var(--azul-escuro); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
@@ -442,6 +466,9 @@ main {
 #mapa.satelite .municipio.coberta, #mapa.satelite .municipio.achada { fill: #67e88c; }
 #mapa.satelite .municipio.centro-palpite { fill: #ffcf4d; }
 #mapa.satelite .municipio.faltante { fill: #ff7a70; }
+#mapa.satelite .cidade.recente { fill: #ff64ab !important; stroke: #ff64ab; }
+#mapa.satelite .municipio.recente { fill: #ff64ab !important; stroke: #ffb1d4; }
+#mapa.satelite .rotulo-cidade.recente { fill: #ffc2dd; }
 #mapa.satelite .circulo-cobertura { fill: rgba(124, 192, 255, .18); stroke: #7cc0ff; }
 #mapa.satelite .faixa-area { fill: rgba(103, 232, 140, .28); }
 #mapa.satelite .contador-faixa.completa { fill: #67e88c; }

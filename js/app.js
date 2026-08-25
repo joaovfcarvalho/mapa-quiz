@@ -162,7 +162,7 @@
     if (!f) {
       var d = dMunicipio(mun.id);
       if (!d) return; // fica só o ponto
-      f = formas[mun.idx] = elSvg("path", { d: d, "fill-rule": "evenodd" }, gMalha);
+      f = formas[mun.idx] = elSvg("path", { d: d, "fill-rule": "evenodd", "data-idx": mun.idx }, gMalha);
     }
     f.setAttribute("class", classe.replace("cidade", "municipio"));
     f.style.fill = p.style.fill;
@@ -385,6 +385,8 @@
   var topnChips = null;     // rank -> chip da lista do modo Top N
   var dicasUsadas = 0;      // dicas pedidas na partida (faixas/topn: −1 acerto cada)
   var maratonaContadores = null; // contadores da lista lateral da maratona
+  var recentes = [];        // idx dos municípios do último acerto da maratona
+  var rotulosRecentes = []; // rótulos <text> desses acertos (somem no próximo)
   var cliqueInicio = null;  // posição do mousedown para distinguir clique de arrasto
 
   var DESCRICOES = {
@@ -588,6 +590,8 @@
     gFaixas.innerHTML = "";
     gCirculos.innerHTML = "";
     gMarcas.innerHTML = "";
+    recentes = [];
+    rotulosRecentes = [];
     pontos.forEach(function (p) {
       p.setAttribute("class", "cidade");
       p.style.fill = "";
@@ -1056,6 +1060,7 @@
       pintarPonto(par.mun, "achada");
       atualizarContadorMaratona(par.mun);
     });
+    destacarRecentes(r.revelados.map(function (par) { return par.mun; }));
     var nomes = r.revelados.map(function (par) {
       return nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab.";
     });
@@ -1065,6 +1070,31 @@
     atualizarPlacar();
     atualizarRecordeUI(); // o banner de progresso salvo acompanha em tempo real
     if (r.completo) fimSessaoMaratona(true);
+  }
+
+  // Na maratona só o último acerto fica aceso: a classe "recente" (ponto e
+  // forma) e um rótulo com o nome migram a cada palpite certo, mostrando na
+  // hora onde fica a cidade que acabou de ser digitada.
+  function destacarRecentes(muns) {
+    recentes.forEach(function (idx) {
+      pontos[idx].classList.remove("recente");
+      if (formas[idx]) formas[idx].classList.remove("recente");
+    });
+    rotulosRecentes.forEach(function (el) { el.remove(); });
+    recentes = [];
+    rotulosRecentes = [];
+    muns.forEach(function (m) {
+      recentes.push(m.idx);
+      pontos[m.idx].classList.add("recente");
+      if (formas[m.idx]) formas[m.idx].classList.add("recente");
+      var rot = elSvg("text", {
+        x: proj.x(m.lng).toFixed(1),
+        y: proj.y(m.lat).toFixed(1),
+        "class": "rotulo-cidade recente",
+      }, gMarcas);
+      rot.textContent = m.nome;
+      rotulosRecentes.push(rot);
+    });
   }
 
   function salvarProgressoMaratona() {
@@ -1673,10 +1703,13 @@
   // Tooltip e zoom/pan
   // ------------------------------------------------------------------
   var tooltip = $("tooltip");
+  // O tooltip responde ao ponto da sede e, com ⬡ Formas ligado, ao polígono
+  // inteiro do município. Só elementos marcados têm pointer-events no CSS,
+  // então um alvo com data-idx aqui nunca entrega cidade não descoberta.
   svg.addEventListener("mousemove", function (ev) {
     var t = ev.target;
-    if (t.tagName === "circle" && t.dataset.idx !== undefined &&
-        t.getAttribute("class") !== "cidade") {
+    if (t.dataset && t.dataset.idx !== undefined &&
+        (t.tagName === "path" || t.getAttribute("class") !== "cidade")) {
       var m = DADOS.municipios[+t.dataset.idx];
       tooltip.innerHTML = "<b>" + nomeUF(m) + "</b> · " + fmtInt(m.pop) + " hab. · " + fmtArea(m.area);
       tooltip.hidden = false;

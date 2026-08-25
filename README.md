@@ -49,7 +49,10 @@ pontos dos municípios somem do mapa — só o contorno das UFs fica de guia.
 **7. Maratona completa** — cite **todos** os municípios da região (os 5.571
 do Brasil, se tiver coragem), no seu ritmo. O progresso e o relógio ficam
 salvos no navegador: pause e continue quando quiser, acompanhando contadores
-por UF (ou por porte, jogando uma UF só).
+por UF (ou por porte, jogando uma UF só). O último município acertado fica
+destacado em rosa no mapa — ponto pulsante com o nome ao lado (e o território,
+com ⬡ Formas ligado) — até o próximo acerto, para você ver na hora onde fica
+o que acabou de digitar.
 
 **Região do jogo** — qualquer modo pode ser jogado com o Brasil inteiro ou só
 com uma UF (o mapa aproxima o estado e municípios de fora somem). Raio de
@@ -110,7 +113,9 @@ recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
   o ponto da sede — acertou Rio de Janeiro, acende o polígono inteiro do
   município. A malha dos 5.570 municípios (~2,4 MB) só é carregada na
   primeira vez que o botão é ligado; quem não usa não paga nada.
-- Passe o mouse sobre uma cidade já revelada/coberta para ver nome e população.
+- Passe o mouse sobre uma cidade já revelada/coberta para ver nome, população
+  e área. Com o botão ⬡ Formas ligado, o território inteiro do município
+  responde ao mouse — não é preciso acertar o pontinho da sede.
 
 ## Recordes
 
