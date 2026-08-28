@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Gera os arquivos de dados embutidos do quiz (data/municipios.js,
-data/brasil_uf.js e data/malha_municipios.js).
+data/brasil_uf.js, data/malha_municipios.js e data/vizinhos.js — o grafo de
+"quem faz divisa com quem", derivado da própria malha municipal).
 
 Fontes:
   - Coordenadas dos municípios: https://github.com/kelvins/municipios-brasileiros (csv/municipios.csv, csv/estados.csv)
@@ -80,6 +81,55 @@ def gerar_malha_municipios(malha_mun, codigos_jogo, out_dir):
             f.write('"%s":%s,\n' % (cod, json.dumps(formas[cod], separators=(",", ":"))))
         f.write("};\n")
     print(f"{out_formas}: {len(formas)} municípios, {os.path.getsize(out_formas) // 1024} KB")
+    return formas
+
+
+# Grafo de "quem faz divisa com quem", derivado da própria malha: os polígonos
+# do IBGE encaixam exatamente ao longo das fronteiras, então dois municípios
+# que compartilham 2 ou mais vértices são vizinhos (um vértice só seria apenas
+# um toque de canto). Municípios-ilha (Fernando de Noronha, Ilhabela) ficam de
+# fora por não terem divisa terrestre com ninguém.
+def gerar_vizinhos(formas, out_dir):
+    usos = {}  # vértice arredondado -> códigos dos municípios que o usam
+    for cod, aneis in formas.items():
+        for anel in aneis:
+            for p in anel:
+                chave = (p[0], p[1])
+                s = usos.get(chave)
+                if s is None:
+                    usos[chave] = s = set()
+                s.add(cod)
+    contagem = {}  # par (cod_a, cod_b) -> nº de vértices compartilhados
+    for cods in usos.values():
+        if len(cods) < 2:
+            continue
+        lista = sorted(cods)
+        for i in range(len(lista)):
+            for j in range(i + 1, len(lista)):
+                par = (lista[i], lista[j])
+                contagem[par] = contagem.get(par, 0) + 1
+    vizinhos = {}
+    arestas = 0
+    for (a, b), n in contagem.items():
+        if n < 2:
+            continue
+        arestas += 1
+        vizinhos.setdefault(a, []).append(int(b))
+        vizinhos.setdefault(b, []).append(int(a))
+    out = os.path.join(out_dir, "vizinhos.js")
+    with open(out, "w", encoding="utf-8") as f:
+        f.write("// Gerado por tools/build_data.py — não editar à mão.\n")
+        f.write("// Municípios que fazem divisa, por código IBGE — derivado da malha\n")
+        f.write("// municipal: são vizinhos os que compartilham 2+ vértices (1 seria\n")
+        f.write("// só um toque de canto). Ilhas e municípios fora da malha não entram.\n")
+        f.write("var VIZINHOS = {\n")
+        for cod in sorted(vizinhos):
+            f.write('"%s":%s,\n' % (cod, json.dumps(sorted(vizinhos[cod]), separators=(",", ":"))))
+        f.write("};\n")
+    graus = [len(v) for v in vizinhos.values()]
+    print(f"{out}: {arestas} divisas entre {len(vizinhos)} municípios, "
+          f"grau médio {sum(graus) / len(graus):.1f}, máximo {max(graus)}, "
+          f"{os.path.getsize(out) // 1024} KB")
 
 
 def main():
@@ -173,7 +223,8 @@ def main():
     print(f"{out_malha}: {len(poligonos)} anéis, {os.path.getsize(out_malha) // 1024} KB")
 
     malha_mun = json.loads(read_source(args.malha_municipios, URL_MALHA_MUN))
-    gerar_malha_municipios(malha_mun, {str(l[0]) for l in linhas}, args.out)
+    formas = gerar_malha_municipios(malha_mun, {str(l[0]) for l in linhas}, args.out)
+    gerar_vizinhos(formas, args.out)
 
 
 if __name__ == "__main__":
