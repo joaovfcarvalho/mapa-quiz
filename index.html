@@ -29,6 +29,10 @@
       <button class="aba" data-modo="ondestou" type="button">Onde<br>estou?</button>
       <button class="aba" data-modo="clique" type="button">Onde fica?<br>(clique)</button>
       <button class="aba" data-modo="maratona" type="button">Maratona<br>completa</button>
+      <button class="aba" data-modo="caminho" type="button">Caminho<br>por divisas</button>
+      <button class="aba" data-modo="cerco" type="button">Cerco<br>(vizinhos)</button>
+      <button class="aba" data-modo="mancha" type="button">Mancha<br>(território)</button>
+      <button class="aba" data-modo="ponte" type="button">Ponte<br>(conectar)</button>
     </nav>
     <p id="descricao-modo"></p>
 
@@ -176,6 +180,68 @@
         <p class="nota-config">Cite <b>todos</b> os municípios da região
         escolhida acima, no seu ritmo. O progresso (e o tempo) fica salvo
         neste navegador — pause e continue quando quiser.</p>
+      </div>
+
+      <div class="config-modo" data-modo="caminho" hidden>
+        <label>Saindo de (cidade)
+          <input type="text" id="cfg-caminho-origem" value="Chuí, RS">
+        </label>
+        <label>Chegando em (cidade)
+          <input type="text" id="cfg-caminho-destino" value="Oiapoque, AP">
+        </label>
+        <p class="nota-config">Uma viagem digitada de memória: cada palpite
+        precisa fazer <b>divisa</b> com o último município citado. Quanto menos
+        saltos até o destino, mais pontos — o jogo compara com o caminho mínimo
+        real. Fica ainda melhor com o botão ⬡ Formas ligado.</p>
+      </div>
+
+      <div class="config-modo" data-modo="cerco" hidden>
+        <label>Município cercado (vazio = sorteio)
+          <input type="text" id="cfg-cerco-alvo" placeholder="ex.: Rio de Janeiro, RJ">
+        </label>
+        <label>Porte do sorteio
+          <select id="cfg-cerco-pool">
+            <option value="500000">Grandes — 500 mil+ hab.</option>
+            <option value="100000" selected>Médias e grandes — 100 mil+</option>
+            <option value="50000">50 mil+ hab.</option>
+            <option value="20000">20 mil+ hab.</option>
+            <option value="0">Qualquer município</option>
+          </select>
+        </label>
+        <p class="nota-config">Nomeie <b>todos</b> os municípios que fazem
+        divisa com o alvo — mesmo os de outra UF. Trivial no litoral, brutal no
+        interior. Fica ainda melhor com o botão ⬡ Formas ligado.</p>
+      </div>
+
+      <div class="config-modo" data-modo="mancha" hidden>
+        <label>Limite da partida
+          <select id="cfg-mancha-limite" class="sel-limite">
+            <option value="livre">Sem limite (encerre quando quiser)</option>
+            <option value="tempo">Contra o relógio</option>
+          </select>
+        </label>
+        <label id="rotulo-mancha-tempo" hidden>Tempo (minutos)
+          <input type="number" id="cfg-mancha-tempo" value="10" min="1" max="240">
+        </label>
+        <p class="nota-config">Comece por <b>qualquer</b> município; depois só
+        vale citar quem faz divisa com a sua mancha. Veja o território crescer
+        pelo mapa — com o botão ⬡ Formas ligado é um espetáculo.</p>
+      </div>
+
+      <div class="config-modo" data-modo="ponte" hidden>
+        <label>Porte dos dois extremos
+          <select id="cfg-ponte-pool">
+            <option value="500000">Grandes — 500 mil+ hab.</option>
+            <option value="100000" selected>Médias e grandes — 100 mil+</option>
+            <option value="50000">50 mil+ hab.</option>
+            <option value="20000">20 mil+ hab.</option>
+            <option value="0">Qualquer município</option>
+          </select>
+        </label>
+        <p class="nota-config">O jogo sorteia dois municípios; construa uma
+        corrente de divisas que os conecte. Cada palpite precisa encostar no
+        que já está marcado — dá para crescer dos dois lados. Menos municípios,
+        mais pontos.</p>
       </div>
     </form>
 

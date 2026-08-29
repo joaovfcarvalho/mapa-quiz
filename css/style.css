@@ -449,6 +449,13 @@ main {
 
 .circulo-cobertura { fill: rgba(29, 111, 184, .16); stroke: var(--azul); stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 
+/* modos de divisas: elo entre municípios adjacentes citados (a corrente da
+   viagem/ponte) e o caminho mínimo revelado no fim (pontilhado; vermelho
+   quando o jogador desistiu) */
+.linha-cadeia { stroke: var(--azul); stroke-width: 1.6; stroke-linecap: round; opacity: .85; vector-effect: non-scaling-stroke; }
+.linha-minima { stroke: rgba(20, 82, 138, .75); stroke-width: 1.4; stroke-dasharray: 6 4; fill: none; vector-effect: non-scaling-stroke; }
+.linha-minima.faltante { stroke: var(--vermelho); }
+
 /* área da faixa/célula: o JS controla a opacidade (fração respondida), então
    a cor caminha do transparente até este tom final conforme os acertos */
 .faixa-area { fill: rgba(26, 127, 55, .2); pointer-events: none; }
@@ -498,6 +505,9 @@ main {
 #mapa.satelite .municipio.recente { fill: #ff64ab !important; stroke: #ffb1d4; }
 #mapa.satelite .rotulo-cidade.recente { fill: #ffc2dd; }
 #mapa.satelite .circulo-cobertura { fill: rgba(124, 192, 255, .18); stroke: #7cc0ff; }
+#mapa.satelite .linha-cadeia { stroke: #7cc0ff; }
+#mapa.satelite .linha-minima { stroke: rgba(255, 255, 255, .8); }
+#mapa.satelite .linha-minima.faltante { stroke: #ff7a70; }
 #mapa.satelite .faixa-area { fill: rgba(103, 232, 140, .28); }
 #mapa.satelite .contador-faixa.completa { fill: #67e88c; }
 #mapa.satelite .linha-faixa { stroke: rgba(255,255,255,.6); }
