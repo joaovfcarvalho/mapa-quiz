@@ -401,6 +401,54 @@
     maratona: "O desafio definitivo: cite todos os municípios da região, no seu ritmo. O progresso e o tempo ficam salvos neste navegador — pause e continue quando quiser.",
   };
 
+  // ícone e nome de cada modo (cabeçalhos da tela de configuração e da partida)
+  var INFO_MODOS = {
+    dist: { icone: "🎯", nome: "Círculos por distância" },
+    pop: { icone: "⭕", nome: "Círculos por população" },
+    faixas: { icone: "📐", nome: "Faixas do mapa" },
+    topn: { icone: "🏙️", nome: "Top N cidades" },
+    ondestou: { icone: "🧭", nome: "Onde estou?" },
+    clique: { icone: "📌", nome: "Onde fica?" },
+    maratona: { icone: "🏃", nome: "Maratona completa" },
+  };
+
+  // O painel alterna entre três telas: escolha do modo, configuração e partida.
+  var TELAS = { modos: "tela-modos", config: "tela-config", jogo: "area-jogo" };
+  function mostrarTela(nome) {
+    Object.keys(TELAS).forEach(function (t) {
+      $(TELAS[t]).hidden = t !== nome;
+    });
+  }
+
+  // Sair de uma partida (trocar de tela ou de modo): a maratona salva antes,
+  // o mapa volta ao Brasil inteiro e as camadas de jogo são limpas.
+  function abandonarJogo() {
+    if (jogo && !jogo.encerrado) salvarProgressoMaratona();
+    clearInterval(timerInt);
+    jogo = null;
+    $("legenda-pop").hidden = true;
+    $("legenda-dist").hidden = true;
+    svg.classList.remove("modo-clique");
+    limparCamadasDeJogo();
+    aplicarRegiao(null);
+    vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
+    aplicarViewBox();
+  }
+
+  function selecionarModo(modo) {
+    modoAtual = modo;
+    abandonarJogo();
+    document.querySelectorAll(".config-modo").forEach(function (div) {
+      div.hidden = div.dataset.modo !== modo;
+    });
+    $("config-icone").textContent = INFO_MODOS[modo].icone;
+    $("config-titulo").textContent = INFO_MODOS[modo].nome;
+    $("descricao-modo").textContent = DESCRICOES[modo];
+    $("btn-desafio").hidden = modo === "maratona";
+    atualizarRecordeUI();
+    mostrarTela("config");
+  }
+
   // ------------------------------------------------------------------
   // Configuração
   // ------------------------------------------------------------------
@@ -554,6 +602,7 @@
   function atualizarRecordeUI() {
     var lido = lerConfig();
     var el = $("recorde-atual");
+    $("btn-iniciar").textContent = "▶ Iniciar jogo";
     if (lido.erro) {
       el.innerHTML = "⚠️ " + lido.erro;
       return;
@@ -570,6 +619,7 @@
         ? "🏃 Você ainda não começou a maratona desta região (" + fmtInt(total) + " municípios te esperam)."
         : "🏃 Progresso salvo: <b>" + fmtInt(n) + "</b> de " + fmtInt(total) +
           " municípios (<b>" + fmtPct(n / total) + "</b>) em " + fmtTempo(prog.tempoSeg || 0) + ".";
+      $("btn-iniciar").textContent = n === 0 ? "▶ Iniciar maratona" : "▶ Continuar maratona";
       return;
     }
     var rec = RECORDES.obter(lido.chave);
@@ -604,11 +654,6 @@
     });
   }
 
-  function setConfigTravada(travada) {
-    var campos = document.querySelectorAll("#config input, #config select");
-    campos.forEach(function (c) { c.disabled = travada; });
-  }
-
   function iniciar() {
     var lido = lerConfig();
     if (lido.erro) {
@@ -636,8 +681,17 @@
 
     citadasPartida = new Set();
     dicasUsadas = 0;
-    $("area-jogo").hidden = false;
+    var info = INFO_MODOS[jogoModo];
+    $("jogo-titulo").textContent = info.icone + " " + info.nome;
+    // o resumo da configuração dispensa o nome do modo, que já está no título
+    var sub = jogoRotulo;
+    if (sub.indexOf(info.nome) === 0) {
+      sub = sub.slice(info.nome.length).replace(/^\s*·\s*/, "");
+    }
+    $("jogo-sub").textContent = sub;
+    mostrarTela("jogo");
     $("fim-jogo").hidden = true;
+    $("fim-acoes").hidden = true;
     $("feedback").textContent = "";
     $("feedback").className = "";
     $("dica-atual").hidden = true;
@@ -646,8 +700,6 @@
     $("input-palpite").disabled = false;
     $("btn-palpitar").disabled = false;
     $("btn-encerrar").hidden = false;
-    $("btn-iniciar").textContent = "↺ Reiniciar";
-    setConfigTravada(true);
 
     // o modo de clique esconde o campo de texto (a resposta é no mapa) e
     // todos os pontos de cidade — nada pode entregar as posições
@@ -1275,8 +1327,9 @@
     $("btn-palpitar").disabled = true;
     $("btn-encerrar").hidden = true;
     $("btn-dica").hidden = true;
-    setConfigTravada(false);
-    $("btn-iniciar").textContent = "▶ Continuar maratona";
+    $("fim-acoes").hidden = false;
+    $("btn-jogar-novo").hidden = completou; // maratona completa não tem "de novo"
+    $("btn-jogar-novo").textContent = "▶ Continuar maratona";
     var el = $("fim-jogo");
     el.hidden = false;
     el.className = completou ? "recorde" : "";
@@ -1399,8 +1452,9 @@
     $("btn-dica").hidden = true;
     $("alvo-clique").hidden = true;
     svg.classList.remove("modo-clique"); // fim da partida: os pontos podem voltar
-    setConfigTravada(false);
-    $("btn-iniciar").textContent = "▶ Jogar de novo";
+    $("fim-acoes").hidden = false;
+    $("btn-jogar-novo").hidden = false;
+    $("btn-jogar-novo").textContent = "↺ Jogar de novo";
 
     var pct = jogo.pct();
     var placar;
@@ -1781,7 +1835,7 @@
       setVal("cfg-topn-tempo", p.tempo);
     }
     atualizarCamposLimite();
-    document.querySelector('#abas-modo .aba[data-modo="' + modo + '"]').click();
+    selecionarModo(modo);
     var lido = lerConfig();
     if (lido.erro) return;
     var banner = $("desafio-banner");
@@ -1883,36 +1937,28 @@
   // ------------------------------------------------------------------
   // Ligações da interface
   // ------------------------------------------------------------------
-  document.querySelectorAll("#abas-modo .aba").forEach(function (aba) {
-    aba.addEventListener("click", function () {
-      modoAtual = aba.dataset.modo;
-      document.querySelectorAll("#abas-modo .aba").forEach(function (a) {
-        a.classList.toggle("ativa", a === aba);
-      });
-      document.querySelectorAll(".config-modo").forEach(function (div) {
-        div.hidden = div.dataset.modo !== modoAtual;
-      });
-      $("descricao-modo").textContent = DESCRICOES[modoAtual];
-      // trocar de modo abandona a partida em andamento (a maratona salva antes)
-      if (jogo && !jogo.encerrado) {
-        salvarProgressoMaratona();
-        clearInterval(timerInt);
-        jogo = null;
-      }
-      $("area-jogo").hidden = true;
-      $("legenda-pop").hidden = true;
-      $("legenda-dist").hidden = true;
-      $("btn-desafio").hidden = modoAtual === "maratona";
-      svg.classList.remove("modo-clique");
-      $("linha-palpite").hidden = false;
-      limparCamadasDeJogo();
-      vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
-      aplicarViewBox();
-      setConfigTravada(false);
-      $("btn-iniciar").textContent = "▶ Iniciar jogo";
-      atualizarRecordeUI();
+  document.querySelectorAll(".carta-modo").forEach(function (carta) {
+    carta.addEventListener("click", function () {
+      selecionarModo(carta.dataset.modo);
     });
   });
+
+  // voltar da configuração para a lista de modos
+  $("btn-voltar-modos").addEventListener("click", function () {
+    abandonarJogo();
+    mostrarTela("modos");
+  });
+
+  // sair da partida para a configuração (a maratona salva antes)
+  function voltarParaConfig() {
+    abandonarJogo();
+    $("linha-palpite").hidden = false;
+    atualizarRecordeUI();
+    mostrarTela("config");
+  }
+  $("btn-config-jogo").addEventListener("click", voltarParaConfig);
+  $("btn-mudar-config").addEventListener("click", voltarParaConfig);
+  $("btn-jogar-novo").addEventListener("click", iniciar);
 
   $("cfg-faixas-tipo").addEventListener("change", function () {
     $("rotulo-centro").hidden = $("cfg-faixas-tipo").value !== "aneis";
@@ -1950,14 +1996,11 @@
     if (!confirm("Apagar TODO o progresso da maratona " + nome + "? Isso não tem volta.")) return;
     zerarMaratona(regiao);
     if (jogo && jogoModo === "maratona") {
-      clearInterval(timerInt);
-      jogo = null;
-      $("area-jogo").hidden = true;
-      limparCamadasDeJogo();
-      setConfigTravada(false);
-      $("btn-iniciar").textContent = "▶ Iniciar jogo";
+      jogo.encerrado = true; // não deixa abandonarJogo() salvar de volta o progresso
+      voltarParaConfig();
+    } else {
+      atualizarRecordeUI();
     }
-    atualizarRecordeUI();
   });
   $("config").addEventListener("submit", function (ev) { ev.preventDefault(); });
 
@@ -1996,7 +2039,7 @@
       var nota = $("nota-import");
       nota.hidden = false;
       nota.textContent = r.ok ? "✔ " + r.msg : "⚠️ " + r.msg;
-      nota.style.color = r.ok ? "" : "var(--vermelho)";
+      nota.style.color = r.ok ? "" : "var(--ruim)";
       abrirRecordes();
       atualizarRecordeUI();
     };
@@ -2016,10 +2059,9 @@
     }
   });
 
-  // estado inicial
-  $("descricao-modo").textContent = DESCRICOES[modoAtual];
+  // estado inicial: a tela de modos já está visível no HTML; um link de
+  // desafio pula direto para a configuração do modo desafiado
   atualizarCamposLimite();
-  atualizarRecordeUI();
   aplicarDesafioDaURL();
   // um link de desafio colado na aba já aberta também vale
   window.addEventListener("hashchange", aplicarDesafioDaURL);

@@ -52,21 +52,13 @@
     margin-top: 2px;
     font-variant-numeric: tabular-nums;
   }
-  .bloco {
-    border: 1px solid var(--borda);
-    border-radius: 8px;
-    padding: 10px;
-    font-size: 13px;
-    line-height: 1.45;
-  }
-  .bloco h3 { margin: 0 0 6px; font-size: 13px; }
   #sonda-lista { margin: 6px 0 0; padding-left: 18px; }
   #sonda-lista .pop { color: var(--texto-suave); font-size: 12px; }
   #sonda-lista .mais { color: var(--texto-suave); list-style: none; margin-left: -18px; }
   #btn-sonda-limpar { margin-top: 8px; }
 
   .linha-raio { display: flex; gap: 8px; align-items: center; }
-  .linha-raio input[type="range"] { flex: 1; }
+  .linha-raio input[type="range"] { flex: 1; padding: 0; accent-color: var(--ouro); border: none; background: none; }
   .linha-raio input[type="number"] { width: 72px; }
 
   #tooltip .coord { color: #cfd8e3; font-size: 11px; }
@@ -74,8 +66,16 @@
 </head>
 <body>
 <header>
-  <h1>📍 Densidade de municípios</h1>
-  <a href="index.html" class="botao-sec" style="text-decoration:none">🗺️ Voltar ao quiz</a>
+  <a class="marca" href="index.html">
+    <span class="marca-icone">📍</span>
+    <span class="marca-texto">
+      <b>Densidade de municípios</b>
+      <small>quantos municípios num raio de X km</small>
+    </span>
+  </a>
+  <nav class="header-acoes">
+    <a href="index.html" class="botao-sec">🗺️ Voltar ao quiz</a>
+  </nav>
 </header>
 
 <main>

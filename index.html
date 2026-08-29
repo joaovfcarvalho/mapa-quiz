@@ -8,183 +8,261 @@
 </head>
 <body>
 <header>
-  <h1>🗺️ Quiz do Mapa do Brasil</h1>
-  <div style="display:flex; gap:8px">
-    <a href="estatisticas.html" class="botao-sec" style="text-decoration:none">📊 Pontos cegos</a>
-    <a href="densidade.html" class="botao-sec" style="text-decoration:none">📍 Densidade</a>
+  <a class="marca" href="index.html">
+    <span class="marca-icone">🗺️</span>
+    <span class="marca-texto">
+      <b>Quiz do Mapa do Brasil</b>
+      <small>5.571 municípios na ponta da língua</small>
+    </span>
+  </a>
+  <nav class="header-acoes">
+    <a href="estatisticas.html" class="botao-sec">📊 Pontos cegos</a>
+    <a href="densidade.html" class="botao-sec">📍 Densidade</a>
     <button id="btn-recordes" class="botao-sec" type="button">🏆 Recordes</button>
-  </div>
+  </nav>
 </header>
 
 <main>
   <aside id="painel">
-    <nav id="abas-modo">
-      <button class="aba ativa" data-modo="dist" type="button">Círculos<br>distância</button>
-      <button class="aba" data-modo="pop" type="button">Círculos<br>população</button>
-      <button class="aba" data-modo="faixas" type="button">Faixas<br>do mapa</button>
-      <button class="aba" data-modo="topn" type="button">Top N<br>cidades</button>
-      <button class="aba" data-modo="ondestou" type="button">Onde<br>estou?</button>
-      <button class="aba" data-modo="clique" type="button">Onde fica?<br>(clique)</button>
-      <button class="aba" data-modo="maratona" type="button">Maratona<br>completa</button>
-    </nav>
-    <p id="descricao-modo"></p>
 
-    <form id="config" autocomplete="off">
-      <label>Região do jogo
-        <select id="cfg-regiao">
-          <option value="BR">Brasil inteiro</option>
-        </select>
-      </label>
-      <div class="config-modo" data-modo="dist">
-        <label>Raio do círculo (km)
-          <input type="number" id="cfg-dist-raio" value="100" min="10" max="2000" step="10">
-        </label>
-        <label>Limite da partida
-          <select id="cfg-dist-limite" class="sel-limite">
-            <option value="palpites">Nº de palpites</option>
-            <option value="tempo">Tempo (palpites ilimitados)</option>
-          </select>
-        </label>
-        <label id="rotulo-dist-palpites">Número de palpites
-          <input type="number" id="cfg-dist-palpites" value="10" min="1" max="100">
-        </label>
-        <label id="rotulo-dist-tempo" hidden>Tempo (minutos)
-          <input type="number" id="cfg-dist-tempo" value="30" min="1" max="240">
-        </label>
-        <label>Objetivo
-          <select id="cfg-dist-metrica">
-            <option value="pop">Cobrir população</option>
-            <option value="cidades">Cobrir número de cidades</option>
-            <option value="area">Cobrir área (km²)</option>
-          </select>
-        </label>
-        <label class="check">
-          <input type="checkbox" id="cfg-dist-homonimos">
-          Nome ambíguo marca todas as homônimas
-        </label>
-        <label class="check" title="Modo difícil: uma cidade que já está dentro de um círculo não pode mais ser usada como palpite">
-          <input type="checkbox" id="cfg-dist-bloqueio" checked>
-          Cidade já coberta não vale como palpite
-        </label>
+    <!-- tela 1: escolha do modo -->
+    <section id="tela-modos">
+      <p class="tagline">Sete jeitos de provar que você conhece o Brasil.
+      Escolha o seu desafio:</p>
+
+      <div class="grupo-modos">
+        <h2>Cubra o mapa</h2>
+        <button class="carta-modo" data-modo="dist" type="button">
+          <span class="carta-icone">🎯</span>
+          <span class="carta-texto"><b>Círculos por distância</b>
+            <small>Cada palpite cobre um raio fixo — cubra o país</small></span>
+          <span class="carta-seta">›</span>
+        </button>
+        <button class="carta-modo" data-modo="pop" type="button">
+          <span class="carta-icone">⭕</span>
+          <span class="carta-texto"><b>Círculos por população</b>
+            <small>O círculo cresce até somar a população alvo</small></span>
+          <span class="carta-seta">›</span>
+        </button>
       </div>
 
-      <div class="config-modo" data-modo="pop" hidden>
-        <label>População por círculo (hab.)
-          <input type="number" id="cfg-pop-alvo" value="1000000" min="10000" max="100000000" step="50000">
-        </label>
-        <label>Limite da partida
-          <select id="cfg-pop-limite" class="sel-limite">
-            <option value="palpites">Nº de palpites</option>
-            <option value="tempo">Tempo (palpites ilimitados)</option>
-          </select>
-        </label>
-        <label id="rotulo-pop-palpites">Número de palpites
-          <input type="number" id="cfg-pop-palpites" value="10" min="1" max="100">
-        </label>
-        <label id="rotulo-pop-tempo" hidden>Tempo (minutos)
-          <input type="number" id="cfg-pop-tempo" value="30" min="1" max="240">
-        </label>
-        <label class="check">
-          <input type="checkbox" id="cfg-pop-homonimos">
-          Nome ambíguo marca todas as homônimas
-        </label>
-        <label class="check" title="Modo difícil: uma cidade que já está dentro de um círculo não pode mais ser usada como palpite">
-          <input type="checkbox" id="cfg-pop-bloqueio" checked>
-          Cidade já coberta não vale como palpite
-        </label>
+      <div class="grupo-modos">
+        <h2>De memória</h2>
+        <button class="carta-modo" data-modo="topn" type="button">
+          <span class="carta-icone">🏙️</span>
+          <span class="carta-texto"><b>Top N cidades</b>
+            <small>Cite as maiores cidades contra o relógio</small></span>
+          <span class="carta-seta">›</span>
+        </button>
+        <button class="carta-modo" data-modo="faixas" type="button">
+          <span class="carta-icone">📐</span>
+          <span class="carta-texto"><b>Faixas do mapa</b>
+            <small>As maiores de cada faixa, anel ou célula</small></span>
+          <span class="carta-seta">›</span>
+        </button>
+        <button class="carta-modo" data-modo="maratona" type="button">
+          <span class="carta-icone">🏃</span>
+          <span class="carta-texto"><b>Maratona completa</b>
+            <small>Todos os municípios, no seu ritmo, com progresso salvo</small></span>
+          <span class="carta-seta">›</span>
+        </button>
       </div>
 
-      <div class="config-modo" data-modo="faixas" hidden>
-        <label>Tipo de faixa
-          <select id="cfg-faixas-tipo">
-            <option value="lat">Faixas de latitude</option>
-            <option value="lng">Faixas de longitude</option>
-            <option value="aneis">Anéis concêntricos</option>
-            <option value="grade">Grade (lat × lng)</option>
-          </select>
-        </label>
-        <label>Largura de cada faixa (km)
-          <input type="number" id="cfg-faixas-largura" value="300" min="50" max="2000" step="50">
-        </label>
-        <label>Maiores cidades por faixa
-          <input type="number" id="cfg-faixas-topn" value="3" min="1" max="10">
-        </label>
-        <label id="rotulo-centro" hidden>Centro dos anéis (cidade)
-          <input type="text" id="cfg-faixas-centro" value="Brasília, DF">
-        </label>
-        <label>Limite de tempo
-          <select id="cfg-faixas-limite" class="sel-limite">
-            <option value="livre">Sem limite</option>
-            <option value="tempo">Contra o relógio</option>
-          </select>
-        </label>
-        <label id="rotulo-faixas-tempo" hidden>Tempo (minutos)
-          <input type="number" id="cfg-faixas-tempo" value="30" min="1" max="240">
-        </label>
+      <div class="grupo-modos">
+        <h2>Caça no mapa</h2>
+        <button class="carta-modo" data-modo="ondestou" type="button">
+          <span class="carta-icone">🧭</span>
+          <span class="carta-texto"><b>Onde estou?</b>
+            <small>Ache o município secreto pela distância e direção</small></span>
+          <span class="carta-seta">›</span>
+        </button>
+        <button class="carta-modo" data-modo="clique" type="button">
+          <span class="carta-icone">📌</span>
+          <span class="carta-texto"><b>Onde fica?</b>
+            <small>Leia o nome e clique no mapa onde a cidade fica</small></span>
+          <span class="carta-seta">›</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- tela 2: configuração do modo escolhido -->
+    <section id="tela-config" hidden>
+      <button id="btn-voltar-modos" class="botao-voltar" type="button">‹ Todos os modos</button>
+
+      <div class="modo-cabecalho">
+        <span id="config-icone" class="carta-icone">🎯</span>
+        <div>
+          <h2 id="config-titulo">Círculos por distância</h2>
+          <p id="descricao-modo"></p>
+        </div>
       </div>
 
-      <div class="config-modo" data-modo="topn" hidden>
-        <label>Quantas cidades (as N maiores)
-          <input type="number" id="cfg-topn-n" value="100" min="5" max="500" step="5">
-        </label>
-        <label>Limite de tempo
-          <select id="cfg-topn-limite" class="sel-limite">
-            <option value="tempo">Contra o relógio</option>
-            <option value="livre">Sem limite</option>
+      <form id="config" autocomplete="off">
+        <label>Região do jogo
+          <select id="cfg-regiao">
+            <option value="BR">Brasil inteiro</option>
           </select>
         </label>
-        <label id="rotulo-topn-tempo">Tempo (minutos)
-          <input type="number" id="cfg-topn-tempo" value="15" min="1" max="240">
-        </label>
+        <div class="config-modo" data-modo="dist">
+          <label>Raio do círculo (km)
+            <input type="number" id="cfg-dist-raio" value="100" min="10" max="2000" step="10">
+          </label>
+          <label>Limite da partida
+            <select id="cfg-dist-limite" class="sel-limite">
+              <option value="palpites">Nº de palpites</option>
+              <option value="tempo">Tempo (palpites ilimitados)</option>
+            </select>
+          </label>
+          <label id="rotulo-dist-palpites">Número de palpites
+            <input type="number" id="cfg-dist-palpites" value="10" min="1" max="100">
+          </label>
+          <label id="rotulo-dist-tempo" hidden>Tempo (minutos)
+            <input type="number" id="cfg-dist-tempo" value="30" min="1" max="240">
+          </label>
+          <label>Objetivo
+            <select id="cfg-dist-metrica">
+              <option value="pop">Cobrir população</option>
+              <option value="cidades">Cobrir número de cidades</option>
+              <option value="area">Cobrir área (km²)</option>
+            </select>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="cfg-dist-homonimos">
+            Nome ambíguo marca todas as homônimas
+          </label>
+          <label class="check" title="Modo difícil: uma cidade que já está dentro de um círculo não pode mais ser usada como palpite">
+            <input type="checkbox" id="cfg-dist-bloqueio" checked>
+            Cidade já coberta não vale como palpite
+          </label>
+        </div>
+
+        <div class="config-modo" data-modo="pop" hidden>
+          <label>População por círculo (hab.)
+            <input type="number" id="cfg-pop-alvo" value="1000000" min="10000" max="100000000" step="50000">
+          </label>
+          <label>Limite da partida
+            <select id="cfg-pop-limite" class="sel-limite">
+              <option value="palpites">Nº de palpites</option>
+              <option value="tempo">Tempo (palpites ilimitados)</option>
+            </select>
+          </label>
+          <label id="rotulo-pop-palpites">Número de palpites
+            <input type="number" id="cfg-pop-palpites" value="10" min="1" max="100">
+          </label>
+          <label id="rotulo-pop-tempo" hidden>Tempo (minutos)
+            <input type="number" id="cfg-pop-tempo" value="30" min="1" max="240">
+          </label>
+          <label class="check">
+            <input type="checkbox" id="cfg-pop-homonimos">
+            Nome ambíguo marca todas as homônimas
+          </label>
+          <label class="check" title="Modo difícil: uma cidade que já está dentro de um círculo não pode mais ser usada como palpite">
+            <input type="checkbox" id="cfg-pop-bloqueio" checked>
+            Cidade já coberta não vale como palpite
+          </label>
+        </div>
+
+        <div class="config-modo" data-modo="faixas" hidden>
+          <label>Tipo de faixa
+            <select id="cfg-faixas-tipo">
+              <option value="lat">Faixas de latitude</option>
+              <option value="lng">Faixas de longitude</option>
+              <option value="aneis">Anéis concêntricos</option>
+              <option value="grade">Grade (lat × lng)</option>
+            </select>
+          </label>
+          <label>Largura de cada faixa (km)
+            <input type="number" id="cfg-faixas-largura" value="300" min="50" max="2000" step="50">
+          </label>
+          <label>Maiores cidades por faixa
+            <input type="number" id="cfg-faixas-topn" value="3" min="1" max="10">
+          </label>
+          <label id="rotulo-centro" hidden>Centro dos anéis (cidade)
+            <input type="text" id="cfg-faixas-centro" value="Brasília, DF">
+          </label>
+          <label>Limite de tempo
+            <select id="cfg-faixas-limite" class="sel-limite">
+              <option value="livre">Sem limite</option>
+              <option value="tempo">Contra o relógio</option>
+            </select>
+          </label>
+          <label id="rotulo-faixas-tempo" hidden>Tempo (minutos)
+            <input type="number" id="cfg-faixas-tempo" value="30" min="1" max="240">
+          </label>
+        </div>
+
+        <div class="config-modo" data-modo="topn" hidden>
+          <label>Quantas cidades (as N maiores)
+            <input type="number" id="cfg-topn-n" value="100" min="5" max="500" step="5">
+          </label>
+          <label>Limite de tempo
+            <select id="cfg-topn-limite" class="sel-limite">
+              <option value="tempo">Contra o relógio</option>
+              <option value="livre">Sem limite</option>
+            </select>
+          </label>
+          <label id="rotulo-topn-tempo">Tempo (minutos)
+            <input type="number" id="cfg-topn-tempo" value="15" min="1" max="240">
+          </label>
+        </div>
+
+        <div class="config-modo" data-modo="ondestou" hidden>
+          <label>Porte do município secreto
+            <select id="cfg-onde-pool">
+              <option value="500000">Grandes — 500 mil+ hab.</option>
+              <option value="100000" selected>Médias e grandes — 100 mil+</option>
+              <option value="50000">50 mil+ hab.</option>
+              <option value="20000">20 mil+ hab.</option>
+              <option value="0">Qualquer município</option>
+            </select>
+          </label>
+          <p class="nota-config">Você pode chutar qualquer município da região —
+          cidades pequenas também servem de bússola.</p>
+        </div>
+
+        <div class="config-modo" data-modo="clique" hidden>
+          <label>Porte das cidades perguntadas
+            <select id="cfg-clique-pool">
+              <option value="500000">Grandes — 500 mil+ hab.</option>
+              <option value="100000" selected>Médias e grandes — 100 mil+</option>
+              <option value="50000">50 mil+ hab.</option>
+              <option value="20000">20 mil+ hab.</option>
+              <option value="0">Qualquer município</option>
+            </select>
+          </label>
+          <label>Rodadas
+            <input type="number" id="cfg-clique-rodadas" value="10" min="3" max="50">
+          </label>
+          <p class="nota-config">Os pontos dos municípios somem do mapa durante a
+          partida — só o contorno das UFs fica de guia.</p>
+        </div>
+
+        <div class="config-modo" data-modo="maratona" hidden>
+          <p class="nota-config">Cite <b>todos</b> os municípios da região
+          escolhida acima, no seu ritmo. O progresso (e o tempo) fica salvo
+          neste navegador — pause e continue quando quiser.</p>
+        </div>
+      </form>
+
+      <div id="desafio-banner" hidden></div>
+      <div id="recorde-atual"></div>
+      <div id="linha-iniciar">
+        <button id="btn-iniciar" class="botao-pri" type="button">▶ Iniciar jogo</button>
+        <button id="btn-desafio" class="botao-sec" type="button"
+          title="Copia um link com esta configuração (e seu recorde como marca a bater) para desafiar alguém">🔗 Desafiar</button>
       </div>
+    </section>
 
-      <div class="config-modo" data-modo="ondestou" hidden>
-        <label>Porte do município secreto
-          <select id="cfg-onde-pool">
-            <option value="500000">Grandes — 500 mil+ hab.</option>
-            <option value="100000" selected>Médias e grandes — 100 mil+</option>
-            <option value="50000">50 mil+ hab.</option>
-            <option value="20000">20 mil+ hab.</option>
-            <option value="0">Qualquer município</option>
-          </select>
-        </label>
-        <p class="nota-config">Você pode chutar qualquer município da região —
-        cidades pequenas também servem de bússola.</p>
-      </div>
-
-      <div class="config-modo" data-modo="clique" hidden>
-        <label>Porte das cidades perguntadas
-          <select id="cfg-clique-pool">
-            <option value="500000">Grandes — 500 mil+ hab.</option>
-            <option value="100000" selected>Médias e grandes — 100 mil+</option>
-            <option value="50000">50 mil+ hab.</option>
-            <option value="20000">20 mil+ hab.</option>
-            <option value="0">Qualquer município</option>
-          </select>
-        </label>
-        <label>Rodadas
-          <input type="number" id="cfg-clique-rodadas" value="10" min="3" max="50">
-        </label>
-        <p class="nota-config">Os pontos dos municípios somem do mapa durante a
-        partida — só o contorno das UFs fica de guia.</p>
-      </div>
-
-      <div class="config-modo" data-modo="maratona" hidden>
-        <p class="nota-config">Cite <b>todos</b> os municípios da região
-        escolhida acima, no seu ritmo. O progresso (e o tempo) fica salvo
-        neste navegador — pause e continue quando quiser.</p>
-      </div>
-    </form>
-
-    <div id="desafio-banner" hidden></div>
-    <div id="recorde-atual"></div>
-    <div id="linha-iniciar">
-      <button id="btn-iniciar" class="botao-pri" type="button">▶ Iniciar jogo</button>
-      <button id="btn-desafio" class="botao-sec" type="button"
-        title="Copia um link com esta configuração (e seu recorde como marca a bater) para desafiar alguém">🔗 Desafiar</button>
-    </div>
-
+    <!-- tela 3: partida em andamento -->
     <section id="area-jogo" hidden>
+      <div id="jogo-topo">
+        <button id="btn-config-jogo" class="botao-voltar" type="button"
+          title="Voltar à configuração (encerra a partida; a maratona fica salva)">‹</button>
+        <div id="jogo-titulos">
+          <b id="jogo-titulo"></b>
+          <small id="jogo-sub"></small>
+        </div>
+      </div>
       <div class="barra"><div id="barra-progresso"></div></div>
       <div id="placar-linhas"></div>
       <div id="alvo-clique" hidden></div>
@@ -195,11 +273,15 @@
       <div id="feedback"></div>
       <div id="dica-atual" hidden></div>
       <div id="fim-jogo" hidden></div>
+      <div id="fim-acoes" hidden>
+        <button id="btn-jogar-novo" class="botao-pri" type="button">↺ Jogar de novo</button>
+        <button id="btn-mudar-config" class="botao-sec" type="button">⚙ Configurar</button>
+      </div>
       <div id="linha-acoes">
         <button id="btn-dica" class="botao-sec" type="button" hidden>💡 Dica</button>
         <button id="btn-encerrar" class="botao-sec" type="button">🏳️ Encerrar / revelar respostas</button>
       </div>
-      <button id="btn-zerar-maratona" class="botao-sec" type="button" hidden>🗑 Zerar progresso desta região</button>
+      <button id="btn-zerar-maratona" class="botao-sec perigo" type="button" hidden>🗑 Zerar progresso desta região</button>
       <div id="lista-jogo"></div>
     </section>
   </aside>
@@ -247,7 +329,7 @@
       <button id="btn-importar-recordes" class="botao-sec" type="button">⬆ Importar backup</button>
       <input type="file" id="arquivo-recordes" accept=".json,application/json" hidden>
     </div>
-    <button id="btn-limpar-recordes" class="botao-sec" type="button">Apagar todos os recordes</button>
+    <button id="btn-limpar-recordes" class="botao-sec perigo" type="button">Apagar todos os recordes</button>
   </div>
 </div>
 
