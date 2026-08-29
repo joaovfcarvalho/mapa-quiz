@@ -2,8 +2,10 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1b28">
 <title>Densidade de municípios — Mapa do Brasil</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📍</text></svg>">
 <link rel="stylesheet" href="css/style.css">
 <style>
   /* ajustes específicos da página de densidade */
@@ -15,7 +17,9 @@
     justify-content: center;
     padding: 12px;
   }
-  .pilha { position: relative; flex: 1; min-width: 0; }
+  /* touch-action: um toque no mapa lê/fixa o valor na hora, sem o navegador
+     segurar o clique à espera de um toque duplo de zoom */
+  .pilha { position: relative; flex: 1; min-width: 0; touch-action: manipulation; }
   .pilha canvas {
     position: absolute;
     inset: 0;

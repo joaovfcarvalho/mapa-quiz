@@ -347,14 +347,22 @@
     return e;
   }
 
-  // aproxima o mapa da região da partida (ou volta ao Brasil inteiro)
+  // aproxima o mapa da região da partida (ou volta ao Brasil inteiro); no
+  // Cerco o enquadramento é a vizinhança do alvo, não a UF
   function enquadrarUniverso(jogo) {
+    if (jogoModo === "cerco") {
+      enquadrarLista([jogo.alvo].concat(jogo.alvos));
+      return;
+    }
     if (!jogo.cfg.uf) {
       vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
       aplicarViewBox();
       return;
     }
-    var e = extentDe(jogo.universo, 0.35);
+    enquadrarLista(jogo.universo);
+  }
+  function enquadrarLista(lista) {
+    var e = extentDe(lista, 0.35);
     var x1 = proj.x(e.lngMin), x2 = proj.x(e.lngMax);
     var y1 = proj.y(e.latMax), y2 = proj.y(e.latMin);
     var ar = vbBase.w / vbBase.h;
@@ -399,6 +407,10 @@
     ondestou: "O jogo sorteia um município secreto e cada palpite responde com a distância e a direção até ele. Encontre-o no menor número de palpites — a cor dos pontos esquenta conforme você chega perto.",
     clique: "O jogo mostra o nome de um município e você clica no mapa onde acha que ele fica. Até 15 km de erro vale 100%; a pontuação cai até zerar em 500 km.",
     maratona: "O desafio definitivo: cite todos os municípios da região, no seu ritmo. O progresso e o tempo ficam salvos neste navegador — pause e continue quando quiser.",
+    caminho: "Viagem por divisas: saia da origem e chegue ao destino citando sempre um município que faz divisa com o último. Menos saltos, mais pontos — o jogo compara com o caminho mínimo real.",
+    cerco: "Nomeie todos os municípios que fazem divisa com o alvo. Trivial no litoral, brutal no interior.",
+    mancha: "Comece por qualquer município e cresça um território contíguo: só vale citar quem faz divisa com a sua mancha.",
+    ponte: "Dois municípios sorteados: construa uma corrente de divisas que os conecte. Cada palpite precisa encostar no que já está marcado.",
   };
 
   // ícone e nome de cada modo (cabeçalhos da tela de configuração e da partida)
@@ -410,7 +422,36 @@
     ondestou: { icone: "🧭", nome: "Onde estou?" },
     clique: { icone: "📌", nome: "Onde fica?" },
     maratona: { icone: "🏃", nome: "Maratona completa" },
+    caminho: { icone: "🚗", nome: "Caminho por divisas" },
+    cerco: { icone: "🏰", nome: "Cerco" },
+    mancha: { icone: "🌱", nome: "Mancha" },
+    ponte: { icone: "🌉", nome: "Ponte" },
   };
+
+  // modos que precisam do grafo de divisas (data/vizinhos.js, ~360 KB,
+  // carregado sob demanda — quem não joga esses modos não paga nada)
+  var MODOS_COM_VIZINHOS = { caminho: 1, cerco: 1, mancha: 1, ponte: 1 };
+  var vizinhosCbs = null; // fila de callbacks enquanto o script carrega
+  function carregarVizinhos(cb, silencioso) {
+    if (window.VIZINHOS) { if (cb) cb(); return; }
+    if (vizinhosCbs) { if (cb) vizinhosCbs.push(cb); return; }
+    vizinhosCbs = cb ? [cb] : [];
+    var s = document.createElement("script");
+    s.src = "data/vizinhos.js";
+    s.onload = function () {
+      var fila = vizinhosCbs;
+      vizinhosCbs = null;
+      fila.forEach(function (f) { f(); });
+    };
+    s.onerror = function () {
+      s.remove();
+      vizinhosCbs = null; // a próxima tentativa recomeça do zero
+      if (!silencioso) {
+        alert("Não deu para carregar o mapa de divisas (~360 KB) — é preciso internet na primeira vez.");
+      }
+    };
+    document.head.appendChild(s);
+  }
 
   // O painel alterna entre três telas: escolha do modo, configuração e partida.
   var TELAS = { modos: "tela-modos", config: "tela-config", jogo: "area-jogo" };
@@ -426,6 +467,7 @@
     if (jogo && !jogo.encerrado) salvarProgressoMaratona();
     clearInterval(timerInt);
     jogo = null;
+    document.body.classList.remove("jogo-ativo");
     $("legenda-pop").hidden = true;
     $("legenda-dist").hidden = true;
     svg.classList.remove("modo-clique");
@@ -445,6 +487,8 @@
     $("config-titulo").textContent = INFO_MODOS[modo].nome;
     $("descricao-modo").textContent = DESCRICOES[modo];
     $("btn-desafio").hidden = modo === "maratona";
+    // já deixa o grafo de divisas baixando em segundo plano
+    if (MODOS_COM_VIZINHOS[modo]) carregarVizinhos(null, true);
     atualizarRecordeUI();
     mostrarTela("config");
   }
@@ -458,6 +502,24 @@
     v = Math.max(min, Math.min(max, v));
     $(id).value = v;
     return v;
+  }
+
+  // rótulos dos seletores de porte (ondestou, clique, cerco, ponte)
+  var NOME_POOL = {
+    500000: "500 mil+ hab.", 100000: "100 mil+ hab.", 50000: "50 mil+ hab.",
+    20000: "20 mil+ hab.", 0: "qualquer porte",
+  };
+
+  // Interpreta um campo de texto que deve conter exatamente um município
+  // (origem/destino do caminho, alvo do cerco). Devolve {mun} ou {erro}.
+  function lerCidadeCampo(id, rotulo) {
+    var res = DADOS.buscar($(id).value);
+    if (res.status === "ok") return { mun: res.municipios[0] };
+    if (res.status === "ambiguo") {
+      return { erro: "Há mais de uma cidade com esse nome para " + rotulo +
+        " — especifique a UF (ex.: " + res.municipios[0].nome + ", " + res.municipios[0].uf + ")." };
+    }
+    return { erro: "Não encontrei a cidade de " + rotulo + ". Confira o nome (ex.: Campinas, SP)." };
   }
 
   // Lê o limite da partida (nº de palpites ou tempo) dos modos de círculos,
@@ -522,10 +584,7 @@
       var pool = DADOS.municipios.filter(function (m) {
         return m.pop >= minPop && (!uf || m.uf === uf);
       });
-      var nomePool = {
-        500000: "500 mil+ hab.", 100000: "100 mil+ hab.", 50000: "50 mil+ hab.",
-        20000: "20 mil+ hab.", 0: "qualquer porte",
-      }[minPop];
+      var nomePool = NOME_POOL[minPop];
       if (modoAtual === "ondestou") {
         if (pool.length < 2) {
           return { erro: "A região não tem municípios suficientes desse porte para o sorteio — escolha um porte menor." };
@@ -551,6 +610,64 @@
         cfg: { uf: uf || undefined },
         chave: "maratona" + sufChave,
         rotulo: "Maratona: todos os municípios" + (uf ? " de " + NOMES_UF[uf] : " do Brasil"),
+      };
+    }
+    if (modoAtual === "caminho") {
+      var origem = lerCidadeCampo("cfg-caminho-origem", "origem");
+      if (origem.erro) return origem;
+      var destino = lerCidadeCampo("cfg-caminho-destino", "destino");
+      if (destino.erro) return destino;
+      if (origem.mun.idx === destino.mun.idx) {
+        return { erro: "Origem e destino são o mesmo município — escolha dois diferentes." };
+      }
+      if (uf && (origem.mun.uf !== uf || destino.mun.uf !== uf)) {
+        return { erro: "Origem e destino precisam ficar em " + NOMES_UF[uf] +
+          " — ou jogue com o Brasil inteiro." };
+      }
+      return {
+        cfg: { origem: origem.mun, destino: destino.mun, uf: uf || undefined },
+        chave: "caminho|de=" + origem.mun.id + "|para=" + destino.mun.id + sufChave,
+        rotulo: "Caminho por divisas: " + nomeUF(origem.mun) + " → " + nomeUF(destino.mun) + sufRotulo,
+      };
+    }
+    if (modoAtual === "cerco") {
+      if ($("cfg-cerco-alvo").value.trim()) {
+        var alvoC = lerCidadeCampo("cfg-cerco-alvo", "o município cercado");
+        if (alvoC.erro) return alvoC;
+        // com alvo escolhido, a região não importa (os vizinhos valem de
+        // qualquer UF) — a chave fica sem o sufixo
+        return {
+          cfg: { alvo: alvoC.mun },
+          chave: "cerco|alvo=" + alvoC.mun.id,
+          rotulo: "Cerco: os vizinhos de " + nomeUF(alvoC.mun),
+        };
+      }
+      var poolCerco = parseInt($("cfg-cerco-pool").value, 10) || 0;
+      return {
+        cfg: { minPop: poolCerco, uf: uf || undefined },
+        chave: "cerco|pool=" + poolCerco + sufChave,
+        rotulo: "Cerco: vizinhos de um município sorteado de " + NOME_POOL[poolCerco] + sufRotulo,
+      };
+    }
+    if (modoAtual === "mancha") {
+      var cfgM = { uf: uf || undefined };
+      var chaveM = "mancha";
+      var rotuloM = "Mancha: território contíguo por divisas";
+      if ($("cfg-mancha-limite").value === "tempo") {
+        cfgM.tempoMin = num("cfg-mancha-tempo", 1, 240);
+        chaveM += "|tempo=" + cfgM.tempoMin;
+        rotuloM += " · " + cfgM.tempoMin + " min";
+      } else {
+        rotuloM += " · sem limite de tempo";
+      }
+      return { cfg: cfgM, chave: chaveM + sufChave, rotulo: rotuloM + sufRotulo };
+    }
+    if (modoAtual === "ponte") {
+      var poolPonte = parseInt($("cfg-ponte-pool").value, 10) || 0;
+      return {
+        cfg: { minPop: poolPonte, uf: uf || undefined },
+        chave: "ponte|pool=" + poolPonte + sufChave,
+        rotulo: "Ponte: ligar dois municípios sorteados de " + NOME_POOL[poolPonte] + sufRotulo,
       };
     }
     if (modoAtual === "topn") {
@@ -660,6 +777,11 @@
       atualizarRecordeUI();
       return;
     }
+    // os modos de divisas dependem do grafo de vizinhos: carrega e volta aqui
+    if (MODOS_COM_VIZINHOS[modoAtual] && !window.VIZINHOS) {
+      carregarVizinhos(iniciar);
+      return;
+    }
     limparCamadasDeJogo();
     jogoModo = modoAtual;
     jogoChave = lido.chave;
@@ -670,13 +792,26 @@
     else if (modoAtual === "topn") jogo = new MODOS.JogoTopN(lido.cfg);
     else if (modoAtual === "ondestou") jogo = new MODOS.JogoOndeEstou(lido.cfg);
     else if (modoAtual === "clique") jogo = new MODOS.JogoClique(lido.cfg);
+    else if (modoAtual === "caminho") jogo = new MODOS.JogoCaminho(lido.cfg);
+    else if (modoAtual === "cerco") jogo = new MODOS.JogoCerco(lido.cfg);
+    else if (modoAtual === "mancha") jogo = new MODOS.JogoMancha(lido.cfg);
+    else if (modoAtual === "ponte") jogo = new MODOS.JogoPonte(lido.cfg);
     else if (modoAtual === "maratona") {
       var prog = carregarMaratona(lido.cfg.uf || "BR");
       lido.cfg.idsIniciais = prog && prog.ids ? prog.ids : [];
       tempoPrevio = prog && prog.tempoSeg ? prog.tempoSeg : 0;
       jogo = new MODOS.JogoMaratona(lido.cfg);
     } else jogo = new MODOS.JogoFaixas(lido.cfg);
-    aplicarRegiao(jogo.cfg.uf || null);
+    if (jogo.erroInicial) {
+      // ex.: alvo do cerco é uma ilha, par da ponte não conecta na região
+      $("recorde-atual").innerHTML = "⚠️ " + jogo.erroInicial;
+      jogo = null;
+      document.body.classList.remove("jogo-ativo");
+      mostrarTela("config");
+      return;
+    }
+    // no Cerco os vizinhos valem de qualquer UF — nada some do mapa
+    aplicarRegiao(jogoModo === "cerco" ? null : jogo.cfg.uf || null);
     enquadrarUniverso(jogo);
 
     citadasPartida = new Set();
@@ -686,10 +821,13 @@
     // o resumo da configuração dispensa o nome do modo, que já está no título
     var sub = jogoRotulo;
     if (sub.indexOf(info.nome) === 0) {
-      sub = sub.slice(info.nome.length).replace(/^\s*·\s*/, "");
+      sub = sub.slice(info.nome.length).replace(/^\s*[:·]\s*/, "");
     }
     $("jogo-sub").textContent = sub;
     mostrarTela("jogo");
+    // em telas pequenas o CSS usa esta classe para subir o mapa para o topo
+    // e reordenar o painel como um app (o campo de palpite vem primeiro)
+    document.body.classList.add("jogo-ativo");
     $("fim-jogo").hidden = true;
     $("fim-acoes").hidden = true;
     $("feedback").textContent = "";
@@ -707,7 +845,7 @@
     svg.classList.toggle("modo-clique", jogoModo === "clique");
     $("alvo-clique").hidden = jogoModo !== "clique";
 
-    var TEM_DICA = { faixas: 1, topn: 1, ondestou: 1, maratona: 1 };
+    var TEM_DICA = { faixas: 1, topn: 1, ondestou: 1, maratona: 1, caminho: 1, cerco: 1, mancha: 1, ponte: 1 };
     $("btn-dica").hidden = !TEM_DICA[jogoModo];
     atualizarBotaoDica();
     $("btn-zerar-maratona").hidden = jogoModo !== "maratona";
@@ -715,6 +853,10 @@
       jogoModo === "maratona" ? "⏸ Pausar (o progresso fica salvo)" :
       jogoModo === "ondestou" ? "🏳️ Desistir / revelar o município" :
       jogoModo === "clique" ? "🏳️ Encerrar a partida" :
+      jogoModo === "caminho" ? "🏳️ Desistir / revelar o caminho mínimo" :
+      jogoModo === "ponte" ? "🏳️ Desistir / revelar uma ligação mínima" :
+      jogoModo === "cerco" ? "🏳️ Encerrar / revelar os vizinhos" :
+      jogoModo === "mancha" ? "🏁 Encerrar a mancha" :
       "🏳️ Encerrar / revelar respostas";
 
     if (jogoModo === "faixas") {
@@ -731,7 +873,23 @@
       montarListaMaratona(jogo);
     } else if (jogoModo === "clique") {
       mostrarAlvoClique();
+    } else if (jogoModo === "caminho") {
+      // origem em azul (é onde você está); destino em vermelho (aonde chegar)
+      pintarPonto(jogo.origem, "centro-palpite");
+      rotularMun(jogo.origem, "centro-palpite");
+      pontos[jogo.destino.idx].setAttribute("class", "cidade faltante");
+      sincronizarForma(jogo.destino);
+      rotularMun(jogo.destino, "faltante");
+    } else if (jogoModo === "cerco") {
+      pintarPonto(jogo.alvo, "centro-palpite");
+      rotularMun(jogo.alvo, "centro-palpite");
+    } else if (jogoModo === "ponte") {
+      [jogo.a, jogo.b].forEach(function (m) {
+        pintarPonto(m, "centro-palpite");
+        rotularMun(m, "centro-palpite");
+      });
     }
+    atualizarMissao();
     $("legenda-pop").hidden = jogoModo === "ondestou" || jogoModo === "clique";
     $("legenda-dist").hidden = jogoModo !== "ondestou";
     limiteSeg = jogo.cfg.tempoMin ? jogo.cfg.tempoMin * 60 : null;
@@ -749,6 +907,17 @@
       btn.textContent = "💡 Dica (grátis)";
       btn.title = "Mostra pistas do maior município que ainda falta";
       btn.disabled = false;
+      return;
+    }
+    // nos modos de divisas as dicas são ilimitadas, mas cada uma tem custo
+    if (jogoModo === "caminho" || jogoModo === "ponte" || jogoModo === "mancha") {
+      btn.textContent = "💡 Dica";
+      btn.title = jogoModo === "caminho"
+        ? "Pistas do próximo município de um caminho mínimo — cada dica custa +1 salto"
+        : jogoModo === "ponte"
+        ? "Pistas de um bom próximo elo — cada dica custa +1 município no placar"
+        : "Pistas do maior vizinho da mancha — cada dica desconta 1 município do resultado";
+      btn.disabled = !jogo || jogo.encerrado;
       return;
     }
     var restantes = Math.max(0, 3 - dicasUsadas);
@@ -819,6 +988,35 @@
         fmtPop(jogo.uniPop) +
         " (<b>" + fmtPct(jogo.uniPop ? jogo.popAchada / jogo.uniPop : 0) + "</b>)");
       linhas.push("Nesta sessão: <b>+" + fmtInt(jogo.achadosSessao) + "</b>");
+    } else if (jogoModo === "caminho") {
+      linhas.push("Saltos: <b>" + jogo.saltos + "</b> · mínimo possível: <b>" +
+        jogo.minSaltos + "</b>" +
+        (jogo.dicasDadas ? " · dicas: <b>" + jogo.dicasDadas + "</b> (+1 salto cada)" : ""));
+      var restC = jogo.saltosRestantes();
+      if (!jogo.venceu && restC !== null) {
+        linhas.push("Do município atual ao destino: <b>" + restC +
+          (restC === 1 ? " salto" : " saltos") + "</b>");
+      }
+      // a barra mostra o avanço real: fração do caminho mínimo já vencida
+      barra = jogo.venceu ? 1 :
+        Math.max(0, 1 - (restC === null ? 1 : restC / jogo.minSaltos));
+    } else if (jogoModo === "cerco") {
+      linhas.push("Vizinhos achados: <b>" + jogo.achadosTotal + "</b> de " +
+        jogo.alvosTotal + " (<b>" + fmtPct(pct) + "</b>)");
+    } else if (jogoModo === "mancha") {
+      linhas.push("Sua mancha: <b>" + fmtInt(jogo.mancha.size) + "</b> de " +
+        fmtInt(jogo.alvosTotal) + " municípios (<b>" + fmtPct(pct) + "</b>)");
+      linhas.push("População da mancha: <b>" + fmtPop(jogo.popMancha) + "</b>");
+    } else if (jogoModo === "ponte") {
+      linhas.push("Municípios usados: <b>" + jogo.usados + "</b> · mínimo entre os extremos: <b>" +
+        jogo.minMeio + "</b>" +
+        (jogo.dicasDadas ? " · dicas: <b>" + jogo.dicasDadas + "</b> (+1 cada)" : ""));
+      var restP = jogo.saltosRestantes();
+      if (!jogo.venceu && restP !== null && restP > 1) {
+        linhas.push("O marcado mais perto ainda está a <b>" + restP + " saltos</b> do outro extremo");
+      }
+      barra = jogo.venceu ? 1 :
+        Math.max(0, 1 - (restP === null ? 1 : restP / (jogo.minMeio + 1)));
     } else {
       linhas.push("Cidades achadas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
         " (<b>" + fmtPct(pct) + "</b>)");
@@ -849,6 +1047,10 @@
     if (jogoModo === "faixas" || jogoModo === "topn") return palpitarAlvos(texto);
     if (jogoModo === "maratona") return palpitarMaratona(texto);
     if (jogoModo === "ondestou") return palpitarOnde(texto);
+    if (jogoModo === "caminho") return palpitarCaminho(texto);
+    if (jogoModo === "cerco") return palpitarCerco(texto);
+    if (jogoModo === "mancha") return palpitarMancha(texto);
+    if (jogoModo === "ponte") return palpitarPonte(texto);
     if (jogoModo === "clique") return; // a resposta é um clique no mapa
 
     var res = DADOS.buscar(texto);
@@ -1342,11 +1544,229 @@
     atualizarRecordeUI();
   }
 
+  // ---------------- modos de divisas (Caminho, Cerco, Mancha, Ponte) ----------------
+  function rotularMun(mun, classe) {
+    elSvg("text", {
+      x: proj.x(mun.lng).toFixed(1),
+      y: proj.y(mun.lat).toFixed(1),
+      "class": "rotulo-cidade" + (classe ? " " + classe : ""),
+    }, gMarcas).textContent = mun.nome;
+  }
+
+  // elo entre dois municípios adjacentes citados (a corrente da viagem/ponte)
+  function linhaCadeia(a, b) {
+    elSvg("line", {
+      x1: proj.x(a.lng).toFixed(1), y1: proj.y(a.lat).toFixed(1),
+      x2: proj.x(b.lng).toFixed(1), y2: proj.y(b.lat).toFixed(1),
+      "class": "linha-cadeia",
+    }, gMarcas);
+  }
+
+  // traçado de um caminho mínimo (revelado no fim da partida)
+  function desenharCaminhoMinimo(caminho, faltante) {
+    var d = caminho.map(function (m, i) {
+      return (i === 0 ? "M" : "L") + proj.x(m.lng).toFixed(1) + " " + proj.y(m.lat).toFixed(1);
+    }).join("");
+    elSvg("path", { d: d, "class": "linha-minima" + (faltante ? " faltante" : "") }, gMarcas);
+  }
+
+  // caixa de missão (mesmo elemento da pergunta do modo clique)
+  function atualizarMissao() {
+    var el = $("alvo-clique");
+    if (!jogo || !MODOS_COM_VIZINHOS[jogoModo]) return;
+    if (jogoModo === "caminho") {
+      el.innerHTML = "🚗 De <b>" + nomeUF(jogo.origem) + "</b> a <b>" + nomeUF(jogo.destino) +
+        "</b>, por divisas.<br>Você está em: <b>" + nomeUF(jogo.atual) + "</b>" +
+        (jogo.venceu ? " 🏁" : "");
+    } else if (jogoModo === "cerco") {
+      el.innerHTML = "⭕ Nomeie os <b>" + jogo.alvosTotal +
+        "</b> municípios que fazem divisa com <b>" + nomeUF(jogo.alvo) + "</b>.";
+    } else if (jogoModo === "mancha") {
+      el.innerHTML = jogo.mancha.size === 0
+        ? "🌱 Comece nomeando <b>qualquer</b> município da região."
+        : "🟢 Sua mancha tem <b>" + fmtInt(jogo.mancha.size) +
+          "</b> município" + (jogo.mancha.size === 1 ? "" : "s") +
+          " — cresça pelas divisas.";
+    } else if (jogoModo === "ponte") {
+      el.innerHTML = "🌉 Ligue <b>" + nomeUF(jogo.a) + "</b> a <b>" + nomeUF(jogo.b) +
+        "</b> — cada palpite precisa fazer divisa com algo já marcado.";
+    }
+    el.hidden = false;
+  }
+
+  // mensagens de erro comuns aos quatro modos; devolve true se já tratou
+  function feedbackDivisas(r) {
+    if (r.tipo === "vazio" || r.tipo === "encerrado") return true;
+    if (r.tipo === "nao_encontrado") {
+      feedback(r.ufErrada
+        ? "Esse município existe, mas não nessa UF."
+        : "Não encontrei nenhum município com esse nome.", "erro");
+      return true;
+    }
+    if (r.tipo === "fora_regiao") {
+      registrarCitadas(r.municipios);
+      feedback(r.municipios[0].nome + " fica fora da região do jogo (só " +
+        NOMES_UF[jogo.cfg.uf] + ").", "erro");
+      return true;
+    }
+    if (r.tipo === "ambiguo") {
+      var ufs = r.municipios.map(function (m) { return m.uf; }).join(", ");
+      feedback("Há " + r.municipios.length + " municípios com esse nome (" + ufs +
+        "). Especifique: " + r.municipios[0].nome + ", UF.", "erro");
+      return true;
+    }
+    return false;
+  }
+
+  function palpitarCaminho(texto) {
+    var r = jogo.palpitar(texto);
+    if (feedbackDivisas(r)) return;
+    if (r.tipo === "atual") {
+      feedback("Você já está em " + nomeUF(r.mun) + ".", "erro");
+      return;
+    }
+    if (r.tipo === "nao_vizinho") {
+      registrarCitadas(r.municipios);
+      feedback(r.municipios.length === 1
+        ? nomeUF(r.municipios[0]) + " não faz divisa com " + nomeUF(r.atual) + "."
+        : "Nenhum município chamado " + r.municipios[0].nome + " faz divisa com " + nomeUF(r.atual) + ".", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo !== "ok") return;
+    registrarCitadas([r.mun]);
+    linhaCadeia(r.anterior, r.mun);
+    pintarPonto(r.mun, r.venceu ? "centro-palpite" : "achada");
+    if (!r.venceu) destacarRecentes([r.mun]);
+    var rest = jogo.saltosRestantes();
+    var item = document.createElement("div");
+    item.className = "item-jogada";
+    item.innerHTML = "<b>" + jogo.saltos + ". " + nomeUF(r.mun) + "</b><br><small>" +
+      (r.venceu ? "🏁 chegou!" : "a " + rest + (rest === 1 ? " salto" : " saltos") + " do destino") +
+      "</small>";
+    $("lista-jogo").prepend(item);
+    feedback("✔ " + nomeUF(r.mun) + (r.repetido ? " (de novo)" : "") +
+      (r.venceu ? " — 🏁 você chegou!" : ""), "ok");
+    $("input-palpite").value = "";
+    atualizarMissao();
+    atualizarPlacar();
+    if (r.venceu) fimDeJogo(false);
+  }
+
+  function palpitarCerco(texto) {
+    var r = jogo.palpitar(texto);
+    if (feedbackDivisas(r)) return;
+    if (r.tipo === "repetido") {
+      registrarCitadas([r.mun]);
+      feedback("Você já acertou " + nomeUF(r.mun) + ".", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo === "alvo") {
+      feedback(jogo.alvo.nome + " é o município cercado — queremos os vizinhos dele.", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo === "nao_alvo") {
+      registrarCitadas(r.municipios);
+      feedback(r.municipios.length === 1
+        ? nomeUF(r.municipios[0]) + " não faz divisa com " + nomeUF(jogo.alvo) + "."
+        : "Nenhum município chamado " + r.municipios[0].nome + " faz divisa com " + nomeUF(jogo.alvo) + ".", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo !== "ok") return;
+    registrarCitadas(r.revelados.map(function (par) { return par.mun; }));
+    r.revelados.forEach(function (par) { revelarAlvo(par.mun, null, false); });
+    feedback("✔ " + r.revelados.map(function (par) {
+      return nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab.";
+    }).join(" · "), "ok");
+    $("input-palpite").value = "";
+    atualizarPlacar();
+    if (r.completo) fimDeJogo(false);
+  }
+
+  function palpitarMancha(texto) {
+    var r = jogo.palpitar(texto);
+    if (feedbackDivisas(r)) return;
+    if (r.tipo === "isolado") {
+      feedback(nomeUF(r.mun) + " não faz divisa com nenhum município" +
+        (jogo.cfg.uf ? " de " + NOMES_UF[jogo.cfg.uf] : "") +
+        " — comece por outro.", "erro");
+      return;
+    }
+    if (r.tipo === "repetido") {
+      registrarCitadas([r.mun]);
+      feedback(nomeUF(r.mun) + " já faz parte da sua mancha.", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo === "nao_vizinho") {
+      registrarCitadas(r.municipios);
+      feedback(r.municipios.length === 1
+        ? nomeUF(r.municipios[0]) + " não faz divisa com a sua mancha."
+        : "Nenhum município chamado " + r.municipios[0].nome + " faz divisa com a sua mancha.", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo !== "ok") return;
+    registrarCitadas(r.revelados.map(function (par) { return par.mun; }));
+    r.revelados.forEach(function (par) { pintarPonto(par.mun, "achada"); });
+    destacarRecentes(r.revelados.map(function (par) { return par.mun; }));
+    feedback(r.semente
+      ? "🌱 Mancha começada em " + nomeUF(r.revelados[0].mun) +
+        " — agora só vale quem faz divisa com ela."
+      : "✔ " + r.revelados.map(function (par) { return nomeUF(par.mun); }).join(" · ") +
+        " — mancha com " + fmtInt(jogo.mancha.size) + " municípios.", "ok");
+    $("input-palpite").value = "";
+    atualizarMissao();
+    atualizarPlacar();
+    if (r.completo) fimDeJogo(false);
+  }
+
+  function palpitarPonte(texto) {
+    var r = jogo.palpitar(texto);
+    if (feedbackDivisas(r)) return;
+    if (r.tipo === "repetido") {
+      registrarCitadas([r.mun]);
+      feedback(nomeUF(r.mun) + " já está marcado.", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo === "nao_vizinho") {
+      registrarCitadas(r.municipios);
+      feedback(r.municipios.length === 1
+        ? nomeUF(r.municipios[0]) + " não faz divisa com o que já está marcado."
+        : "Nenhum município chamado " + r.municipios[0].nome + " faz divisa com o que já está marcado.", "erro");
+      $("input-palpite").select();
+      return;
+    }
+    if (r.tipo !== "ok") return;
+    registrarCitadas(r.revelados.map(function (par) { return par.mun; }));
+    var aceitos = jogo.aceitos;
+    r.revelados.forEach(function (par) {
+      pintarPonto(par.mun, "achada");
+      rotularMun(par.mun);
+      // elo com cada município já marcado que faz divisa com o novo
+      MODOS.vizinhosDe(par.mun).forEach(function (v) {
+        if (aceitos.has(v.idx) && v.idx !== par.mun.idx) linhaCadeia(par.mun, v);
+      });
+    });
+    feedback("✔ " + r.revelados.map(function (par) { return nomeUF(par.mun); }).join(" · ") +
+      (r.venceu ? " — 🌉 ligou!" : ""), "ok");
+    $("input-palpite").value = "";
+    atualizarPlacar();
+    if (r.venceu) fimDeJogo(false);
+  }
+
   // ---------------- modo Onde fica? (clique no mapa) ----------------
+  var TELA_DE_TOQUE = window.matchMedia && matchMedia("(pointer: coarse)").matches;
   function mostrarAlvoClique() {
     var alvo = jogo.alvoAtual();
     if (!alvo) return;
-    $("alvo-clique").innerHTML = "🖱️ Clique no mapa onde fica:<br><b>" + nomeUF(alvo) +
+    $("alvo-clique").innerHTML = (TELA_DE_TOQUE
+      ? "👆 Toque no mapa onde fica:<br><b>"
+      : "🖱️ Clique no mapa onde fica:<br><b>") + nomeUF(alvo) +
       "</b> <small>· " + fmtPop(alvo.pop) + " hab." +
       (alvo.capital ? " · capital" : "") + "</small>";
   }
@@ -1401,6 +1821,20 @@
       caixa.innerHTML = "💡 O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
         "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>";
       caixa.hidden = false;
+    } else if (jogoModo === "caminho" || jogoModo === "ponte" || jogoModo === "mancha") {
+      var dv = jogo.dica(); // caminho e ponte já contam o custo no motor
+      if (!dv) return;
+      dicasUsadas++;        // na mancha o desconto sai daqui no fim da partida
+      var custo = jogoModo === "caminho" ? "+1 salto"
+        : jogoModo === "ponte" ? "+1 município"
+        : "−1 município no resultado";
+      var quem = jogoModo === "caminho" ? "O próximo passo de um caminho mínimo"
+        : jogoModo === "ponte" ? "Um bom próximo elo"
+        : "O maior vizinho da sua mancha";
+      caixa.innerHTML = "💡 (" + custo + ") " + quem + ": começa com <b>«" +
+        dv.mun.nome.charAt(0) + "»</b>, fica em <b>" + dv.mun.uf + "</b> e tem <b>" +
+        fmtPop(dv.mun.pop) + " hab.</b>";
+      caixa.hidden = false;
     } else {
       if (dicasUsadas >= 3) return;
       var df = jogo.dica();
@@ -1408,8 +1842,11 @@
       dicasUsadas++;
       var onde = df.rank !== undefined
         ? "é o <b>" + df.rank + "º</b> do ranking"
+        : jogoModo === "cerco"
+        ? "fica em <b>" + df.mun.uf + "</b>"
         : "está na " + (jogo.cfg.tipo === "grade" ? "célula" : "faixa") + " <b>" + df.faixa.rotulo + "</b>";
-      caixa.innerHTML = "💡 Dica " + dicasUsadas + "/3 (−1 acerto): o maior alvo que falta começa com <b>«" +
+      caixa.innerHTML = "💡 Dica " + dicasUsadas + "/3 (−1 acerto): o maior " +
+        (jogoModo === "cerco" ? "vizinho" : "alvo") + " que falta começa com <b>«" +
         df.mun.nome.charAt(0) + "»</b>, tem <b>" + fmtPop(df.mun.pop) + " hab.</b> e " + onde + ".";
       caixa.hidden = false;
     }
@@ -1423,12 +1860,28 @@
     var tempoSeg = tempoDecorrido();
     if (limiteSeg !== null && tempoSeg > limiteSeg) tempoSeg = limiteSeg;
     var faltantes = null;
-    if (jogoModo === "faixas" || jogoModo === "topn") {
+    if (jogoModo === "faixas" || jogoModo === "topn" || jogoModo === "cerco") {
       faltantes = jogo.encerrar();
       if (desistiu) {
         faltantes.forEach(function (par) {
           revelarAlvo(par.mun, par.faixa || null, true, par.rank);
         });
+      }
+    } else if (jogoModo === "caminho" || jogoModo === "ponte") {
+      // revela um caminho mínimo: pontilhado azul quando venceu (compare com
+      // o seu), vermelho com os municípios que faltaram quando desistiu
+      var minC = jogo.encerrar();
+      if (minC) {
+        desenharCaminhoMinimo(minC, !jogo.venceu);
+        if (!jogo.venceu) {
+          minC.forEach(function (m) {
+            var p = pontos[m.idx];
+            if (!MARCA_FORMA.test(p.getAttribute("class"))) {
+              p.setAttribute("class", "cidade faltante");
+              sincronizarForma(m);
+            }
+          });
+        }
       }
     } else if (jogoModo === "ondestou") {
       var secreto = jogo.encerrar();
@@ -1458,12 +1911,28 @@
 
     var pct = jogo.pct();
     var placar;
-    if (jogoModo === "faixas" || jogoModo === "topn") {
+    if (jogoModo === "faixas" || jogoModo === "topn" || jogoModo === "cerco") {
       // cada dica pedida desconta um acerto do resultado final
       pct = Math.max(0, (jogo.achadosTotal - dicasUsadas) / jogo.alvosTotal);
       placar = jogo.achadosTotal + "/" + jogo.alvosTotal +
-        (jogoModo === "faixas" ? " respostas" : " cidades") +
+        (jogoModo === "faixas" ? " respostas" : jogoModo === "cerco" ? " vizinhos" : " cidades") +
         (dicasUsadas > 0 ? " (" + dicasUsadas + (dicasUsadas === 1 ? " dica" : " dicas") + ")" : "");
+    } else if (jogoModo === "caminho") {
+      placar = jogo.venceu
+        ? jogo.saltos + (jogo.saltos === 1 ? " salto" : " saltos") + " (mínimo " + jogo.minSaltos + ")" +
+          (jogo.dicasDadas > 0 ? " · " + jogo.dicasDadas + " em dicas" : "")
+        : "desistiu a " + jogo.saltosRestantes() + " saltos do destino";
+    } else if (jogoModo === "mancha") {
+      // cada dica pedida desconta um município do resultado final
+      pct = Math.max(0, (jogo.mancha.size - dicasUsadas) / jogo.alvosTotal);
+      placar = fmtInt(jogo.mancha.size) + " municípios · " + fmtPop(jogo.popMancha) + " hab." +
+        (dicasUsadas > 0 ? " (" + dicasUsadas + (dicasUsadas === 1 ? " dica" : " dicas") + ")" : "");
+    } else if (jogoModo === "ponte") {
+      placar = jogo.venceu
+        ? "ligou com " + jogo.usados + (jogo.usados === 1 ? " município" : " municípios") +
+          " (mínimo " + jogo.minMeio + ")" +
+          (jogo.dicasDadas > 0 ? " · " + jogo.dicasDadas + " em dicas" : "")
+        : "desistiu com " + jogo.usados + " municípios marcados";
     } else if (jogoModo === "ondestou") {
       placar = jogo.venceu
         ? "acertou em " + jogo.totalPalpites() +
@@ -1521,6 +1990,32 @@
       return "<div class='relatorio'>" +
         (acertos > 0 ? "🎯 Na mosca (até 15 km): <b>" + acertos + "</b>. " : "") +
         "Piores erros: " + itens.join(" · ") + ".</div>";
+    }
+    if (jogoModo === "caminho") {
+      if (!jogo.venceu) {
+        return "<div class='relatorio'>Você parou em <b>" + nomeUF(jogo.atual) +
+          "</b> — o traçado pontilhado mostra um caminho mínimo (" +
+          jogo.minSaltos + " saltos).</div>";
+      }
+      return "<div class='relatorio'>" + (jogo.saltos + jogo.dicasDadas <= jogo.minSaltos
+        ? "🏆 Caminho perfeito — impossível fazer em menos saltos!"
+        : "O mínimo eram " + jogo.minSaltos + " saltos — o traçado pontilhado mostra um caminho ótimo.") +
+        "</div>";
+    }
+    if (jogoModo === "ponte") {
+      return "<div class='relatorio'>" + (!jogo.venceu
+        ? "O traçado pontilhado mostra uma ligação mínima (" + jogo.minMeio + " municípios no meio)."
+        : jogo.usados + jogo.dicasDadas <= jogo.minMeio
+        ? "🏆 Ponte perfeita — impossível ligar com menos municípios!"
+        : "Dava para ligar com " + jogo.minMeio + " municípios — o traçado pontilhado mostra como.") +
+        "</div>";
+    }
+    if (jogoModo === "mancha") {
+      var foraM = jogo.maioresDeFora(5);
+      if (foraM.length === 0) return "";
+      return "<div class='relatorio'>Maiores vizinhos da mancha que ficaram de fora: " +
+        foraM.map(function (m) { return nomeUF(m) + " — " + fmtPop(m.pop); }).join(" · ") +
+        ".</div>";
     }
     if (jogoModo === "dist" || jogoModo === "pop") {
       // no objetivo de área, "maior" é por território; nos demais, por população
@@ -1795,6 +2290,13 @@
       if (i > 0) p[t.slice(0, i)] = t.slice(i + 1);
     });
     function setVal(id, v) { if (v !== undefined) $(id).value = v; }
+    // preenche um campo de cidade ("Nome, UF") a partir do id do IBGE na chave
+    function setCidade(id, idIbge) {
+      if (idIbge === undefined) return;
+      DADOS.municipios.forEach(function (m) {
+        if (String(m.id) === idIbge) $(id).value = m.nome + ", " + m.uf;
+      });
+    }
     $("cfg-regiao").value = p.uf && NOMES_UF[p.uf] ? p.uf : "BR";
     if (modo === "dist" || modo === "pop") {
       if (modo === "dist") {
@@ -1815,18 +2317,24 @@
       setVal("cfg-clique-rodadas", p.rodadas);
     } else if (modo === "maratona") {
       // maratona não tem parâmetros além da região
+    } else if (modo === "caminho") {
+      setCidade("cfg-caminho-origem", p.de);
+      setCidade("cfg-caminho-destino", p.para);
+    } else if (modo === "cerco") {
+      $("cfg-cerco-alvo").value = "";
+      setCidade("cfg-cerco-alvo", p.alvo);
+      setVal("cfg-cerco-pool", p.pool);
+    } else if (modo === "mancha") {
+      $("cfg-mancha-limite").value = p.tempo ? "tempo" : "livre";
+      setVal("cfg-mancha-tempo", p.tempo);
+    } else if (modo === "ponte") {
+      setVal("cfg-ponte-pool", p.pool);
     } else if (modo === "faixas") {
       if (p.tipo) $("cfg-faixas-tipo").value = p.tipo;
       $("rotulo-centro").hidden = $("cfg-faixas-tipo").value !== "aneis";
       setVal("cfg-faixas-largura", p.largura);
       setVal("cfg-faixas-topn", p.top);
-      if (p.centro) {
-        var centro = null;
-        DADOS.municipios.forEach(function (m) {
-          if (String(m.id) === p.centro) centro = m;
-        });
-        if (centro) $("cfg-faixas-centro").value = centro.nome + ", " + centro.uf;
-      }
+      setCidade("cfg-faixas-centro", p.centro);
       $("cfg-faixas-limite").value = p.tempo ? "tempo" : "livre";
       setVal("cfg-faixas-tempo", p.tempo);
     } else {
@@ -1897,35 +2405,123 @@
     aplicarViewBox();
   });
 
+  // Arrasto, toque e pinça via Pointer Events: mouse e dedo seguem o mesmo
+  // caminho — um ponteiro arrasta (ou clica), dois fazem pinça (zoom). O
+  // touch-action: none no CSS impede o navegador de rolar/ampliar a página
+  // por cima do mapa; o setPointerCapture garante o pointerup mesmo quando o
+  // dedo sai do mapa no meio do gesto.
   var arrasto = null;
-  svg.addEventListener("mousedown", function (ev) {
-    arrasto = { x: ev.clientX, y: ev.clientY, vbx: vb.x, vby: vb.y };
-    cliqueInicio = { x: ev.clientX, y: ev.clientY };
-    svg.classList.add("arrastando");
+  var ponteiros = [];    // ponteiros (dedos/mouse) ativos sobre o mapa
+  var pinca = null;      // distância e centro da pinça no quadro anterior
+  var ultimoToque = null; // para o toque duplo (restaura o mapa inteiro)
+
+  function acharPonteiro(id) {
+    for (var i = 0; i < ponteiros.length; i++) if (ponteiros[i].id === id) return i;
+    return -1;
+  }
+  function medidaPinca() {
+    var dx = ponteiros[0].x - ponteiros[1].x;
+    var dy = ponteiros[0].y - ponteiros[1].y;
+    return {
+      d: Math.max(20, Math.sqrt(dx * dx + dy * dy)),
+      cx: (ponteiros[0].x + ponteiros[1].x) / 2,
+      cy: (ponteiros[0].y + ponteiros[1].y) / 2,
+    };
+  }
+
+  svg.addEventListener("pointerdown", function (ev) {
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    if (svg.setPointerCapture) {
+      try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+    }
+    if (acharPonteiro(ev.pointerId) === -1) {
+      ponteiros.push({ id: ev.pointerId, x: ev.clientX, y: ev.clientY });
+    }
+    if (ponteiros.length === 1) {
+      arrasto = { x: ev.clientX, y: ev.clientY, vbx: vb.x, vby: vb.y };
+      cliqueInicio = { x: ev.clientX, y: ev.clientY };
+      svg.classList.add("arrastando");
+    } else if (ponteiros.length === 2) {
+      // entrou o segundo dedo: vira pinça — e deixa de poder ser um clique
+      arrasto = null;
+      cliqueInicio = null;
+      tooltip.hidden = true;
+      pinca = medidaPinca();
+    } else {
+      pinca = null; // 3+ dedos: espera sobrarem dois
+    }
   });
 
-  // clique (sem arrasto) no modo "Onde fica?": vira a resposta da rodada
-  svg.addEventListener("mouseup", function (ev) {
-    if (!cliqueInicio) return;
-    var moveu = Math.abs(ev.clientX - cliqueInicio.x) + Math.abs(ev.clientY - cliqueInicio.y);
+  svg.addEventListener("pointermove", function (ev) {
+    var i = acharPonteiro(ev.pointerId);
+    if (i === -1) return;
+    ponteiros[i].x = ev.clientX;
+    ponteiros[i].y = ev.clientY;
+    if (ponteiros.length === 2 && pinca) {
+      var agora = medidaPinca();
+      // zoom em torno do centro dos dedos…
+      var p = pontoDoMapa(agora.cx, agora.cy);
+      zoomEm(pinca.d / agora.d,
+        Math.max(0, Math.min(1, (p.x - vb.x) / vb.w)),
+        Math.max(0, Math.min(1, (p.y - vb.y) / vb.h)));
+      // …mais o deslocamento do próprio centro (pinça também arrasta)
+      var escala = medidaMapa().escala;
+      vb.x = Math.max(0, Math.min(vbBase.w - vb.w, vb.x - (agora.cx - pinca.cx) / escala));
+      vb.y = Math.max(0, Math.min(vbBase.h - vb.h, vb.y - (agora.cy - pinca.cy) / escala));
+      aplicarViewBox();
+      pinca = agora;
+    } else if (arrasto && ponteiros.length === 1) {
+      var esc = medidaMapa().escala;
+      vb.x = Math.max(0, Math.min(vbBase.w - vb.w, arrasto.vbx - (ev.clientX - arrasto.x) / esc));
+      vb.y = Math.max(0, Math.min(vbBase.h - vb.h, arrasto.vby - (ev.clientY - arrasto.y) / esc));
+      aplicarViewBox();
+    }
+  });
+
+  function soltarPonteiro(ev, cancelado) {
+    var i = acharPonteiro(ev.pointerId);
+    if (i === -1) return;
+    ponteiros.splice(i, 1);
+    if (ponteiros.length === 1) {
+      // da pinça sobrou um dedo: recomeça o arrasto de onde ele está
+      arrasto = { x: ponteiros[0].x, y: ponteiros[0].y, vbx: vb.x, vby: vb.y };
+      pinca = null;
+      return;
+    }
+    if (ponteiros.length > 0) return;
+    svg.classList.remove("arrastando");
+    arrasto = null;
+    pinca = null;
+    var inicio = cliqueInicio;
     cliqueInicio = null;
-    if (moveu > 5) return;
+    if (cancelado || !inicio) return;
+    // tolerância maior no dedo: ninguém toca a tela com precisão de mouse
+    var moveu = Math.abs(ev.clientX - inicio.x) + Math.abs(ev.clientY - inicio.y);
+    if (moveu > (ev.pointerType === "mouse" ? 5 : 12)) {
+      ultimoToque = null;
+      return;
+    }
+    // toque duplo faz as vezes do duplo clique do mouse: restaura o zoom
+    // (fora de uma partida de clique, em que dois toques são duas respostas)
+    if (ev.pointerType !== "mouse") {
+      var agoraMs = Date.now();
+      var emClique = jogoModo === "clique" && jogo && !jogo.encerrado;
+      if (!emClique && ultimoToque && agoraMs - ultimoToque.t < 350 &&
+          Math.abs(ev.clientX - ultimoToque.x) + Math.abs(ev.clientY - ultimoToque.y) < 50) {
+        ultimoToque = null;
+        vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
+        aplicarViewBox();
+        return;
+      }
+      ultimoToque = { t: agoraMs, x: ev.clientX, y: ev.clientY };
+    }
+    // clique/toque (sem arrasto) no modo "Onde fica?": vira a resposta da rodada
     if (jogoModo !== "clique" || !jogo || jogo.encerrado) return;
     var p = pontoDoMapa(ev.clientX, ev.clientY);
     responderClique(proj.latDe(p.y), proj.lngDe(p.x));
-  });
-  window.addEventListener("mousemove", function (ev) {
-    if (!arrasto) return;
-    var escala = medidaMapa().escala;
-    vb.x = Math.max(0, Math.min(vbBase.w - vb.w, arrasto.vbx - (ev.clientX - arrasto.x) / escala));
-    vb.y = Math.max(0, Math.min(vbBase.h - vb.h, arrasto.vby - (ev.clientY - arrasto.y) / escala));
-    aplicarViewBox();
-  });
-  window.addEventListener("mouseup", function () {
-    arrasto = null;
-    cliqueInicio = null; // soltar fora do mapa não deixa clique pendente
-    svg.classList.remove("arrastando");
-  });
+  }
+  svg.addEventListener("pointerup", function (ev) { soltarPonteiro(ev, false); });
+  svg.addEventListener("pointercancel", function (ev) { soltarPonteiro(ev, true); });
   svg.addEventListener("dblclick", function () {
     // no meio de uma partida de clique, dois cliques são duas respostas — não
     // podem também resetar o zoom
@@ -1971,6 +2567,7 @@
     });
     $("rotulo-faixas-tempo").hidden = $("cfg-faixas-limite").value !== "tempo";
     $("rotulo-topn-tempo").hidden = $("cfg-topn-limite").value !== "tempo";
+    $("rotulo-mancha-tempo").hidden = $("cfg-mancha-limite").value !== "tempo";
   }
   document.querySelectorAll(".sel-limite").forEach(function (s) {
     s.addEventListener("change", atualizarCamposLimite);
@@ -1980,7 +2577,13 @@
   });
 
   $("btn-iniciar").addEventListener("click", iniciar);
-  $("btn-palpitar").addEventListener("click", palpitar);
+  // o pointerdown cancelado impede o botão de roubar o foco do campo de
+  // texto — no celular isso manteria o teclado fechando e abrindo a cada OK
+  $("btn-palpitar").addEventListener("pointerdown", function (ev) { ev.preventDefault(); });
+  $("btn-palpitar").addEventListener("click", function () {
+    palpitar();
+    if (jogo && !jogo.encerrado && !$("linha-palpite").hidden) $("input-palpite").focus();
+  });
   $("input-palpite").addEventListener("keydown", function (ev) {
     if (ev.key === "Enter") { ev.preventDefault(); palpitar(); }
   });
@@ -1989,6 +2592,7 @@
     if (jogoModo === "maratona") fimSessaoMaratona(false);
     else fimDeJogo(true);
   });
+  $("btn-dica").addEventListener("pointerdown", function (ev) { ev.preventDefault(); });
   $("btn-dica").addEventListener("click", pedirDica);
   $("btn-zerar-maratona").addEventListener("click", function () {
     var regiao = ufDoJogo() || "BR";
@@ -2061,6 +2665,10 @@
 
   // estado inicial: a tela de modos já está visível no HTML; um link de
   // desafio pula direto para a configuração do modo desafiado
+  // em tela de toque, a dica de navegação fala de dedos, não de mouse
+  if (TELA_DE_TOQUE) {
+    $("dica-zoom").textContent = "pinça: zoom · arraste: mover · toque duplo: mapa inteiro";
+  }
   atualizarCamposLimite();
   aplicarDesafioDaURL();
   // um link de desafio colado na aba já aberta também vale

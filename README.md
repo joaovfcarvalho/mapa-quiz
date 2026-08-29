@@ -57,15 +57,42 @@ destacado em rosa no mapa — ponto pulsante com o nome ao lado (e o território
 com ⬡ Formas ligado) — até o próximo acerto, para você ver na hora onde fica
 o que acabou de digitar.
 
+**8. Caminho por divisas** — saia de um município e chegue a outro (Chuí →
+Oiapoque, por padrão) citando sempre um município que faz **divisa** com o
+último citado: uma viagem de carro geográfica, digitada de memória. O jogo
+desenha a corrente no mapa e pontua contra o caminho mínimo real (calculado
+por busca em largura no grafo de divisas): fez em 5 saltos o que dava em 4,
+vale 80%. Ao final (ou na desistência), um traçado pontilhado revela um
+caminho ótimo.
+
+**9. Cerco** — o jogo mostra um município (escolhido ou sorteado por porte) e
+você nomeia **todos** os que fazem divisa com ele — inclusive os de outra UF.
+O mapa já abre com o zoom na vizinhança. Trivial para o Rio de Janeiro (6
+vizinhos), brutal para Uberlândia (7) ou São Paulo (21).
+
+**10. Mancha** — comece por qualquer município; depois só vale citar quem faz
+divisa com a sua mancha. O território contíguo vai crescendo pelo mapa (com o
+botão ⬡ Formas ligado é um espetáculo) e o placar conta municípios e
+população anexados. Jogue livre ou contra o relógio.
+
+**11. Ponte** — o jogo sorteia dois municípios e você constrói uma corrente
+de divisas que os conecte. Cada palpite precisa encostar no que já está
+marcado, então dá para crescer dos dois lados até as pontas se encontrarem.
+Cooperativo por natureza, ótimo para começar — e pontua contra a ligação
+mínima possível.
+
 **Região do jogo** — qualquer modo pode ser jogado com o Brasil inteiro ou só
 com uma UF (o mapa aproxima o estado e municípios de fora somem). Raio de
-30 km em Minas é outro jogo.
+30 km em Minas é outro jogo. No Cerco a região vale só para o sorteio do
+alvo: os vizinhos contam mesmo quando ficam do outro lado da divisa estadual.
 
 **Dicas** — nos modos de alvos nomeados (faixas, Top N, Onde estou?,
-maratona), o botão 💡 dá pistas do maior alvo que falta (primeira letra,
-população, onde). Nos modos com recorde cada dica tem custo: −1 acerto no
-resultado (faixas/Top N) ou +1 palpite no placar (Onde estou?); na maratona
-é de graça.
+maratona, e os quatro modos de divisas), o botão 💡 dá pistas do maior alvo
+que falta (primeira letra, população, onde). Nos modos com recorde cada dica
+tem custo: −1 acerto no resultado (faixas/Top N/Cerco/Mancha), +1 palpite no
+placar (Onde estou?) ou +1 salto/município (Caminho/Ponte); na maratona é de
+graça. No Caminho e na Ponte a dica aponta o próximo passo de um caminho
+mínimo.
 
 **Limite da partida** — nos modos de círculos, escolha entre limitar por
 número de palpites (ex.: 10 chutes, sem pressa) ou por tempo (ex.: 30 minutos
@@ -137,12 +164,21 @@ cada configuração).
 | Coordenadas (sede municipal) | [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros) |
 | Contorno das UFs | IBGE, API de malhas (qualidade máxima) |
 | Forma dos municípios (botão ⬡) | IBGE, API de malhas (qualidade mínima) |
+| Grafo de divisas (modos Caminho/Cerco/Mancha/Ponte) | derivado da malha municipal pelo `build_data.py` |
 | Fundo de satélite (botão 🛰️) | NASA Blue Marble Next Generation, 500 m/pixel (domínio público) |
 
-Os dados ficam embutidos em `data/municipios.js`, `data/brasil_uf.js` e
-`data/malha_municipios.js` para o jogo funcionar offline (inclusive aberto
-via `file://`) — o último só é carregado se o botão ⬡ Formas for ligado.
-Para regenerar a partir das fontes:
+O grafo de "quem faz divisa com quem" não vem de nenhuma fonte extra: como os
+polígonos do IBGE encaixam exatamente ao longo das fronteiras, o
+`build_data.py` considera vizinhos dois municípios que compartilham 2 ou mais
+vértices da malha (um só seria apenas um toque de canto). O resultado —
+15.958 divisas entre 5.568 municípios, grau médio 5,7, máximo 21 (São Paulo)
+— fica em `data/vizinhos.js` (~320 KB).
+
+Os dados ficam embutidos em `data/municipios.js`, `data/brasil_uf.js`,
+`data/malha_municipios.js` e `data/vizinhos.js` para o jogo funcionar offline
+(inclusive aberto via `file://`) — a malha só é carregada se o botão ⬡
+Formas for ligado, e o grafo de divisas só ao entrar num dos modos que o
+usam. Para regenerar a partir das fontes:
 
 ```bash
 cd tools
@@ -155,7 +191,10 @@ polígono; no objetivo "cobrir área", município coberto conta o território
 inteiro (a sede caiu no círculo → a área toda soma); Boa Esperança do Norte
 (MT), criado em 2023, consta com população e área 0 por não existir no Censo
 2022 — e, por não existir na malha municipal do IBGE, é o único município
-sem forma no botão ⬡ (fica só o ponto).
+sem forma no botão ⬡ (fica só o ponto) e fora do grafo de divisas. Ilhabela
+(SP) e Fernando de Noronha (PE) são ilhas: não fazem divisa com ninguém, e
+por isso não servem de origem/destino/semente nos modos de divisas — todos
+os outros 5.568 municípios formam um único bloco conexo.
 
 ## Estrutura
 
@@ -168,7 +207,7 @@ mapa-quiz/
 ├── js/
 │   ├── geo.js          # haversine, rumo, círculos geodésicos, projeção
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
-│   ├── modos.js        # motores dos 7 modos de jogo
+│   ├── modos.js        # motores dos 11 modos de jogo + grafo de divisas
 │   ├── recordes.js     # recordes no localStorage
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
 │   ├── estatisticas.js # mapa e listas dos pontos cegos

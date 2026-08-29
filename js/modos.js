@@ -1,5 +1,5 @@
 "use strict";
-// Motores dos três modos de jogo. Cada motor guarda o estado da partida e
+// Motores dos modos de jogo. Cada motor guarda o estado da partida e
 // devolve resultados estruturados para a interface desenhar.
 var MODOS = (function () {
   var municipios = DADOS.municipios; // já ordenados por população (desc)
@@ -623,6 +623,496 @@ var MODOS = (function () {
     return this.alvosTotal === 0 ? 0 : this.achados.size / this.alvosTotal;
   };
 
+  // ---------------------------------------------------------------
+  // Grafo de divisas (modos Caminho, Cerco, Mancha e Ponte). Os vizinhos vêm
+  // de data/vizinhos.js (VIZINHOS, carregado sob demanda pela interface) e
+  // aqui viram listas de municípios por idx, ordenadas por população — a
+  // ordem que o Cerco e as dicas usam. Ilhas (Ilhabela, Fernando de Noronha)
+  // e municípios fora da malha ficam com lista vazia.
+  // ---------------------------------------------------------------
+  var _vizinhos = null; // idx -> [municipio, ...]
+  function grafo() {
+    if (_vizinhos) return _vizinhos;
+    var porId = new Map();
+    municipios.forEach(function (m) { porId.set(m.id, m); });
+    _vizinhos = municipios.map(function (m) {
+      var ids = (window.VIZINHOS && VIZINHOS[m.id]) || [];
+      return ids
+        .map(function (id) { return porId.get(id); })
+        .filter(Boolean)
+        .sort(function (a, b) { return b.pop - a.pop; });
+    });
+    return _vizinhos;
+  }
+
+  function conjuntoIdx(lista) {
+    var s = new Set();
+    lista.forEach(function (m) { s.add(m.idx); });
+    return s;
+  }
+
+  // Menor caminho (em saltos) entre dois municípios, por BFS; permitido (Set
+  // de idx) restringe o grafo (ex.: só a UF da partida). Devolve a lista de
+  // municípios da origem ao destino, ou null se não há caminho.
+  function menorCaminho(origem, destino, permitido) {
+    var adj = grafo();
+    var ant = new Map();
+    ant.set(origem.idx, null);
+    var fila = [origem.idx];
+    for (var i = 0; i < fila.length; i++) {
+      var v = fila[i];
+      if (v === destino.idx) {
+        var caminho = [];
+        for (var p = v; p !== null; p = ant.get(p)) caminho.push(municipios[p]);
+        return caminho.reverse();
+      }
+      adj[v].forEach(function (m) {
+        if (ant.has(m.idx)) return;
+        if (permitido && !permitido.has(m.idx)) return;
+        ant.set(m.idx, v);
+        fila.push(m.idx);
+      });
+    }
+    return null;
+  }
+
+  // Distância em saltos de cada município alcançável até `ate` (Map idx -> saltos).
+  function distanciasAte(ate, permitido) {
+    var adj = grafo();
+    var dist = new Map();
+    dist.set(ate.idx, 0);
+    var fila = [ate.idx];
+    for (var i = 0; i < fila.length; i++) {
+      var v = fila[i];
+      var d = dist.get(v) + 1;
+      adj[v].forEach(function (m) {
+        if (dist.has(m.idx)) return;
+        if (permitido && !permitido.has(m.idx)) return;
+        dist.set(m.idx, d);
+        fila.push(m.idx);
+      });
+    }
+    return dist;
+  }
+
+  // ---------------------------------------------------------------
+  // Modo 8 — Caminho: da origem ao destino citando sempre um município que
+  // faz divisa com o último citado. Pontua contra o menor caminho possível.
+  // cfg: {origem, destino, uf?}
+  // ---------------------------------------------------------------
+  function JogoCaminho(cfg) {
+    this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.permitido = cfg.uf ? conjuntoIdx(this.universo) : null;
+    this.origem = cfg.origem;
+    this.destino = cfg.destino;
+    this.atual = cfg.origem;
+    this.cadeia = [cfg.origem];
+    this.visitados = new Set([cfg.origem.idx]);
+    this.saltos = 0;
+    this.dicasDadas = 0; // cada dica custa +1 salto na pontuação
+    this.encerrado = false;
+    this.venceu = false;
+    this.distDestino = distanciasAte(cfg.destino, this.permitido);
+    this.minCaminho = menorCaminho(cfg.origem, cfg.destino, this.permitido);
+    this.minSaltos = this.minCaminho ? this.minCaminho.length - 1 : null;
+    if (!this.minCaminho) {
+      this.erroInicial = "Não existe caminho por divisas entre " + cfg.origem.nome +
+        " e " + cfg.destino.nome +
+        (cfg.uf ? " passando só por essa UF" : " (ilhas não fazem divisa com ninguém)") + ".";
+    }
+  }
+  // Saltos que ainda faltam do município atual ao destino, pelo caminho mínimo.
+  JogoCaminho.prototype.saltosRestantes = function () {
+    var d = this.distDestino.get(this.atual.idx);
+    return d === undefined ? null : d;
+  };
+  JogoCaminho.prototype.palpitar = function (texto) {
+    if (this.encerrado) return { tipo: "encerrado" };
+    var res = DADOS.buscar(texto);
+    if (res.status === "vazio") return { tipo: "vazio" };
+    if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+    var cand = dentroDaRegiao(this.cfg, res.municipios);
+    if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
+    var atual = this.atual;
+    if (cand.length === 1 && cand[0].idx === atual.idx) return { tipo: "atual", mun: atual };
+    // homônimos: se só um deles faz divisa com o município atual, é ele
+    var adj = grafo()[atual.idx];
+    var vizinhos = cand.filter(function (m) {
+      return adj.some(function (v) { return v.idx === m.idx; });
+    });
+    if (vizinhos.length === 0) return { tipo: "nao_vizinho", municipios: cand, atual: atual };
+    if (vizinhos.length > 1) return { tipo: "ambiguo", municipios: vizinhos };
+    var mun = vizinhos[0];
+    var repetido = this.visitados.has(mun.idx); // voltar atrás vale, mas custa o salto
+    this.visitados.add(mun.idx);
+    this.cadeia.push(mun);
+    this.saltos++;
+    this.atual = mun;
+    if (mun.idx === this.destino.idx) {
+      this.encerrado = true;
+      this.venceu = true;
+    }
+    return { tipo: "ok", mun: mun, anterior: atual, repetido: repetido, venceu: this.venceu };
+  };
+  // Dica: o vizinho do município atual que está num caminho mínimo até o destino.
+  JogoCaminho.prototype.dica = function () {
+    if (this.encerrado) return null;
+    var dist = this.distDestino;
+    var permitido = this.permitido;
+    var melhor = null;
+    grafo()[this.atual.idx].forEach(function (m) {
+      if (permitido && !permitido.has(m.idx)) return;
+      var d = dist.get(m.idx);
+      if (d === undefined) return;
+      if (!melhor || d < dist.get(melhor.idx)) melhor = m;
+    });
+    if (!melhor) return null;
+    this.dicasDadas++;
+    return { mun: melhor };
+  };
+  JogoCaminho.prototype.encerrar = function () {
+    this.encerrado = true;
+    return this.minCaminho;
+  };
+  // 100% fazendo o caminho mínimo; cada salto (ou dica) a mais dilui.
+  JogoCaminho.prototype.pct = function () {
+    if (!this.venceu || !this.minSaltos) return 0;
+    return Math.min(1, this.minSaltos / (this.saltos + this.dicasDadas));
+  };
+
+  // ---------------------------------------------------------------
+  // Modo 9 — Cerco: nomear todos os municípios que fazem divisa com o alvo.
+  // A região (uf) filtra só o sorteio do alvo — os vizinhos valem mesmo
+  // quando ficam do outro lado da divisa estadual.
+  // cfg: {alvo? (município escolhido), minPop? (porte do sorteio), uf?}
+  // ---------------------------------------------------------------
+  function JogoCerco(cfg) {
+    this.cfg = cfg;
+    var adj = grafo();
+    var alvo = cfg.alvo || null;
+    if (!alvo) {
+      var uf = cfg.uf;
+      var minPop = cfg.minPop || 0;
+      var pool = municipios.filter(function (m) {
+        return m.pop >= minPop && (!uf || m.uf === uf) && adj[m.idx].length > 0;
+      });
+      if (pool.length === 0) {
+        this.erroInicial = "A região não tem municípios desse porte para o sorteio — escolha um porte menor.";
+        return;
+      }
+      alvo = pool[Math.floor(Math.random() * pool.length)];
+    }
+    this.alvo = alvo;
+    this.alvos = adj[alvo.idx]; // já ordenados por população (desc)
+    this.alvosTotal = this.alvos.length;
+    if (this.alvosTotal === 0) {
+      this.erroInicial = alvo.nome + " (" + alvo.uf + ") não faz divisa com nenhum município — escolha outro alvo.";
+      return;
+    }
+    this.ehAlvo = conjuntoIdx(this.alvos);
+    this.achados = new Set();
+    this.achadosTotal = 0;
+    this.encerrado = false;
+  }
+  JogoCerco.prototype.palpitar = function (texto) {
+    if (this.encerrado) return { tipo: "encerrado" };
+    var res = DADOS.buscar(texto);
+    if (res.status === "vazio") return { tipo: "vazio" };
+    if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+    var self = this;
+    var revelados = [];
+    var repetido = null;
+    res.municipios.forEach(function (m) {
+      if (!self.ehAlvo.has(m.idx)) return;
+      if (self.achados.has(m.idx)) { repetido = m; return; }
+      self.achados.add(m.idx);
+      self.achadosTotal++;
+      revelados.push({ mun: m });
+    });
+    if (revelados.length === 0) {
+      if (repetido) return { tipo: "repetido", mun: repetido };
+      if (res.municipios.some(function (m) { return m.idx === self.alvo.idx; })) {
+        return { tipo: "alvo" };
+      }
+      return { tipo: "nao_alvo", municipios: res.municipios };
+    }
+    if (this.achadosTotal >= this.alvosTotal) this.encerrado = true;
+    return { tipo: "ok", revelados: revelados, completo: this.encerrado };
+  };
+  // Dica: o maior vizinho ainda não achado (alvos já estão em ordem de população).
+  JogoCerco.prototype.dica = function () {
+    for (var i = 0; i < this.alvos.length; i++) {
+      var m = this.alvos[i];
+      if (!this.achados.has(m.idx)) return { mun: m };
+    }
+    return null;
+  };
+  // Encerra revelando o que faltou; devolve a lista dos vizinhos não achados.
+  JogoCerco.prototype.encerrar = function () {
+    this.encerrado = true;
+    var faltantes = [];
+    var self = this;
+    this.alvos.forEach(function (m) {
+      if (!self.achados.has(m.idx)) faltantes.push({ mun: m });
+    });
+    return faltantes;
+  };
+  JogoCerco.prototype.pct = function () {
+    return this.alvosTotal === 0 ? 0 : this.achadosTotal / this.alvosTotal;
+  };
+
+  // ---------------------------------------------------------------
+  // Modo 10 — Mancha: comece por qualquer município e cresça um território
+  // contíguo — só vale citar quem faz divisa com a mancha atual.
+  // cfg: {uf?, tempoMin?}
+  // ---------------------------------------------------------------
+  function JogoMancha(cfg) {
+    this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.uniPop = u.pop;
+    this.alvosTotal = this.universo.length;
+    this.mancha = new Set();    // idx dos municípios da mancha
+    this.popMancha = 0;
+    this.fronteira = new Set(); // idx dos vizinhos da mancha ainda fora dela
+    this.encerrado = false;
+  }
+  JogoMancha.prototype.incorporar = function (m) {
+    var self = this;
+    var uf = this.cfg.uf;
+    this.mancha.add(m.idx);
+    this.popMancha += m.pop;
+    this.fronteira.delete(m.idx);
+    grafo()[m.idx].forEach(function (v) {
+      if (uf && v.uf !== uf) return;
+      if (!self.mancha.has(v.idx)) self.fronteira.add(v.idx);
+    });
+  };
+  JogoMancha.prototype.palpitar = function (texto) {
+    if (this.encerrado) return { tipo: "encerrado" };
+    var res = DADOS.buscar(texto);
+    if (res.status === "vazio") return { tipo: "vazio" };
+    if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+    var cand = dentroDaRegiao(this.cfg, res.municipios);
+    if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
+    var self = this;
+    if (this.mancha.size === 0) {
+      // a semente é livre — mas não pode ser uma ilha, senão a mancha morre ali
+      if (cand.length > 1) return { tipo: "ambiguo", municipios: cand };
+      var semente = cand[0];
+      var uf = this.cfg.uf;
+      var grau = grafo()[semente.idx].filter(function (v) {
+        return !uf || v.uf === uf;
+      }).length;
+      if (grau === 0) return { tipo: "isolado", mun: semente };
+      this.incorporar(semente);
+      return { tipo: "ok", revelados: [{ mun: semente }], semente: true };
+    }
+    var novos = cand.filter(function (m) { return self.fronteira.has(m.idx); });
+    if (novos.length === 0) {
+      var dentro = cand.filter(function (m) { return self.mancha.has(m.idx); });
+      if (dentro.length > 0) return { tipo: "repetido", mun: dentro[0] };
+      return { tipo: "nao_vizinho", municipios: cand };
+    }
+    var revelados = [];
+    novos.forEach(function (m) {
+      self.incorporar(m);
+      revelados.push({ mun: m });
+    });
+    if (this.mancha.size >= this.alvosTotal) this.encerrado = true;
+    return { tipo: "ok", revelados: revelados, completo: this.encerrado };
+  };
+  // Dica: o maior município que faz divisa com a mancha (custa −1 no resultado).
+  JogoMancha.prototype.dica = function () {
+    var melhor = null;
+    this.fronteira.forEach(function (idx) {
+      var m = municipios[idx];
+      if (!melhor || m.pop > melhor.pop) melhor = m;
+    });
+    return melhor ? { mun: melhor } : null;
+  };
+  // Relatório final: os maiores vizinhos da mancha que ficaram de fora.
+  JogoMancha.prototype.maioresDeFora = function (n) {
+    var fora = [];
+    this.fronteira.forEach(function (idx) { fora.push(municipios[idx]); });
+    fora.sort(function (a, b) { return b.pop - a.pop; });
+    return fora.slice(0, n);
+  };
+  JogoMancha.prototype.pct = function () {
+    return this.alvosTotal === 0 ? 0 : this.mancha.size / this.alvosTotal;
+  };
+
+  // ---------------------------------------------------------------
+  // Modo 11 — Ponte: dois municípios sorteados; construa uma corrente de
+  // divisas que os conecte. Cada palpite precisa fazer divisa com algo já
+  // marcado (os dois extremos contam), então dá para crescer dos dois lados.
+  // cfg: {minPop, uf?}
+  // ---------------------------------------------------------------
+  function JogoPonte(cfg) {
+    this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.permitido = cfg.uf ? conjuntoIdx(this.universo) : null;
+    var pool = this.universo.filter(function (m) { return m.pop >= cfg.minPop; });
+    var achou = null;
+    // sorteia até achar um par conectado e não trivial (3+ saltos de distância)
+    for (var t = 0; t < 400 && !achou; t++) {
+      var a = pool[Math.floor(Math.random() * pool.length)];
+      var b = pool[Math.floor(Math.random() * pool.length)];
+      if (!a || !b || a.idx === b.idx) continue;
+      var caminho = menorCaminho(a, b, this.permitido);
+      if (caminho && caminho.length - 1 >= 3) achou = { a: a, b: b, caminho: caminho };
+    }
+    if (!achou) {
+      this.erroInicial = "Não achei um par de municípios desse porte para ligar nesta região — tente um porte menor.";
+      return;
+    }
+    this.a = achou.a;
+    this.b = achou.b;
+    this.minCaminho = achou.caminho;
+    this.minMeio = achou.caminho.length - 2; // municípios entre os extremos no mínimo
+    this.aceitos = new Set([this.a.idx, this.b.idx]);
+    this.fronteira = new Set(); // idx dos vizinhos do que já está marcado
+    this.usados = 0;            // municípios que o jogador acrescentou
+    this.dicasDadas = 0;        // cada dica custa +1 município na pontuação
+    this.encerrado = false;
+    this.venceu = false;
+    this.corrente = null;       // corrente que fechou a ligação (para desenhar)
+    this.distB = distanciasAte(this.b, this.permitido);
+    var self = this;
+    [this.a, this.b].forEach(function (ext) {
+      grafo()[ext.idx].forEach(function (v) {
+        if (self.permitido && !self.permitido.has(v.idx)) return;
+        if (!self.aceitos.has(v.idx)) self.fronteira.add(v.idx);
+      });
+    });
+  }
+  // Corrente de A até B usando só municípios marcados, ou null se ainda não liga.
+  JogoPonte.prototype.correnteLigacao = function () {
+    var adj = grafo();
+    var aceitos = this.aceitos;
+    var ant = new Map();
+    ant.set(this.a.idx, null);
+    var fila = [this.a.idx];
+    for (var i = 0; i < fila.length; i++) {
+      var v = fila[i];
+      if (v === this.b.idx) {
+        var corrente = [];
+        for (var p = v; p !== null; p = ant.get(p)) corrente.push(municipios[p]);
+        return corrente.reverse();
+      }
+      adj[v].forEach(function (m) {
+        if (!aceitos.has(m.idx) || ant.has(m.idx)) return;
+        ant.set(m.idx, v);
+        fila.push(m.idx);
+      });
+    }
+    return null;
+  };
+  // O quão perto o marcado chegou do outro extremo (em saltos), para a barra.
+  JogoPonte.prototype.saltosRestantes = function () {
+    var distB = this.distB;
+    var melhor = Infinity;
+    this.aceitos.forEach(function (idx) {
+      var d = distB.get(idx);
+      if (d !== undefined && d < melhor) melhor = d;
+    });
+    return melhor === Infinity ? null : melhor;
+  };
+  JogoPonte.prototype.palpitar = function (texto) {
+    if (this.encerrado) return { tipo: "encerrado" };
+    var res = DADOS.buscar(texto);
+    if (res.status === "vazio") return { tipo: "vazio" };
+    if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+    var cand = dentroDaRegiao(this.cfg, res.municipios);
+    if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
+    var self = this;
+    var novos = cand.filter(function (m) { return self.fronteira.has(m.idx); });
+    if (novos.length === 0) {
+      var dentro = cand.filter(function (m) { return self.aceitos.has(m.idx); });
+      if (dentro.length > 0) return { tipo: "repetido", mun: dentro[0] };
+      return { tipo: "nao_vizinho", municipios: cand };
+    }
+    var revelados = [];
+    novos.forEach(function (m) {
+      self.aceitos.add(m.idx);
+      self.fronteira.delete(m.idx);
+      self.usados++;
+      grafo()[m.idx].forEach(function (v) {
+        if (self.permitido && !self.permitido.has(v.idx)) return;
+        if (!self.aceitos.has(v.idx)) self.fronteira.add(v.idx);
+      });
+      revelados.push({ mun: m });
+    });
+    this.corrente = this.correnteLigacao();
+    if (this.corrente) {
+      this.encerrado = true;
+      this.venceu = true;
+    }
+    return { tipo: "ok", revelados: revelados, venceu: this.venceu, corrente: this.corrente };
+  };
+  // Dica: o primeiro município ainda não marcado da menor corrente que
+  // fecharia a ligação a partir do que já está marcado — seguir as dicas
+  // sempre completa a ponte com o mínimo de municípios restante.
+  JogoPonte.prototype.dica = function () {
+    if (this.encerrado) return null;
+    var adj = grafo();
+    var permitido = this.permitido;
+    var aceitos = this.aceitos;
+    // o marcado se divide em (no máximo) dois blocos: o do A e o do B
+    var compA = new Set([this.a.idx]);
+    var fila = [this.a.idx];
+    var i;
+    for (i = 0; i < fila.length; i++) {
+      adj[fila[i]].forEach(function (m) {
+        if (aceitos.has(m.idx) && !compA.has(m.idx)) {
+          compA.add(m.idx);
+          fila.push(m.idx);
+        }
+      });
+    }
+    // BFS a partir do bloco do A até tocar o bloco do B
+    var ant = new Map();
+    fila = [];
+    compA.forEach(function (idx) {
+      ant.set(idx, null);
+      fila.push(idx);
+    });
+    for (i = 0; i < fila.length; i++) {
+      var v = fila[i];
+      if (aceitos.has(v) && !compA.has(v)) {
+        var caminho = [];
+        for (var p = v; p !== null; p = ant.get(p)) caminho.push(p);
+        caminho.reverse();
+        for (var k = 0; k < caminho.length; k++) {
+          if (!aceitos.has(caminho[k])) {
+            this.dicasDadas++;
+            return { mun: municipios[caminho[k]] };
+          }
+        }
+        return null;
+      }
+      adj[v].forEach(function (m) {
+        if (ant.has(m.idx)) return;
+        if (permitido && !permitido.has(m.idx)) return;
+        ant.set(m.idx, v);
+        fila.push(m.idx);
+      });
+    }
+    return null;
+  };
+  JogoPonte.prototype.encerrar = function () {
+    this.encerrado = true;
+    return this.minCaminho;
+  };
+  // 100% ligando com o mínimo de municípios; cada extra (ou dica) dilui.
+  JogoPonte.prototype.pct = function () {
+    if (!this.venceu || !this.minMeio) return 0;
+    return Math.min(1, this.minMeio / (this.usados + this.dicasDadas));
+  };
+
   return {
     JogoCirculosDistancia: JogoCirculosDistancia,
     JogoCirculosPopulacao: JogoCirculosPopulacao,
@@ -631,5 +1121,11 @@ var MODOS = (function () {
     JogoOndeEstou: JogoOndeEstou,
     JogoClique: JogoClique,
     JogoMaratona: JogoMaratona,
+    JogoCaminho: JogoCaminho,
+    JogoCerco: JogoCerco,
+    JogoMancha: JogoMancha,
+    JogoPonte: JogoPonte,
+    // vizinhos de um município (para a interface desenhar os elos)
+    vizinhosDe: function (mun) { return grafo()[mun.idx]; },
   };
 })();

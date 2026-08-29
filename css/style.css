@@ -481,8 +481,13 @@ main {
   position: relative;
   min-width: 0;
   background: radial-gradient(120% 100% at 30% 20%, #d9e8f3, #bcd4e6);
+  /* nada de selecionar texto ou abrir menu de contexto no meio de um arrasto */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
-#mapa { width: 100%; height: 100%; display: block; cursor: grab; }
+/* o dedo no mapa é do jogo (arrastar/pinçar), nunca da rolagem da página */
+#mapa { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 #mapa.arrastando { cursor: grabbing; }
 
 #botoes-mapa {
@@ -653,6 +658,13 @@ main {
 
 .circulo-cobertura { fill: rgba(29, 111, 184, .16); stroke: var(--azul); stroke-width: 1.1; vector-effect: non-scaling-stroke; }
 
+/* modos de divisas: elo entre municípios adjacentes citados (a corrente da
+   viagem/ponte) e o caminho mínimo revelado no fim (pontilhado; vermelho
+   quando o jogador desistiu) */
+.linha-cadeia { stroke: var(--azul); stroke-width: 1.6; stroke-linecap: round; opacity: .85; vector-effect: non-scaling-stroke; }
+.linha-minima { stroke: rgba(20, 82, 138, .75); stroke-width: 1.4; stroke-dasharray: 6 4; fill: none; vector-effect: non-scaling-stroke; }
+.linha-minima.faltante { stroke: var(--vermelho); }
+
 /* área da faixa/célula: o JS controla a opacidade (fração respondida), então
    a cor caminha do transparente até este tom final conforme os acertos */
 .faixa-area { fill: rgba(26, 127, 55, .2); pointer-events: none; }
@@ -702,6 +714,9 @@ main {
 #mapa.satelite .municipio.recente { fill: #ff64ab !important; stroke: #ffb1d4; }
 #mapa.satelite .rotulo-cidade.recente { fill: #ffc2dd; }
 #mapa.satelite .circulo-cobertura { fill: rgba(124, 192, 255, .18); stroke: #7cc0ff; }
+#mapa.satelite .linha-cadeia { stroke: #7cc0ff; }
+#mapa.satelite .linha-minima { stroke: rgba(255, 255, 255, .8); }
+#mapa.satelite .linha-minima.faltante { stroke: #ff7a70; }
 #mapa.satelite .faixa-area { fill: rgba(103, 232, 140, .28); }
 #mapa.satelite .contador-faixa.completa { fill: #67e88c; }
 #mapa.satelite .linha-faixa { stroke: rgba(255,255,255,.6); }
@@ -787,5 +802,54 @@ main {
   .marca-texto small { display: none; }
   .marca-icone { width: 32px; height: 32px; font-size: 17px; }
   .header-acoes { width: 100%; justify-content: flex-start; }
-  .header-acoes .botao-sec { padding: 6px 10px; font-size: 12px; }
+  .header-acoes .botao-sec { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+
+  /* a dica de navegação do canto atropelaria a legenda na tela estreita —
+     e pinça/arrasto dispensam manual */
+  #dica-zoom { display: none; }
+
+  /* iOS amplia a página inteira ao focar um campo com fonte menor que 16px */
+  #config input, #config select, #input-palpite { font-size: 16px; }
+
+  /* alvos de toque maiores para os controles sobre o mapa */
+  #botoes-zoom button { width: 42px; height: 42px; font-size: 20px; }
+  #botoes-mapa button { padding: 8px 12px; font-size: 13px; }
+  #btn-config-jogo { width: 40px; height: 40px; font-size: 22px; }
+
+  /* Partida em andamento (classe posta pelo js): o mapa sobe para o topo —
+     como num app — e o painel embaixo fica só com o jogo (pergunta, campo
+     de palpite, feedback, placar e listas). Altura em dvh: encolhe junto
+     com o teclado na tela, onde o navegador redimensiona a página. */
+  body.jogo-ativo header .header-acoes { display: none; }
+  body.jogo-ativo #mapa-wrap {
+    order: -1;
+    flex: 0 0 auto;
+    min-height: 0;
+    height: 44vh;
+    height: 44dvh;
+  }
+  body.jogo-ativo #painel {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    border-bottom: none;
+    border-top: 1px solid var(--borda);
+  }
+  /* dentro do jogo, o que se usa a cada palpite vem primeiro: pergunta,
+     campo de texto, feedback e resultado — placar e listas logo abaixo
+     continuam à vista mesmo com o teclado aberto rolando o campo pro topo */
+  body.jogo-ativo #jogo-topo { order: -10; }
+  body.jogo-ativo #fim-jogo { order: -6; }
+  body.jogo-ativo #fim-acoes { order: -5; }
+  body.jogo-ativo #alvo-clique { order: -4; }
+  body.jogo-ativo #linha-palpite { order: -3; }
+  body.jogo-ativo #feedback { order: -2; }
+  body.jogo-ativo #dica-atual { order: -1; }
+}
+
+/* celular estreito: os atalhos do topo ficam só com o emoji, ao lado da marca */
+@media (max-width: 520px) {
+  .rotulo-topo { display: none; }
+  .header-acoes { width: auto; }
+  .header-acoes .botao-sec { font-size: 15px; padding: 6px 9px; }
 }
