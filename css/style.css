@@ -273,8 +273,18 @@ main {
 }
 
 /* ---------- mapa ---------- */
-#mapa-wrap { flex: 1; position: relative; min-width: 0; background: #dbe9f4; }
-#mapa { width: 100%; height: 100%; display: block; cursor: grab; }
+#mapa-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  background: #dbe9f4;
+  /* nada de selecionar texto ou abrir menu de contexto no meio de um arrasto */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* o dedo no mapa é do jogo (arrastar/pinçar), nunca da rolagem da página */
+#mapa { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 #mapa.arrastando { cursor: grabbing; }
 
 #botoes-mapa {
@@ -541,8 +551,70 @@ main {
 .item-recorde small { color: var(--texto-suave); display: block; }
 .item-recorde button { flex-shrink: 0; }
 
+/* botões que só existem em tela pequena (ex.: voltar à configuração) */
+.so-mobile { display: none; }
+
 @media (max-width: 860px) {
+  header { padding: 8px 10px; gap: 8px; }
+  header h1 { font-size: 15.5px; }
+  header .botao-sec, header button { padding: 7px 9px; font-size: 12px; white-space: nowrap; }
+
+  /* a dica de navegação do canto atropelaria a legenda na tela estreita —
+     e pinça/arrasto dispensam manual */
+  #dica-zoom { display: none; }
+
   main { flex-direction: column; }
   #painel { width: 100%; border-right: none; border-bottom: 1px solid var(--borda); max-height: 55vh; }
   #mapa-wrap { min-height: 45vh; }
+
+  /* iOS amplia a página inteira ao focar um campo com fonte menor que 16px */
+  #config input, #config select, #input-palpite { font-size: 16px; }
+
+  /* alvos de toque maiores para os controles sobre o mapa */
+  #botoes-zoom button { width: 42px; height: 42px; font-size: 20px; }
+  #botoes-mapa button { padding: 8px 12px; font-size: 13px; }
+
+  .so-mobile { display: block; }
+
+  /* Partida em andamento (classe posta pelo js): o mapa sobe para o topo —
+     como num app — e o painel embaixo fica só com o jogo (placar, campo de
+     palpite, lista); abas e configuração somem até a partida acabar ou o
+     botão ⚙️ trazer a pessoa de volta. Altura em dvh: encolhe junto com o
+     teclado na tela, onde o navegador redimensiona a página. */
+  body.jogo-ativo #mapa-wrap {
+    order: -1;
+    flex: 0 0 auto;
+    min-height: 0;
+    height: 44vh;
+    height: 44dvh;
+  }
+  body.jogo-ativo #painel {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    border-bottom: none;
+    border-top: 1px solid var(--borda);
+  }
+  body.jogo-ativo #abas-modo,
+  body.jogo-ativo #descricao-modo,
+  body.jogo-ativo #config,
+  body.jogo-ativo #recorde-atual,
+  body.jogo-ativo #desafio-banner { display: none; }
+  /* o campo de palpite fica no topo do painel; iniciar/desafiar vão pro fim */
+  body.jogo-ativo #linha-iniciar { order: 5; }
+  body.jogo-ativo #area-jogo { border-top: none; padding-top: 0; }
+  /* dentro do jogo, o que se usa a cada palpite vem primeiro: pergunta,
+     campo de texto, feedback e resultado — placar e listas logo abaixo
+     continuam à vista mesmo com o teclado aberto rolando o campo pro topo */
+  body.jogo-ativo #fim-jogo { order: -5; }
+  body.jogo-ativo #alvo-clique { order: -4; }
+  body.jogo-ativo #linha-palpite { order: -3; }
+  body.jogo-ativo #feedback { order: -2; }
+  body.jogo-ativo #dica-atual { order: -1; }
+}
+
+/* celular estreito: os botões do topo ficam só com o emoji */
+@media (max-width: 520px) {
+  header .rotulo-topo { display: none; }
+  header .botao-sec, header button { font-size: 16px; padding: 6px 10px; }
 }

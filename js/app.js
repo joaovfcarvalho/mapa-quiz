@@ -637,6 +637,9 @@
     citadasPartida = new Set();
     dicasUsadas = 0;
     $("area-jogo").hidden = false;
+    // em telas pequenas o CSS usa esta classe para subir o mapa e enxugar o
+    // painel (some a configuração, fica só o jogo)
+    document.body.classList.add("jogo-ativo");
     $("fim-jogo").hidden = true;
     $("feedback").textContent = "";
     $("feedback").className = "";
@@ -1290,10 +1293,13 @@
   }
 
   // ---------------- modo Onde fica? (clique no mapa) ----------------
+  var TELA_DE_TOQUE = window.matchMedia && matchMedia("(pointer: coarse)").matches;
   function mostrarAlvoClique() {
     var alvo = jogo.alvoAtual();
     if (!alvo) return;
-    $("alvo-clique").innerHTML = "🖱️ Clique no mapa onde fica:<br><b>" + nomeUF(alvo) +
+    $("alvo-clique").innerHTML = (TELA_DE_TOQUE
+      ? "👆 Toque no mapa onde fica:<br><b>"
+      : "🖱️ Clique no mapa onde fica:<br><b>") + nomeUF(alvo) +
       "</b> <small>· " + fmtPop(alvo.pop) + " hab." +
       (alvo.capital ? " · capital" : "") + "</small>";
   }
@@ -1843,35 +1849,123 @@
     aplicarViewBox();
   });
 
+  // Arrasto, toque e pinça via Pointer Events: mouse e dedo seguem o mesmo
+  // caminho — um ponteiro arrasta (ou clica), dois fazem pinça (zoom). O
+  // touch-action: none no CSS impede o navegador de rolar/ampliar a página
+  // por cima do mapa; o setPointerCapture garante o pointerup mesmo quando o
+  // dedo sai do mapa no meio do gesto.
   var arrasto = null;
-  svg.addEventListener("mousedown", function (ev) {
-    arrasto = { x: ev.clientX, y: ev.clientY, vbx: vb.x, vby: vb.y };
-    cliqueInicio = { x: ev.clientX, y: ev.clientY };
-    svg.classList.add("arrastando");
+  var ponteiros = [];    // ponteiros (dedos/mouse) ativos sobre o mapa
+  var pinca = null;      // distância e centro da pinça no quadro anterior
+  var ultimoToque = null; // para o toque duplo (restaura o mapa inteiro)
+
+  function acharPonteiro(id) {
+    for (var i = 0; i < ponteiros.length; i++) if (ponteiros[i].id === id) return i;
+    return -1;
+  }
+  function medidaPinca() {
+    var dx = ponteiros[0].x - ponteiros[1].x;
+    var dy = ponteiros[0].y - ponteiros[1].y;
+    return {
+      d: Math.max(20, Math.sqrt(dx * dx + dy * dy)),
+      cx: (ponteiros[0].x + ponteiros[1].x) / 2,
+      cy: (ponteiros[0].y + ponteiros[1].y) / 2,
+    };
+  }
+
+  svg.addEventListener("pointerdown", function (ev) {
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    if (svg.setPointerCapture) {
+      try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
+    }
+    if (acharPonteiro(ev.pointerId) === -1) {
+      ponteiros.push({ id: ev.pointerId, x: ev.clientX, y: ev.clientY });
+    }
+    if (ponteiros.length === 1) {
+      arrasto = { x: ev.clientX, y: ev.clientY, vbx: vb.x, vby: vb.y };
+      cliqueInicio = { x: ev.clientX, y: ev.clientY };
+      svg.classList.add("arrastando");
+    } else if (ponteiros.length === 2) {
+      // entrou o segundo dedo: vira pinça — e deixa de poder ser um clique
+      arrasto = null;
+      cliqueInicio = null;
+      tooltip.hidden = true;
+      pinca = medidaPinca();
+    } else {
+      pinca = null; // 3+ dedos: espera sobrarem dois
+    }
   });
 
-  // clique (sem arrasto) no modo "Onde fica?": vira a resposta da rodada
-  svg.addEventListener("mouseup", function (ev) {
-    if (!cliqueInicio) return;
-    var moveu = Math.abs(ev.clientX - cliqueInicio.x) + Math.abs(ev.clientY - cliqueInicio.y);
+  svg.addEventListener("pointermove", function (ev) {
+    var i = acharPonteiro(ev.pointerId);
+    if (i === -1) return;
+    ponteiros[i].x = ev.clientX;
+    ponteiros[i].y = ev.clientY;
+    if (ponteiros.length === 2 && pinca) {
+      var agora = medidaPinca();
+      // zoom em torno do centro dos dedos…
+      var p = pontoDoMapa(agora.cx, agora.cy);
+      zoomEm(pinca.d / agora.d,
+        Math.max(0, Math.min(1, (p.x - vb.x) / vb.w)),
+        Math.max(0, Math.min(1, (p.y - vb.y) / vb.h)));
+      // …mais o deslocamento do próprio centro (pinça também arrasta)
+      var escala = medidaMapa().escala;
+      vb.x = Math.max(0, Math.min(vbBase.w - vb.w, vb.x - (agora.cx - pinca.cx) / escala));
+      vb.y = Math.max(0, Math.min(vbBase.h - vb.h, vb.y - (agora.cy - pinca.cy) / escala));
+      aplicarViewBox();
+      pinca = agora;
+    } else if (arrasto && ponteiros.length === 1) {
+      var esc = medidaMapa().escala;
+      vb.x = Math.max(0, Math.min(vbBase.w - vb.w, arrasto.vbx - (ev.clientX - arrasto.x) / esc));
+      vb.y = Math.max(0, Math.min(vbBase.h - vb.h, arrasto.vby - (ev.clientY - arrasto.y) / esc));
+      aplicarViewBox();
+    }
+  });
+
+  function soltarPonteiro(ev, cancelado) {
+    var i = acharPonteiro(ev.pointerId);
+    if (i === -1) return;
+    ponteiros.splice(i, 1);
+    if (ponteiros.length === 1) {
+      // da pinça sobrou um dedo: recomeça o arrasto de onde ele está
+      arrasto = { x: ponteiros[0].x, y: ponteiros[0].y, vbx: vb.x, vby: vb.y };
+      pinca = null;
+      return;
+    }
+    if (ponteiros.length > 0) return;
+    svg.classList.remove("arrastando");
+    arrasto = null;
+    pinca = null;
+    var inicio = cliqueInicio;
     cliqueInicio = null;
-    if (moveu > 5) return;
+    if (cancelado || !inicio) return;
+    // tolerância maior no dedo: ninguém toca a tela com precisão de mouse
+    var moveu = Math.abs(ev.clientX - inicio.x) + Math.abs(ev.clientY - inicio.y);
+    if (moveu > (ev.pointerType === "mouse" ? 5 : 12)) {
+      ultimoToque = null;
+      return;
+    }
+    // toque duplo faz as vezes do duplo clique do mouse: restaura o zoom
+    // (fora de uma partida de clique, em que dois toques são duas respostas)
+    if (ev.pointerType !== "mouse") {
+      var agoraMs = Date.now();
+      var emClique = jogoModo === "clique" && jogo && !jogo.encerrado;
+      if (!emClique && ultimoToque && agoraMs - ultimoToque.t < 350 &&
+          Math.abs(ev.clientX - ultimoToque.x) + Math.abs(ev.clientY - ultimoToque.y) < 50) {
+        ultimoToque = null;
+        vb = { x: vbBase.x, y: vbBase.y, w: vbBase.w, h: vbBase.h };
+        aplicarViewBox();
+        return;
+      }
+      ultimoToque = { t: agoraMs, x: ev.clientX, y: ev.clientY };
+    }
+    // clique/toque (sem arrasto) no modo "Onde fica?": vira a resposta da rodada
     if (jogoModo !== "clique" || !jogo || jogo.encerrado) return;
     var p = pontoDoMapa(ev.clientX, ev.clientY);
     responderClique(proj.latDe(p.y), proj.lngDe(p.x));
-  });
-  window.addEventListener("mousemove", function (ev) {
-    if (!arrasto) return;
-    var escala = medidaMapa().escala;
-    vb.x = Math.max(0, Math.min(vbBase.w - vb.w, arrasto.vbx - (ev.clientX - arrasto.x) / escala));
-    vb.y = Math.max(0, Math.min(vbBase.h - vb.h, arrasto.vby - (ev.clientY - arrasto.y) / escala));
-    aplicarViewBox();
-  });
-  window.addEventListener("mouseup", function () {
-    arrasto = null;
-    cliqueInicio = null; // soltar fora do mapa não deixa clique pendente
-    svg.classList.remove("arrastando");
-  });
+  }
+  svg.addEventListener("pointerup", function (ev) { soltarPonteiro(ev, false); });
+  svg.addEventListener("pointercancel", function (ev) { soltarPonteiro(ev, true); });
   svg.addEventListener("dblclick", function () {
     // no meio de uma partida de clique, dois cliques são duas respostas — não
     // podem também resetar o zoom
@@ -1900,6 +1994,7 @@
         jogo = null;
       }
       $("area-jogo").hidden = true;
+      document.body.classList.remove("jogo-ativo");
       $("legenda-pop").hidden = true;
       $("legenda-dist").hidden = true;
       $("btn-desafio").hidden = modoAtual === "maratona";
@@ -1934,7 +2029,13 @@
   });
 
   $("btn-iniciar").addEventListener("click", iniciar);
-  $("btn-palpitar").addEventListener("click", palpitar);
+  // o pointerdown cancelado impede o botão de roubar o foco do campo de
+  // texto — no celular isso manteria o teclado fechando e abrindo a cada OK
+  $("btn-palpitar").addEventListener("pointerdown", function (ev) { ev.preventDefault(); });
+  $("btn-palpitar").addEventListener("click", function () {
+    palpitar();
+    if (jogo && !jogo.encerrado && !$("linha-palpite").hidden) $("input-palpite").focus();
+  });
   $("input-palpite").addEventListener("keydown", function (ev) {
     if (ev.key === "Enter") { ev.preventDefault(); palpitar(); }
   });
@@ -1943,7 +2044,13 @@
     if (jogoModo === "maratona") fimSessaoMaratona(false);
     else fimDeJogo(true);
   });
+  $("btn-dica").addEventListener("pointerdown", function (ev) { ev.preventDefault(); });
   $("btn-dica").addEventListener("click", pedirDica);
+  // atalho das telas pequenas para voltar à configuração: reclicar a aba
+  // ativa encerra/pausa a partida e reabre o painel de modos
+  $("btn-config-mobile").addEventListener("click", function () {
+    document.querySelector("#abas-modo .aba.ativa").click();
+  });
   $("btn-zerar-maratona").addEventListener("click", function () {
     var regiao = ufDoJogo() || "BR";
     var nome = regiao === "BR" ? "do Brasil inteiro" : "de " + NOMES_UF[regiao];
@@ -1953,6 +2060,7 @@
       clearInterval(timerInt);
       jogo = null;
       $("area-jogo").hidden = true;
+      document.body.classList.remove("jogo-ativo");
       limparCamadasDeJogo();
       setConfigTravada(false);
       $("btn-iniciar").textContent = "▶ Iniciar jogo";
@@ -2017,6 +2125,10 @@
   });
 
   // estado inicial
+  // em tela de toque, a dica de navegação fala de dedos, não de mouse
+  if (TELA_DE_TOQUE) {
+    $("dica-zoom").textContent = "pinça: zoom · arraste: mover · toque duplo: mapa inteiro";
+  }
   $("descricao-modo").textContent = DESCRICOES[modoAtual];
   atualizarCamposLimite();
   atualizarRecordeUI();
