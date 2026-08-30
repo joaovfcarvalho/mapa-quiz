@@ -166,7 +166,23 @@
   };
   var jogo = null; // {conjunto, alvos, indice, kmTotal, achados, kmFeito, inicioMs, timer, encerrado}
 
-  function chaveRecorde(conjunto) { return "rios|conjunto=" + conjunto; }
+  // Configuração escolhida: conjunto + limite de tempo. Sem relógio, a chave
+  // do recorde fica igual à de sempre ("rios|conjunto=..."), para os recordes
+  // já gravados continuarem valendo; contra o relógio ela ganha "|tempo=N" —
+  // cada duração é um recorde próprio, como nos modos do quiz principal.
+  function lerConfig() {
+    var conjunto = $("cfg-conjunto").value;
+    var cfg = { conjunto: conjunto, tempoMin: null };
+    cfg.chave = "rios|conjunto=" + conjunto;
+    cfg.rotulo = "Rios do Brasil — " + CONJUNTOS[conjunto].quais;
+    if ($("cfg-limite").value === "tempo") {
+      var v = parseInt($("cfg-tempo").value, 10);
+      cfg.tempoMin = Math.max(1, Math.min(240, isNaN(v) ? 10 : v));
+      cfg.chave += "|tempo=" + cfg.tempoMin;
+      cfg.rotulo += " · contra o relógio: " + cfg.tempoMin + " min";
+    }
+    return cfg;
+  }
 
   function resumoConjunto(conjunto) {
     var m = montarAlvos(conjunto);
@@ -176,11 +192,13 @@
   }
 
   function atualizarTelaConfig() {
-    var conjunto = $("cfg-conjunto").value;
-    var r = resumoConjunto(conjunto);
+    var cfg = lerConfig();
+    $("rotulo-tempo").hidden = $("cfg-limite").value !== "tempo";
+    var r = resumoConjunto(cfg.conjunto);
     $("resumo-conjunto").textContent =
-      r.n + " rios para citar, " + fmt(r.kmTotal) + " km de traçado no total.";
-    var rec = RECORDES.obter(chaveRecorde(conjunto));
+      r.n + " rios para citar, " + fmt(r.kmTotal) + " km de traçado no total." +
+      (cfg.tempoMin ? " Contra o relógio: " + cfg.tempoMin + " min." : "");
+    var rec = RECORDES.obter(cfg.chave);
     $("recorde-atual").hidden = !rec;
     if (rec) {
       $("recorde-atual").innerHTML = "Seu recorde nesta configuração: <b>" +
@@ -190,12 +208,14 @@
   }
 
   function iniciar() {
-    var conjunto = $("cfg-conjunto").value;
-    var m = montarAlvos(conjunto);
+    var cfg = lerConfig();
+    var m = montarAlvos(cfg.conjunto);
     var kmTotal = 0;
     m.alvos.forEach(function (a) { kmTotal += a.km; });
     jogo = {
-      conjunto: conjunto,
+      conjunto: cfg.conjunto,
+      cfg: cfg,
+      limiteSeg: cfg.tempoMin ? cfg.tempoMin * 60 : null,
       alvos: m.alvos,
       indice: m.indice,
       kmTotal: kmTotal,
@@ -203,7 +223,7 @@
       kmFeito: 0,
       dicas: 0,
       inicioMs: Date.now(),
-      timer: setInterval(atualizarPlacar, 1000),
+      timer: setInterval(tique, 1000),
       encerrado: false,
       recentes: [],
     };
@@ -220,14 +240,23 @@
     $("btn-palpitar").disabled = false;
     $("btn-dica").disabled = false;
     $("btn-encerrar").disabled = false;
-    $("jogo-titulo").textContent = CONJUNTOS[conjunto].titulo;
-    $("jogo-subtitulo").textContent = m.alvos.length + " rios · " + fmt(kmTotal) + " km para acender";
+    $("jogo-titulo").textContent = CONJUNTOS[cfg.conjunto].titulo;
+    $("jogo-subtitulo").textContent = m.alvos.length + " rios · " + fmt(kmTotal) + " km para acender" +
+      (cfg.tempoMin ? " · ⏱️ " + cfg.tempoMin + " min" : "");
     document.body.classList.add("jogo-ativo");
     atualizarPlacar();
     $("input-palpite").focus();
   }
 
   function tempoSeg() { return Math.round((Date.now() - jogo.inicioMs) / 1000); }
+
+  function tique() {
+    if (jogo && !jogo.encerrado && jogo.limiteSeg !== null && tempoSeg() >= jogo.limiteSeg) {
+      encerrar(false, true);
+      return;
+    }
+    atualizarPlacar();
+  }
 
   function atualizarPlacar() {
     if (!jogo) return;
@@ -248,7 +277,12 @@
       linhas.push("Grandes rios: <b>" + g.ok + "</b>/" + g.n +
         " · afluentes: <b>" + a.ok + "</b>/" + a.n);
     }
-    linhas.push("Tempo: <b>" + fmtTempo(jogo.encerrado ? jogo.tempoFinal : tempoSeg()) + "</b>");
+    if (jogo.limiteSeg !== null && !jogo.encerrado) {
+      linhas.push("⏱️ Tempo restante: <b>" +
+        fmtTempo(Math.max(0, jogo.limiteSeg - tempoSeg())) + "</b> de " + fmtTempo(jogo.limiteSeg));
+    } else {
+      linhas.push("Tempo: <b>" + fmtTempo(jogo.encerrado ? jogo.tempoFinal : tempoSeg()) + "</b>");
+    }
     // cada linha num <span>: o #placar-linhas é uma coluna flex, e nós de
     // texto soltos virariam cada um a sua própria linha
     $("placar-linhas").innerHTML = linhas.map(function (l) {
@@ -321,10 +355,14 @@
       (maior.nivel === 1 ? "um dos grandes." : "um afluente.");
   }
 
-  function encerrar(completou) {
+  function encerrar(completou, porTempo) {
     if (!jogo || jogo.encerrado) return;
     jogo.encerrado = true;
     jogo.tempoFinal = tempoSeg();
+    // o tique pode passar 1 s do limite; o recorde não pode registrar mais
+    if (jogo.limiteSeg !== null && jogo.tempoFinal > jogo.limiteSeg) {
+      jogo.tempoFinal = jogo.limiteSeg;
+    }
     clearInterval(jogo.timer);
     $("input-palpite").disabled = true;
     $("btn-palpitar").disabled = true;
@@ -338,17 +376,18 @@
 
     var pct = jogo.kmTotal ? (100 * jogo.kmFeito / jogo.kmTotal) : 0;
     var placar = jogo.achados + " de " + jogo.alvos.length + " rios · " + fmt(jogo.kmFeito) + " km";
-    var res = RECORDES.registrar(chaveRecorde(jogo.conjunto), {
+    var res = RECORDES.registrar(jogo.cfg.chave, {
       pct: pct,
       placar: placar,
-      rotulo: "Rios do Brasil — " + CONJUNTOS[jogo.conjunto].quais,
+      rotulo: jogo.cfg.rotulo,
       tempoSeg: jogo.tempoFinal,
       data: new Date().toISOString(),
     });
 
     var html = completou
       ? "<b>Todos os " + jogo.alvos.length + " rios!</b> "
-      : "<b>" + pct.toFixed(1).replace(".", ",") + "%</b> dos km de rio — " + placar + ". ";
+      : (porTempo ? "⏰ <b>Tempo esgotado!</b> " : "") +
+        "<b>" + pct.toFixed(1).replace(".", ",") + "%</b> dos km de rio — " + placar + ". ";
     html += "Tempo: " + fmtTempo(jogo.tempoFinal) +
       (jogo.dicas ? " · " + jogo.dicas + " dica(s)" : "") + ".";
     if (res.melhor) html += " 🏆 Novo recorde pessoal!";
@@ -566,6 +605,8 @@
     if (ev.key === "Enter") { ev.preventDefault(); palpitar(); }
   });
   $("cfg-conjunto").addEventListener("change", atualizarTelaConfig);
+  $("cfg-limite").addEventListener("change", atualizarTelaConfig);
+  $("cfg-tempo").addEventListener("input", atualizarTelaConfig);
 
   atualizarTelaConfig();
 })();

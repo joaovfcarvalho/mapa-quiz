@@ -97,6 +97,15 @@
             <option value="todos">Todos, com afluentes (nível 1 + 2)</option>
           </select>
         </label>
+        <label>Limite de tempo
+          <select id="cfg-limite" class="sel-limite">
+            <option value="livre">Sem limite</option>
+            <option value="tempo">Contra o relógio</option>
+          </select>
+        </label>
+        <label id="rotulo-tempo" hidden>Tempo (minutos)
+          <input type="number" id="cfg-tempo" value="10" min="1" max="240">
+        </label>
         <div id="resumo-conjunto" class="tagline"></div>
         <div id="linha-iniciar">
           <button id="btn-iniciar" class="botao-pri" type="button">▶ Começar</button>

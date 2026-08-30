@@ -130,9 +130,11 @@ Dois conjuntos: **grandes rios** (nível 1 da hidrografia da ANA, 79 alvos) ou
 **todos com afluentes** (níveis 1 + 2, 412 alvos e ~116 mil km). Rios
 homônimos acendem juntos e contam uma vez — há cinco Rio Verde e seis Rio
 Branco. Nomes com alternativa oficial ("Rio São Manuel ou Teles Pires")
-valem pelas duas. Dica 💡 aponta o maior que falta; encerrar revela os
-esquecidos em pontilhado vermelho e registra o recorde da configuração no
-navegador, como nos outros modos.
+valem pelas duas. Jogue livre ou **contra o relógio** (minutos à escolha):
+o tempo esgotado encerra a partida sozinho. Dica 💡 aponta o maior que falta;
+encerrar revela os esquecidos em pontilhado vermelho e registra o recorde no
+navegador — cada combinação de conjunto e duração tem o seu, como nos outros
+modos.
 
 ## Seus pontos cegos
 
