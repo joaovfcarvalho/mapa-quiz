@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1b28">
+<title>Quiz dos Rios — Mapa do Brasil</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌊</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  /* ajustes específicos do quiz de rios */
+
+  /* traçado dos rios: espessura por importância vem inline do JS
+     (multiplicada por --zoom para não engrossar ao aproximar) */
+  .rio {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+  /* ainda não descobertos: um relevo discreto no papel, como os contornos
+     das UFs — dá o "qual rio é esse?" sem entregar o nome (desligável no
+     botão 🌊 Traços) */
+  .rio { stroke: #ab9c80; stroke-opacity: .5; }
+  #mapa.sem-tracos .rio:not(.acertado):not(.faltante) { stroke-opacity: 0; }
+
+  .rio.acertado {
+    stroke: var(--azul);
+    stroke-opacity: .92;
+    pointer-events: stroke;
+    cursor: help;
+  }
+  /* último acerto: o mesmo rosa do último município da maratona */
+  .rio.recente {
+    stroke: #f0287e;
+    stroke-opacity: 1;
+    animation: pulso-rio 1.5s ease-in-out infinite;
+  }
+  @keyframes pulso-rio {
+    0%, 100% { stroke-opacity: 1; }
+    50% { stroke-opacity: .45; }
+  }
+  /* revelados no fim da partida: o que ficou faltando */
+  .rio.faltante {
+    stroke: var(--vermelho);
+    stroke-opacity: .8;
+    stroke-dasharray: 5 4;
+    pointer-events: stroke;
+    cursor: help;
+  }
+
+  #lista-acertos { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  #lista-acertos .item-jogada { display: flex; justify-content: space-between; gap: 8px; }
+  #lista-acertos small { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  #recorde-atual {
+    font-size: 12.5px;
+    color: var(--texto-suave);
+    line-height: 1.5;
+    padding: 9px 12px;
+    border: 1px dashed var(--borda-forte);
+    border-radius: 10px;
+  }
+  #recorde-atual b { color: var(--ouro-claro); }
+
+  .relatorio ul { margin: 4px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="marca" href="rios.html">
+    <span class="marca-icone">🌊</span>
+    <span class="marca-texto">
+      <b>Quiz dos Rios do Brasil</b>
+      <small>digite um rio e veja-o aparecer no mapa</small>
+    </span>
+  </a>
+  <nav class="header-acoes">
+    <a href="index.html" class="botao-sec" title="Voltar ao quiz de municípios">🗺️<span class="rotulo-topo"> Municípios</span></a>
+    <a href="densidade.html" class="botao-sec" title="Densidade">📍<span class="rotulo-topo"> Densidade</span></a>
+  </nav>
+</header>
+
+<main>
+  <aside id="painel">
+
+    <!-- antes da partida: escolha do conjunto -->
+    <section id="secao-config">
+      <p class="tagline">Cite rios do Brasil de memória: cada acerto desenha o
+      rio inteiro no mapa, do azul da nascente à foz. Quantos quilômetros de
+      rio você consegue acender?</p>
+
+      <form id="config" autocomplete="off" onsubmit="return false">
+        <label>Rios do jogo
+          <select id="cfg-conjunto">
+            <option value="grandes">Grandes rios (nível 1 da ANA)</option>
+            <option value="todos">Todos, com afluentes (nível 1 + 2)</option>
+          </select>
+        </label>
+        <div id="resumo-conjunto" class="tagline"></div>
+        <div id="linha-iniciar">
+          <button id="btn-iniciar" class="botao-pri" type="button">▶ Começar</button>
+        </div>
+      </form>
+
+      <div id="recorde-atual" hidden></div>
+
+      <p class="tagline">Vale escrever com ou sem o "rio" na frente, sem
+      acento e tudo junto: <i>xingu</i>, <i>rio sao francisco</i>,
+      <i>paraibadosul</i>. Rios homônimos (há cinco Rio Verde) acendem todos
+      de uma vez.</p>
+    </section>
+
+    <!-- durante a partida -->
+    <section id="secao-jogo" hidden>
+      <div id="jogo-topo">
+        <div id="jogo-titulos">
+          <b id="jogo-titulo"></b>
+          <small id="jogo-subtitulo"></small>
+        </div>
+      </div>
+
+      <div id="linha-palpite">
+        <input id="input-palpite" type="text" placeholder="ex.: rio amazonas"
+          autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button id="btn-palpitar" class="botao-pri" type="button">✓</button>
+      </div>
+      <div id="feedback" aria-live="polite"></div>
+
+      <div class="barra"><div id="barra-progresso"></div></div>
+      <div id="placar-linhas" aria-live="polite"></div>
+
+      <div id="dica-atual" hidden></div>
+
+      <div id="linha-acoes">
+        <button id="btn-dica" class="botao-sec" type="button"
+          title="Pista do maior rio que ainda falta">💡 Dica</button>
+        <button id="btn-encerrar" class="botao-sec perigo" type="button"
+          title="Encerrar a partida e revelar o que faltou">🏳️ Encerrar</button>
+      </div>
+
+      <div id="fim-jogo" hidden></div>
+      <div id="fim-acoes" hidden>
+        <button id="btn-de-novo" class="botao-pri" type="button">↻ Jogar de novo</button>
+      </div>
+
+      <div id="lista-acertos"></div>
+    </section>
+  </aside>
+
+  <div id="mapa-wrap">
+    <svg id="mapa" role="img" aria-label="Mapa dos rios do Brasil"></svg>
+    <div id="botoes-mapa">
+      <button id="btn-tracos" type="button">🌊 Traços</button>
+    </div>
+    <div id="botoes-zoom">
+      <button id="btn-zoom-mais" type="button" title="Aproximar">+</button>
+      <button id="btn-zoom-menos" type="button" title="Afastar">−</button>
+      <button id="btn-zoom-zerar" type="button" title="Restaurar o mapa inteiro">⌂</button>
+    </div>
+    <div id="dica-zoom">botões ou roda do mouse: zoom · arrastar: mover · duplo clique: restaurar</div>
+    <div id="tooltip" hidden></div>
+  </div>
+</main>
+
+<script src="data/brasil_uf.js"></script>
+<script src="data/rios.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/recordes.js"></script>
+<script src="js/rios.js"></script>
+</body>
+</html>

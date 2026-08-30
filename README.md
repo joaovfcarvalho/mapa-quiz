@@ -115,6 +115,25 @@ mesmo desafio.
 **Relatório pós-partida** — ao final, o jogo mostra o que de maior ficou de
 fora: população na mesa e as maiores cidades esquecidas.
 
+## Quiz dos rios do Brasil
+
+A página `rios.html` (botão 🌊 Rios no topo) é um segundo quiz, agora de
+hidrografia: digite o nome de um rio (`rio amazonas`, `sao francisco`,
+`paraibadosul` — as mesmas regras frouxas de digitação do quiz principal) e o
+traçado inteiro dele acende no mapa, da nascente à foz. O placar conta os
+quilômetros de rio acesos; a espessura de cada traço acompanha a extensão, e
+os rios ainda não descobertos aparecem como um relevo esmaecido no papel
+(desligável no botão 🌊 Traços) — dá para caçar um meandro intrigante e tentar
+adivinhar quem ele é.
+
+Dois conjuntos: **grandes rios** (nível 1 da hidrografia da ANA, 79 alvos) ou
+**todos com afluentes** (níveis 1 + 2, 412 alvos e ~116 mil km). Rios
+homônimos acendem juntos e contam uma vez — há cinco Rio Verde e seis Rio
+Branco. Nomes com alternativa oficial ("Rio São Manuel ou Teles Pires")
+valem pelas duas. Dica 💡 aponta o maior que falta; encerrar revela os
+esquecidos em pontilhado vermelho e registra o recorde da configuração no
+navegador, como nos outros modos.
+
 ## Seus pontos cegos
 
 A página `estatisticas.html` (botão 📊 Pontos cegos no topo) guarda, só no
@@ -175,6 +194,7 @@ cada configuração).
 | Forma dos municípios (botão ⬡) | IBGE, API de malhas (qualidade mínima) |
 | Grafo de divisas (modos Caminho/Cerco/Mancha/Ponte) | derivado da malha municipal pelo `build_data.py` |
 | Fundo de satélite (botão 🛰️) | NASA Blue Marble Next Generation, 500 m/pixel (domínio público) |
+| Traçado e nome dos rios (quiz dos rios) | ANA/SNIRH, base hidrográfica ottocodificada, camadas "Hidrografia nível 1 e 2" |
 
 O grafo de "quem faz divisa com quem" não vem de nenhuma fonte extra: como os
 polígonos do IBGE encaixam exatamente ao longo das fronteiras, o
@@ -193,7 +213,17 @@ usam. Para regenerar a partir das fontes:
 cd tools
 python3 build_data.py          # baixa tudo da internet
 python3 build_satelite.py      # recorta o fundo de satélite dos tiles da NASA
+python3 build_rios.py          # baixa a hidrografia da ANA e gera data/rios.js
 ```
+
+No `build_rios.py`, os trechos da ANA chegam já generalizados pelo servidor
+(`maxAllowableOffset`) para a escala do mapa, são emendados por curso d'água
+(o mesmo curso ottocodificado troca de nome ao longo do caminho:
+Guaporé→Mamoré→Madeira é um código só) e recortados ao contorno das UFs com
+uma folga de ~10 km, para não picotar os rios que correm exatamente sobre a
+fronteira (Paraguai, Uruguai, Javari…). Rios estrangeiros que só encostam na
+fronteira (Beni, Marañon) ficam de fora. O resultado, `data/rios.js`
+(~770 KB, 229 KB gzipado), só é carregado pela página do quiz de rios.
 
 Observações: as distâncias usam o centroide (sede) de cada município, não o
 polígono; no objetivo "cobrir área", município coberto conta o território
@@ -210,6 +240,7 @@ os outros 5.568 municípios formam um único bloco conexo.
 ```
 mapa-quiz/
 ├── index.html          # página única do jogo
+├── rios.html           # quiz dos rios do Brasil
 ├── densidade.html      # mapa de densidade de municípios
 ├── estatisticas.html   # mapa dos seus pontos cegos
 ├── css/style.css
@@ -218,11 +249,12 @@ mapa-quiz/
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
 │   ├── modos.js        # motores dos 11 modos de jogo + grafo de divisas
 │   ├── recordes.js     # recordes no localStorage
+│   ├── rios.js         # quiz dos rios: busca, placar e mapa próprio
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
 │   ├── estatisticas.js # mapa e listas dos pontos cegos
 │   └── app.js          # interface, mapa SVG, zoom/pan
 ├── data/               # dados embutidos (gerados)
-└── tools/              # build_data.py e build_satelite.py (regeram os dados)
+└── tools/              # build_data.py, build_satelite.py e build_rios.py
 ```
 
 ## Publicação
