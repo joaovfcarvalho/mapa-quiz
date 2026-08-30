@@ -12,8 +12,9 @@ var MODOS = (function () {
       : municipios;
     var pop = 0;
     var area = 0;
-    lista.forEach(function (m) { pop += m.pop; area += m.area; });
-    return { lista: lista, pop: pop, area: area };
+    var pib = 0;
+    lista.forEach(function (m) { pop += m.pop; area += m.area; pib += m.pib; });
+    return { lista: lista, pop: pop, area: area, pib: pib };
   }
 
   function dentroDaRegiao(cfg, muns) {
@@ -35,8 +36,8 @@ var MODOS = (function () {
 
   // ---------------------------------------------------------------
   // Modo 1 — Círculos por distância: cada palpite cobre tudo num raio fixo.
-  // cfg: {raio, metrica: 'pop'|'cidades'|'area', palpites? (sem limite se
-  //       ausente), uf? (só uma UF se presente)}
+  // cfg: {raio, metrica: 'pop'|'cidades'|'area'|'pib', palpites? (sem limite
+  //       se ausente), uf? (só uma UF se presente)}
   // ---------------------------------------------------------------
   function JogoCirculosDistancia(cfg) {
     this.cfg = cfg;
@@ -44,11 +45,13 @@ var MODOS = (function () {
     this.universo = u.lista;
     this.uniPop = u.pop;
     this.uniArea = u.area;
+    this.uniPib = u.pib;
     this.jogadas = [];
     this.usados = new Set();   // idx dos municípios já chutados
     this.cobertos = new Set();
     this.popCoberta = 0;
     this.areaCoberta = 0;      // km²: um município coberto conta o território inteiro
+    this.pibCoberto = 0;       // R$ mil
     this.encerrado = false;
   }
   JogoCirculosDistancia.prototype.palpitesRestantes = function () {
@@ -71,6 +74,7 @@ var MODOS = (function () {
     var novos = [];
     var ganhoPop = 0;
     var ganhoArea = 0;
+    var ganhoPib = 0;
     var circulos = [];
     var cobertos = this.cobertos;
     var raio = this.cfg.raio;
@@ -85,12 +89,14 @@ var MODOS = (function () {
           novos.push(m.idx);
           ganhoPop += m.pop;
           ganhoArea += m.area;
+          ganhoPib += m.pib;
         }
       });
     });
     this.popCoberta += ganhoPop;
     this.areaCoberta += ganhoArea;
-    var jogada = { muns: lista, circulos: circulos, novos: novos, ganhoPop: ganhoPop, ganhoArea: ganhoArea };
+    this.pibCoberto += ganhoPib;
+    var jogada = { muns: lista, circulos: circulos, novos: novos, ganhoPop: ganhoPop, ganhoArea: ganhoArea, ganhoPib: ganhoPib };
     this.jogadas.push(jogada);
     if (this.cfg.palpites && this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
     return { tipo: "ok", jogada: jogada };
@@ -98,6 +104,7 @@ var MODOS = (function () {
   JogoCirculosDistancia.prototype.pct = function () {
     if (this.cfg.metrica === "cidades") return this.cobertos.size / this.universo.length;
     if (this.cfg.metrica === "area") return this.areaCoberta / this.uniArea;
+    if (this.cfg.metrica === "pib") return this.pibCoberto / this.uniPib;
     return this.popCoberta / this.uniPop;
   };
 
@@ -571,7 +578,9 @@ var MODOS = (function () {
     this.universo = u.lista;
     this.alvosTotal = this.universo.length;
     this.uniPop = u.pop;
+    this.uniPib = u.pib;
     this.popAchada = 0;
+    this.pibAchado = 0;
     this.achados = new Set();
     this.achadosSessao = 0;
     this.encerrado = false;
@@ -579,10 +588,12 @@ var MODOS = (function () {
       var ids = new Set(cfg.idsIniciais);
       var achados = this.achados;
       var pop = 0;
+      var pib = 0;
       this.universo.forEach(function (m) {
-        if (ids.has(m.id)) { achados.add(m.idx); pop += m.pop; }
+        if (ids.has(m.id)) { achados.add(m.idx); pop += m.pop; pib += m.pib; }
       });
       this.popAchada = pop;
+      this.pibAchado = pib;
     }
   }
   JogoMaratona.prototype.palpitar = function (texto) {
@@ -599,6 +610,7 @@ var MODOS = (function () {
       self.achados.add(m.idx);
       self.achadosSessao++;
       self.popAchada += m.pop;
+      self.pibAchado += m.pib;
       revelados.push({ mun: m });
     });
     if (revelados.length === 0) return { tipo: "repetido", mun: cand[0] };
@@ -622,6 +634,44 @@ var MODOS = (function () {
   JogoMaratona.prototype.pct = function () {
     return this.alvosTotal === 0 ? 0 : this.achados.size / this.alvosTotal;
   };
+
+  // ---------------------------------------------------------------
+  // Modo 12 — Estudo: nada de pontuação — o mapa abre todo revelado e o
+  // jogador explora: busca municípios, vê a ficha de cada um (população,
+  // PIB, área, posição nos rankings, vizinhos) e navega pelos rankings.
+  // cfg: {uf?}
+  // ---------------------------------------------------------------
+  function JogoEstudo(cfg) {
+    this.cfg = cfg;
+    var u = universoDe(cfg);
+    this.universo = u.lista;
+    this.uniPop = u.pop;
+    this.uniArea = u.area;
+    this.uniPib = u.pib;
+    this.encerrado = false;
+    this._ordens = {}; // criterio -> universo ordenado desc (calculado uma vez)
+  }
+  JogoEstudo.prototype.ordenadoPor = function (criterio) {
+    if (!this._ordens[criterio]) {
+      this._ordens[criterio] = this.universo.slice().sort(function (a, b) {
+        return b[criterio] - a[criterio];
+      });
+    }
+    return this._ordens[criterio];
+  };
+  // Posição (1..N) do município no ranking da região pelo critério.
+  JogoEstudo.prototype.posicao = function (mun, criterio) {
+    return this.ordenadoPor(criterio).indexOf(mun) + 1;
+  };
+  // Posição do município no ranking da própria UF pelo critério.
+  JogoEstudo.prototype.posicaoNaUF = function (mun, criterio) {
+    var pos = 1;
+    this.universo.forEach(function (m) {
+      if (m.uf === mun.uf && m[criterio] > mun[criterio]) pos++;
+    });
+    return pos;
+  };
+  JogoEstudo.prototype.pct = function () { return 0; };
 
   // ---------------------------------------------------------------
   // Grafo de divisas (modos Caminho, Cerco, Mancha e Ponte). Os vizinhos vêm
@@ -1121,6 +1171,7 @@ var MODOS = (function () {
     JogoOndeEstou: JogoOndeEstou,
     JogoClique: JogoClique,
     JogoMaratona: JogoMaratona,
+    JogoEstudo: JogoEstudo,
     JogoCaminho: JogoCaminho,
     JogoCerco: JogoCerco,
     JogoMancha: JogoMancha,

@@ -11,8 +11,8 @@ no `localStorage` do navegador.
 
 **1. Círculos por distância** — chute cidades; cada palpite cobre todos os
 municípios num raio fixo (configurável, ex.: 100 km). Cubra o máximo do país
-(por população, por número de cidades ou por área em km²) antes de acabarem os palpites — ou o
-tempo. Por padrão vale a regra dura: uma cidade que já caiu dentro de um
+(por população, por número de cidades, por área em km² ou por PIB em R$)
+antes de acabarem os palpites — ou o tempo. Por padrão vale a regra dura: uma cidade que já caiu dentro de um
 círculo não pode mais ser usada como palpite (desligável na configuração).
 
 **2. Círculos por população** — cada cidade chutada vira o centro de um círculo
@@ -49,7 +49,7 @@ pontos dos municípios somem do mapa — só o contorno das UFs fica de guia.
 **7. Maratona completa** — cite **todos** os municípios da região (os 5.571
 do Brasil, se tiver coragem), no seu ritmo. O progresso e o relógio ficam
 salvos no navegador: pause e continue quando quiser. O placar acompanha também
-a população já citada, e a lista lateral traz contadores por porte (1 mi+,
+a população e o PIB já citados, e a lista lateral traz contadores por porte (1 mi+,
 500 mil–1 mi, …) e por UF — cada UF mostra quantas das 10 maiores cidades
 você já citou (★), e clicar na linha revela a posição da maior que ainda
 falta ("a 3ª do estado"), sem entregar o nome. O último município acertado fica
@@ -80,6 +80,14 @@ de divisas que os conecte. Cada palpite precisa encostar no que já está
 marcado, então dá para crescer dos dois lados até as pontas se encontrarem.
 Cooperativo por natureza, ótimo para começar — e pontua contra a ligação
 mínima possível.
+
+**12. Modo estudo** — o atlas para aprender antes de competir: sem pontuação
+e sem relógio, o mapa da região abre todo revelado. Busque qualquer município
+(ou clique nele no mapa) e veja a ficha completa — população, PIB, área,
+posição nos rankings do Brasil e da UF, PIB per capita, densidade e com quem
+faz divisa (os vizinhos são links para a ficha deles). A lista lateral traz o
+ranking da região ordenável por população, PIB ou área, e o placar mostra os
+totais da região. Funciona com o Brasil inteiro ou com uma UF só.
 
 **Região do jogo** — qualquer modo pode ser jogado com o Brasil inteiro ou só
 com uma UF (o mapa aproxima o estado e municípios de fora somem). Raio de
@@ -143,8 +151,8 @@ recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
   o ponto da sede — acertou Rio de Janeiro, acende o polígono inteiro do
   município. A malha dos 5.570 municípios (~2,4 MB) só é carregada na
   primeira vez que o botão é ligado; quem não usa não paga nada.
-- Passe o mouse sobre uma cidade já revelada/coberta para ver nome, população
-  e área. Com o botão ⬡ Formas ligado, o território inteiro do município
+- Passe o mouse sobre uma cidade já revelada/coberta para ver nome, população,
+  área e PIB. Com o botão ⬡ Formas ligado, o território inteiro do município
   responde ao mouse — não é preciso acertar o pontinho da sede.
 
 ## Recordes
@@ -161,6 +169,7 @@ cada configuração).
 |---|---|
 | População por município | IBGE, Censo Demográfico 2022 (agregado 4709, variável 93) |
 | Área territorial por município | IBGE, Censo Demográfico 2022 (agregado 4714, variável 6318) |
+| PIB por município (a preços correntes) | IBGE, PIB dos Municípios 2023 (agregado 5938, variável 37) |
 | Coordenadas (sede municipal) | [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros) |
 | Contorno das UFs | IBGE, API de malhas (qualidade máxima) |
 | Forma dos municípios (botão ⬡) | IBGE, API de malhas (qualidade mínima) |
@@ -189,8 +198,8 @@ python3 build_satelite.py      # recorta o fundo de satélite dos tiles da NASA
 Observações: as distâncias usam o centroide (sede) de cada município, não o
 polígono; no objetivo "cobrir área", município coberto conta o território
 inteiro (a sede caiu no círculo → a área toda soma); Boa Esperança do Norte
-(MT), criado em 2023, consta com população e área 0 por não existir no Censo
-2022 — e, por não existir na malha municipal do IBGE, é o único município
+(MT), criado em 2023, consta com população, área e PIB 0 por não existir no
+Censo 2022 nem no PIB dos Municípios — e, por não existir na malha municipal do IBGE, é o único município
 sem forma no botão ⬡ (fica só o ponto) e fora do grafo de divisas. Ilhabela
 (SP) e Fernando de Noronha (PE) são ilhas: não fazem divisa com ninguém, e
 por isso não servem de origem/destino/semente nos modos de divisas — todos

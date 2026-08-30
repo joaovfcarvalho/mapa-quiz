@@ -9,6 +9,9 @@ Fontes:
     https://servicodados.ibge.gov.br/api/v3/agregados/4709/periodos/2022/variaveis/93?localidades=N6[all]
   - Área territorial: IBGE, Censo 2022 (agregado 4714, variável 6318, N6[all])
     https://servicodados.ibge.gov.br/api/v3/agregados/4714/periodos/2022/variaveis/6318?localidades=N6[all]
+  - PIB municipal: IBGE, PIB dos Municípios (agregado 5938, variável 37 —
+    PIB a preços correntes, em R$ mil)
+    https://servicodados.ibge.gov.br/api/v3/agregados/5938/periodos/2023/variaveis/37?localidades=N6[all]
   - Contorno das UFs: IBGE malhas
     https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json
   - Forma dos municípios: IBGE malhas (qualidade mínima, senão o arquivo
@@ -17,8 +20,8 @@ Fontes:
 
 Uso:
   python3 build_data.py --municipios municipios.csv --estados estados.csv \
-      --pop pop2022.json --area area2022.json --malha br_uf.geojson \
-      --malha-municipios br_mun.geojson --out ../data
+      --pop pop2022.json --area area2022.json --pib pib2023.json \
+      --malha br_uf.geojson --malha-municipios br_mun.geojson --out ../data
 Sem argumentos, baixa as fontes da internet.
 """
 import argparse
@@ -33,6 +36,7 @@ URL_MUNICIPIOS = "https://raw.githubusercontent.com/kelvins/municipios-brasileir
 URL_ESTADOS = "https://raw.githubusercontent.com/kelvins/municipios-brasileiros/main/csv/estados.csv"
 URL_POP = "https://servicodados.ibge.gov.br/api/v3/agregados/4709/periodos/2022/variaveis/93?localidades=N6[all]"
 URL_AREA = "https://servicodados.ibge.gov.br/api/v3/agregados/4714/periodos/2022/variaveis/6318?localidades=N6[all]"
+URL_PIB = "https://servicodados.ibge.gov.br/api/v3/agregados/5938/periodos/2023/variaveis/37?localidades=N6[all]"
 URL_MALHA = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json"
 URL_MALHA_MUN = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/vnd.geo+json"
 
@@ -138,6 +142,7 @@ def main():
     ap.add_argument("--estados")
     ap.add_argument("--pop")
     ap.add_argument("--area")
+    ap.add_argument("--pib")
     ap.add_argument("--malha")
     ap.add_argument("--malha-municipios")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "data"))
@@ -162,10 +167,18 @@ def main():
         if valor not in ("-", "...", "X", None):
             area_por_ibge[serie["localidade"]["id"]] = round(float(valor), 1)
 
+    pib_json = json.loads(read_source(args.pib, URL_PIB))
+    pib_por_ibge = {}
+    for serie in pib_json[0]["resultados"][0]["series"]:
+        valor = list(serie["serie"].values())[0]
+        if valor not in ("-", "...", "X", None):
+            pib_por_ibge[serie["localidade"]["id"]] = int(valor)
+
     municipios_csv = read_source(args.municipios, URL_MUNICIPIOS)
     linhas = []
     sem_pop = []
     sem_area = []
+    sem_pib = []
     for row in csv.DictReader(io.StringIO(municipios_csv)):
         ibge = row["codigo_ibge"]
         pop = pop_por_ibge.get(ibge)
@@ -176,6 +189,10 @@ def main():
         if area is None:
             sem_area.append(f"{row['nome']} ({ibge})")
             area = 0
+        pib = pib_por_ibge.get(ibge)
+        if pib is None:
+            sem_pib.append(f"{row['nome']} ({ibge})")
+            pib = 0
         linhas.append([
             int(ibge),
             row["nome"],
@@ -185,18 +202,21 @@ def main():
             pop,
             int(row["capital"]),
             area,
+            pib,
         ])
     linhas.sort(key=lambda l: -l[5])
     if sem_pop:
         print(f"AVISO: {len(sem_pop)} municípios sem população: {sem_pop[:10]}", file=sys.stderr)
     if sem_area:
         print(f"AVISO: {len(sem_area)} municípios sem área: {sem_area[:10]}", file=sys.stderr)
+    if sem_pib:
+        print(f"AVISO: {len(sem_pib)} municípios sem PIB: {sem_pib[:10]}", file=sys.stderr)
 
     os.makedirs(args.out, exist_ok=True)
     out_mun = os.path.join(args.out, "municipios.js")
     with open(out_mun, "w", encoding="utf-8") as f:
         f.write("// Gerado por tools/build_data.py — não editar à mão.\n")
-        f.write("// Campos: [codigo_ibge, nome, uf, lat, lng, populacao_censo_2022, capital, area_km2_2022]\n")
+        f.write("// Campos: [codigo_ibge, nome, uf, lat, lng, populacao_censo_2022, capital, area_km2_2022, pib_2023_mil_reais]\n")
         f.write("var MUNICIPIOS = [\n")
         for l in linhas:
             f.write(json.dumps(l, ensure_ascii=False, separators=(",", ":")) + ",\n")

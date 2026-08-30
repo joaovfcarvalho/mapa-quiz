@@ -297,6 +297,13 @@
     if (km2 >= 1e3) return Math.round(km2 / 1e3).toLocaleString("pt-BR") + " mil km²";
     return Math.round(km2).toLocaleString("pt-BR") + " km²";
   }
+  // PIB vem em R$ mil (IBGE): 1e3 = R$ 1 milhão, 1e6 = R$ 1 bilhão…
+  function fmtPib(mil) {
+    if (mil >= 1e9) return "R$ " + (mil / 1e9).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " tri";
+    if (mil >= 1e6) return "R$ " + (mil / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " bi";
+    if (mil >= 1e3) return "R$ " + (mil / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + " mi";
+    return "R$ " + fmtInt(mil) + " mil";
+  }
   function fmtTempo(seg) {
     var m = Math.floor(seg / 60);
     var s = seg % 60;
@@ -407,6 +414,7 @@
     ondestou: "O jogo sorteia um município secreto e cada palpite responde com a distância e a direção até ele. Encontre-o no menor número de palpites — a cor dos pontos esquenta conforme você chega perto.",
     clique: "O jogo mostra o nome de um município e você clica no mapa onde acha que ele fica. Até 15 km de erro vale 100%; a pontuação cai até zerar em 500 km.",
     maratona: "O desafio definitivo: cite todos os municípios da região, no seu ritmo. O progresso e o tempo ficam salvos neste navegador — pause e continue quando quiser.",
+    estudo: "Nada de pontuação: o mapa abre todo revelado para você estudar. Busque qualquer município (ou clique nele) e veja população, PIB, área, posição nos rankings e com quem faz divisa.",
     caminho: "Viagem por divisas: saia da origem e chegue ao destino citando sempre um município que faz divisa com o último. Menos saltos, mais pontos — o jogo compara com o caminho mínimo real.",
     cerco: "Nomeie todos os municípios que fazem divisa com o alvo. Trivial no litoral, brutal no interior.",
     mancha: "Comece por qualquer município e cresça um território contíguo: só vale citar quem faz divisa com a sua mancha.",
@@ -422,6 +430,7 @@
     ondestou: { icone: "🧭", nome: "Onde estou?" },
     clique: { icone: "📌", nome: "Onde fica?" },
     maratona: { icone: "🏃", nome: "Maratona completa" },
+    estudo: { icone: "📖", nome: "Modo estudo" },
     caminho: { icone: "🚗", nome: "Caminho por divisas" },
     cerco: { icone: "🏰", nome: "Cerco" },
     mancha: { icone: "🌱", nome: "Mancha" },
@@ -429,8 +438,9 @@
   };
 
   // modos que precisam do grafo de divisas (data/vizinhos.js, ~360 KB,
-  // carregado sob demanda — quem não joga esses modos não paga nada)
-  var MODOS_COM_VIZINHOS = { caminho: 1, cerco: 1, mancha: 1, ponte: 1 };
+  // carregado sob demanda — quem não joga esses modos não paga nada); o
+  // estudo entra porque a ficha de cada município lista os vizinhos
+  var MODOS_COM_VIZINHOS = { caminho: 1, cerco: 1, mancha: 1, ponte: 1, estudo: 1 };
   var vizinhosCbs = null; // fila de callbacks enquanto o script carrega
   function carregarVizinhos(cb, silencioso) {
     if (window.VIZINHOS) { if (cb) cb(); return; }
@@ -486,7 +496,7 @@
     $("config-icone").textContent = INFO_MODOS[modo].icone;
     $("config-titulo").textContent = INFO_MODOS[modo].nome;
     $("descricao-modo").textContent = DESCRICOES[modo];
-    $("btn-desafio").hidden = modo === "maratona";
+    $("btn-desafio").hidden = modo === "maratona" || modo === "estudo";
     // já deixa o grafo de divisas baixando em segundo plano
     if (MODOS_COM_VIZINHOS[modo]) carregarVizinhos(null, true);
     atualizarRecordeUI();
@@ -557,7 +567,8 @@
           (cfgD.homonimos ? "|homonimos=1" : "") + (cfgD.bloqueio ? "|bloqueio=1" : "") + sufChave,
         rotulo: "Círculos por distância · raio " + cfgD.raio + " km · " + limD.rotulo +
           " · objetivo: " + (cfgD.metrica === "pop" ? "população" :
-            cfgD.metrica === "area" ? "área" : "nº de cidades") +
+            cfgD.metrica === "area" ? "área" :
+            cfgD.metrica === "pib" ? "PIB" : "nº de cidades") +
           (cfgD.homonimos ? " · homônimas juntas" : "") +
           (cfgD.bloqueio ? " · coberta não vale" : "") + sufRotulo,
       };
@@ -610,6 +621,13 @@
         cfg: { uf: uf || undefined },
         chave: "maratona" + sufChave,
         rotulo: "Maratona: todos os municípios" + (uf ? " de " + NOMES_UF[uf] : " do Brasil"),
+      };
+    }
+    if (modoAtual === "estudo") {
+      return {
+        cfg: { uf: uf || undefined },
+        chave: "estudo" + sufChave,
+        rotulo: "Modo estudo: " + (uf ? NOMES_UF[uf] : "Brasil inteiro"),
       };
     }
     if (modoAtual === "caminho") {
@@ -739,6 +757,11 @@
       $("btn-iniciar").textContent = n === 0 ? "▶ Iniciar maratona" : "▶ Continuar maratona";
       return;
     }
+    if (modoAtual === "estudo") {
+      el.innerHTML = "📖 Modo livre: sem pontuação, sem relógio, sem recordes — só você e o mapa.";
+      $("btn-iniciar").textContent = "▶ Abrir o modo estudo";
+      return;
+    }
     var rec = RECORDES.obter(lido.chave);
     if (!rec) {
       el.innerHTML = "🏅 Você ainda não jogou nesta configuração.";
@@ -796,6 +819,7 @@
     else if (modoAtual === "cerco") jogo = new MODOS.JogoCerco(lido.cfg);
     else if (modoAtual === "mancha") jogo = new MODOS.JogoMancha(lido.cfg);
     else if (modoAtual === "ponte") jogo = new MODOS.JogoPonte(lido.cfg);
+    else if (modoAtual === "estudo") jogo = new MODOS.JogoEstudo(lido.cfg);
     else if (modoAtual === "maratona") {
       var prog = carregarMaratona(lido.cfg.uf || "BR");
       lido.cfg.idsIniciais = prog && prog.ids ? prog.ids : [];
@@ -837,7 +861,13 @@
     $("input-palpite").value = "";
     $("input-palpite").disabled = false;
     $("btn-palpitar").disabled = false;
-    $("btn-encerrar").hidden = false;
+    // o estudo não tem partida para encerrar (nem barra de progresso) — o
+    // campo de texto vira uma busca
+    $("btn-encerrar").hidden = jogoModo === "estudo";
+    $("barra-progresso").parentElement.hidden = jogoModo === "estudo";
+    $("input-palpite").placeholder = jogoModo === "estudo"
+      ? "Busque um município… (ex.: Sorocaba ou Bom Jesus, RS)"
+      : "Digite uma cidade… (ex.: Campinas ou Bom Jesus, RS)";
 
     // o modo de clique esconde o campo de texto (a resposta é no mapa) e
     // todos os pontos de cidade — nada pode entregar as posições
@@ -871,6 +901,12 @@
         if (jogo.achados.has(m.idx)) pintarPonto(m, "achada");
       });
       montarListaMaratona(jogo);
+    } else if (jogoModo === "estudo") {
+      // tudo revelado de cara: cada ponto ganha cor de população, tooltip e
+      // clique (e a forma do território, com o botão ⬡ ligado)
+      estudoSel = null;
+      jogo.universo.forEach(function (m) { pintarPonto(m, "achada"); });
+      montarListaEstudo(jogo);
     } else if (jogoModo === "clique") {
       mostrarAlvoClique();
     } else if (jogoModo === "caminho") {
@@ -897,7 +933,7 @@
     atualizarPlacar();
 
     clearInterval(timerInt);
-    timerInt = setInterval(tique, 1000);
+    if (jogoModo !== "estudo") timerInt = setInterval(tique, 1000);
     if (jogoModo !== "clique") $("input-palpite").focus();
   }
 
@@ -957,6 +993,10 @@
       linhas.push("Área coberta: <b>" + fmtArea(jogo.areaCoberta) + "</b> de " +
         fmtArea(jogo.uniArea) + " (<b>" + fmtPct(pct) + "</b>)");
       linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b>");
+    } else if (jogoModo === "dist" && jogo.cfg.metrica === "pib") {
+      linhas.push("PIB coberto: <b>" + fmtPib(jogo.pibCoberto) + "</b> de " +
+        fmtPib(jogo.uniPib) + " (<b>" + fmtPct(pct) + "</b>)");
+      linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b>");
     } else if (jogoModo === "dist" || jogoModo === "pop") {
       linhas.push("População coberta: <b>" + fmtPop(jogo.popCoberta) + "</b> de " +
         fmtPop(jogo.uniPop) + " (<b>" + fmtPct(pct) + "</b>)");
@@ -987,7 +1027,16 @@
       linhas.push("População: <b>" + fmtPop(jogo.popAchada) + "</b> de " +
         fmtPop(jogo.uniPop) +
         " (<b>" + fmtPct(jogo.uniPop ? jogo.popAchada / jogo.uniPop : 0) + "</b>)");
+      linhas.push("PIB: <b>" + fmtPib(jogo.pibAchado) + "</b> de " +
+        fmtPib(jogo.uniPib) +
+        " (<b>" + fmtPct(jogo.uniPib ? jogo.pibAchado / jogo.uniPib : 0) + "</b>)");
       linhas.push("Nesta sessão: <b>+" + fmtInt(jogo.achadosSessao) + "</b>");
+    } else if (jogoModo === "estudo") {
+      // no estudo o "placar" é a carteira de identidade da região
+      linhas.push("Municípios: <b>" + fmtInt(jogo.universo.length) + "</b>");
+      linhas.push("População: <b>" + fmtPop(jogo.uniPop) + " hab.</b> (Censo 2022)");
+      linhas.push("PIB: <b>" + fmtPib(jogo.uniPib) + "</b> (2023)");
+      linhas.push("Área: <b>" + fmtArea(jogo.uniArea) + "</b>");
     } else if (jogoModo === "caminho") {
       linhas.push("Saltos: <b>" + jogo.saltos + "</b> · mínimo possível: <b>" +
         jogo.minSaltos + "</b>" +
@@ -1027,7 +1076,7 @@
     if (limiteSeg !== null) {
       var restante = Math.max(0, limiteSeg - tempoDecorrido());
       linhas.push("⏱️ Tempo restante: <b>" + fmtTempo(restante) + "</b> de " + fmtTempo(limiteSeg));
-    } else {
+    } else if (jogoModo !== "estudo") { // estudar não tem relógio
       linhas.push((jogoModo === "maratona" ? "Tempo total: <b>" : "Tempo: <b>") +
         fmtTempo(tempoDecorrido()) + "</b>");
     }
@@ -1046,6 +1095,7 @@
     var texto = $("input-palpite").value;
     if (jogoModo === "faixas" || jogoModo === "topn") return palpitarAlvos(texto);
     if (jogoModo === "maratona") return palpitarMaratona(texto);
+    if (jogoModo === "estudo") return buscarEstudo(texto);
     if (jogoModo === "ondestou") return palpitarOnde(texto);
     if (jogoModo === "caminho") return palpitarCaminho(texto);
     if (jogoModo === "cerco") return palpitarCerco(texto);
@@ -1118,6 +1168,8 @@
       ? "raio " + Math.round(j.circulos[0].raioKm) + " km · +" + fmtPop(j.ganhoPop) + " hab. novos · +" + fmtInt(j.novos.length) + " cidades"
       : jogoModo === "dist" && jogo.cfg.metrica === "area"
       ? "+" + fmtArea(j.ganhoArea) + " · +" + fmtInt(j.novos.length) + " cidades"
+      : jogoModo === "dist" && jogo.cfg.metrica === "pib"
+      ? "+" + fmtPib(j.ganhoPib) + " de PIB · +" + fmtInt(j.novos.length) + " cidades"
       : "+" + fmtPop(j.ganhoPop) + " hab. · +" + fmtInt(j.novos.length) + " cidades";
     var item = document.createElement("div");
     item.className = "item-jogada";
@@ -1321,7 +1373,7 @@
     });
     destacarRecentes(r.revelados.map(function (par) { return par.mun; }));
     var nomes = r.revelados.map(function (par) {
-      return nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab.";
+      return nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab. · " + fmtPib(par.mun.pib);
     });
     feedback("✔ " + nomes.join(" · "), "ok");
     $("input-palpite").value = "";
@@ -1544,6 +1596,131 @@
     atualizarRecordeUI();
   }
 
+  // ---------------- modo Estudo ----------------
+  var estudoSel = null;        // município da ficha aberta
+  var estudoCriterio = "pop";  // critério do ranking da lista lateral
+  var estudoTopN = 25;         // linhas do ranking à mostra
+
+  // "3º do BR · 1º de SP" (Brasil inteiro) ou "1º de SP" (região = UF)
+  function posicaoEstudo(m, criterio) {
+    var pos = jogo.posicao(m, criterio) + "º";
+    if (jogo.cfg.uf) return pos + " de " + jogo.cfg.uf;
+    return pos + " do BR · " + jogo.posicaoNaUF(m, criterio) + "º de " + m.uf;
+  }
+
+  function fichaEstudoHtml(m) {
+    var linhas = [];
+    linhas.push("População: <b>" + fmtInt(m.pop) + " hab.</b> <small>(" +
+      posicaoEstudo(m, "pop") + ")</small>");
+    linhas.push("PIB 2023: <b>" + fmtPib(m.pib) + "</b> <small>(" +
+      posicaoEstudo(m, "pib") + ")</small>" +
+      (m.pop > 0 ? " · R$ " + fmtInt(Math.round(m.pib * 1000 / m.pop)) + "/hab." : ""));
+    linhas.push("Área: <b>" + fmtArea(m.area) + "</b> <small>(" +
+      posicaoEstudo(m, "area") + ")</small>" +
+      (m.area > 0 ? " · " + fmtInt(Math.round(m.pop / m.area)) + " hab./km²" : ""));
+    var viz = MODOS.vizinhosDe(m);
+    linhas.push(viz.length === 0
+      ? "Sem divisas registradas (ilha — ou município fora da malha do IBGE)."
+      : "Faz divisa com <b>" + viz.length + "</b>: " + viz.map(function (v) {
+          return "<a href='#' class='viz-estudo' data-idx='" + v.idx + "'>" + v.nome +
+            (v.uf !== m.uf ? " (" + v.uf + ")" : "") + "</a>";
+        }).join(", ") + ".");
+    return "📍 <b>" + nomeUF(m) + "</b>" + (m.capital ? " <small>· capital</small>" : "") +
+      "<div class='ficha-estudo'>" + linhas.map(function (l) {
+        return "<div>" + l + "</div>";
+      }).join("") + "</div>";
+  }
+
+  // Abre a ficha do município (busca, clique no mapa, ranking ou vizinho);
+  // voar=true também enquadra o mapa na vizinhança dele.
+  function selecionarMunEstudo(m, voar) {
+    estudoSel = m;
+    destacarRecentes([m]);
+    atualizarMissao();
+    if (voar) enquadrarLista([m].concat(MODOS.vizinhosDe(m)));
+    feedback("", "");
+  }
+
+  function buscarEstudo(texto) {
+    var res = DADOS.buscar(texto);
+    if (res.status === "vazio") return;
+    if (res.status === "nao_encontrado") {
+      feedback(res.ufErrada
+        ? "Esse município existe, mas não nessa UF."
+        : "Não encontrei nenhum município com esse nome.", "erro");
+      return;
+    }
+    var cand = res.municipios;
+    if (jogo.cfg.uf) {
+      cand = cand.filter(function (m) { return m.uf === jogo.cfg.uf; });
+      if (cand.length === 0) {
+        feedback(res.municipios[0].nome + " fica fora da região de estudo (só " +
+          NOMES_UF[jogo.cfg.uf] + ").", "erro");
+        return;
+      }
+    }
+    if (cand.length > 1) {
+      var ufs = cand.map(function (m) { return m.uf; }).join(", ");
+      feedback("Há " + cand.length + " municípios com esse nome (" + ufs +
+        "). Especifique: " + cand[0].nome + ", UF.", "erro");
+      return;
+    }
+    $("input-palpite").value = "";
+    selecionarMunEstudo(cand[0], true);
+  }
+
+  function montarListaEstudo(jogo) {
+    var alvo = $("lista-jogo");
+    alvo.innerHTML = "";
+    estudoCriterio = "pop";
+    estudoTopN = 25;
+    var item = document.createElement("div");
+    item.className = "item-faixa";
+    item.innerHTML = "<div class='titulo-faixa'><span>Ranking da região</span>" +
+      "<span>clique para ver no mapa</span></div>" +
+      "<label class='rotulo-rank'>Ordenar por " +
+      "<select id='est-criterio'>" +
+      "<option value='pop'>população</option>" +
+      "<option value='pib'>PIB</option>" +
+      "<option value='area'>área</option>" +
+      "</select></label>" +
+      "<div class='portes' id='est-ranking'></div>" +
+      "<button id='est-mais' class='botao-sec' type='button'>+ Mostrar mais</button>";
+    alvo.appendChild(item);
+    $("est-criterio").addEventListener("change", function () {
+      estudoCriterio = this.value;
+      estudoTopN = 25;
+      renderRankingEstudo();
+    });
+    $("est-mais").addEventListener("click", function () {
+      estudoTopN += 25;
+      renderRankingEstudo();
+    });
+    $("est-ranking").addEventListener("click", function (ev) {
+      var linha = ev.target.closest(".linha-rank");
+      if (!linha || !jogo) return;
+      selecionarMunEstudo(DADOS.municipios[+linha.dataset.idx], true);
+    });
+    renderRankingEstudo();
+  }
+
+  function renderRankingEstudo() {
+    if (!jogo || jogoModo !== "estudo") return;
+    var ordem = jogo.ordenadoPor(estudoCriterio);
+    var n = Math.min(estudoTopN, ordem.length);
+    var linhas = [];
+    for (var i = 0; i < n; i++) {
+      var m = ordem[i];
+      var valor = estudoCriterio === "pib" ? fmtPib(m.pib)
+        : estudoCriterio === "area" ? fmtArea(m.area)
+        : fmtPop(m.pop);
+      linhas.push("<div class='linha-porte linha-rank' data-idx='" + m.idx + "'><span>" +
+        (i + 1) + ". " + nomeUF(m) + "</span><b>" + valor + "</b></div>");
+    }
+    $("est-ranking").innerHTML = linhas.join("");
+    $("est-mais").hidden = n >= ordem.length;
+  }
+
   // ---------------- modos de divisas (Caminho, Cerco, Mancha, Ponte) ----------------
   function rotularMun(mun, classe) {
     elSvg("text", {
@@ -1590,6 +1767,11 @@
     } else if (jogoModo === "ponte") {
       el.innerHTML = "🌉 Ligue <b>" + nomeUF(jogo.a) + "</b> a <b>" + nomeUF(jogo.b) +
         "</b> — cada palpite precisa fazer divisa com algo já marcado.";
+    } else if (jogoModo === "estudo") {
+      el.innerHTML = estudoSel
+        ? fichaEstudoHtml(estudoSel)
+        : "📖 Busque um município pelo nome, toque num ponto do mapa ou use o " +
+          "ranking abaixo para abrir a ficha completa dele.";
     }
     el.hidden = false;
   }
@@ -1946,6 +2128,8 @@
       placar = fmtInt(jogo.cobertos.size) + " cidades";
     } else if (jogoModo === "dist" && jogo.cfg.metrica === "area") {
       placar = fmtArea(jogo.areaCoberta);
+    } else if (jogoModo === "dist" && jogo.cfg.metrica === "pib") {
+      placar = fmtPib(jogo.pibCoberto) + " de PIB";
     } else {
       placar = fmtPop(jogo.popCoberta) + " hab.";
     }
@@ -2018,18 +2202,23 @@
         ".</div>";
     }
     if (jogoModo === "dist" || jogoModo === "pop") {
-      // no objetivo de área, "maior" é por território; nos demais, por população
-      var porArea = jogoModo === "dist" && jogo.cfg.metrica === "area";
+      // no objetivo de área/PIB, "maior" é pelo próprio critério; nos demais,
+      // por população
+      var criterio = jogoModo === "dist" &&
+        (jogo.cfg.metrica === "area" || jogo.cfg.metrica === "pib")
+        ? jogo.cfg.metrica : "pop";
       var fora = jogo.universo.filter(function (m) { return !jogo.cobertos.has(m.idx); });
       if (fora.length === 0) return "";
-      var maiores = porArea
-        ? fora.slice().sort(function (a, b) { return b.area - a.area; }).slice(0, 5)
-        : fora.slice(0, 5);
+      var maiores = criterio === "pop"
+        ? fora.slice(0, 5) // o universo já vem ordenado por população
+        : fora.slice().sort(function (a, b) { return b[criterio] - a[criterio]; }).slice(0, 5);
       itens = maiores.map(function (m) {
-        return nomeUF(m) + " — " + (porArea ? fmtArea(m.area) : fmtPop(m.pop));
+        return nomeUF(m) + " — " + (criterio === "area" ? fmtArea(m.area) :
+          criterio === "pib" ? fmtPib(m.pib) : fmtPop(m.pop));
       });
       return "<div class='relatorio'>Ficou na mesa: <b>" +
-        (porArea ? fmtArea(jogo.uniArea - jogo.areaCoberta)
+        (criterio === "area" ? fmtArea(jogo.uniArea - jogo.areaCoberta)
+          : criterio === "pib" ? fmtPib(jogo.uniPib - jogo.pibCoberto) + " de PIB"
           : fmtPop(jogo.uniPop - jogo.popCoberta) + " hab.") + "</b> em " +
         fmtInt(fora.length) + " cidades.<br>" +
         "Maiores esquecidas: " + itens.join(" · ") + ".</div>";
@@ -2315,8 +2504,8 @@
     } else if (modo === "clique") {
       setVal("cfg-clique-pool", p.pool);
       setVal("cfg-clique-rodadas", p.rodadas);
-    } else if (modo === "maratona") {
-      // maratona não tem parâmetros além da região
+    } else if (modo === "maratona" || modo === "estudo") {
+      // maratona e estudo não têm parâmetros além da região
     } else if (modo === "caminho") {
       setCidade("cfg-caminho-origem", p.de);
       setCidade("cfg-caminho-destino", p.para);
@@ -2367,7 +2556,8 @@
     if (t.dataset && t.dataset.idx !== undefined &&
         (t.tagName === "path" || t.getAttribute("class") !== "cidade")) {
       var m = DADOS.municipios[+t.dataset.idx];
-      tooltip.innerHTML = "<b>" + nomeUF(m) + "</b> · " + fmtInt(m.pop) + " hab. · " + fmtArea(m.area);
+      tooltip.innerHTML = "<b>" + nomeUF(m) + "</b> · " + fmtInt(m.pop) + " hab. · " +
+        fmtArea(m.area) + " · PIB " + fmtPib(m.pib);
       tooltip.hidden = false;
       var wrap = $("mapa-wrap").getBoundingClientRect();
       tooltip.style.left = ev.clientX - wrap.left + 14 + "px";
@@ -2439,7 +2629,9 @@
     }
     if (ponteiros.length === 1) {
       arrasto = { x: ev.clientX, y: ev.clientY, vbx: vb.x, vby: vb.y };
-      cliqueInicio = { x: ev.clientX, y: ev.clientY };
+      // o alvo original importa no modo estudo (o pointer capture retarga os
+      // eventos seguintes para o próprio <svg>)
+      cliqueInicio = { x: ev.clientX, y: ev.clientY, alvo: ev.target };
       svg.classList.add("arrastando");
     } else if (ponteiros.length === 2) {
       // entrou o segundo dedo: vira pinça — e deixa de poder ser um clique
@@ -2514,6 +2706,13 @@
         return;
       }
       ultimoToque = { t: agoraMs, x: ev.clientX, y: ev.clientY };
+    }
+    // clique/toque num ponto (ou território) no modo estudo: abre a ficha
+    if (jogoModo === "estudo" && jogo && inicio.alvo && inicio.alvo.dataset &&
+        inicio.alvo.dataset.idx !== undefined) {
+      var mEst = DADOS.municipios[+inicio.alvo.dataset.idx];
+      if (!jogo.cfg.uf || mEst.uf === jogo.cfg.uf) selecionarMunEstudo(mEst, false);
+      return;
     }
     // clique/toque (sem arrasto) no modo "Onde fica?": vira a resposta da rodada
     if (jogoModo !== "clique" || !jogo || jogo.encerrado) return;
@@ -2594,6 +2793,13 @@
   });
   $("btn-dica").addEventListener("pointerdown", function (ev) { ev.preventDefault(); });
   $("btn-dica").addEventListener("click", pedirDica);
+  // vizinhos na ficha do modo estudo são links para a ficha deles
+  $("alvo-clique").addEventListener("click", function (ev) {
+    var a = ev.target.closest(".viz-estudo");
+    if (!a || jogoModo !== "estudo" || !jogo) return;
+    ev.preventDefault();
+    selecionarMunEstudo(DADOS.municipios[+a.dataset.idx], true);
+  });
   $("btn-zerar-maratona").addEventListener("click", function () {
     var regiao = ufDoJogo() || "BR";
     var nome = regiao === "BR" ? "do Brasil inteiro" : "de " + NOMES_UF[regiao];

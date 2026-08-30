@@ -30,8 +30,18 @@
 
     <!-- tela 1: escolha do modo -->
     <section id="tela-modos">
-      <p class="tagline">Onze jeitos de provar que você conhece o Brasil.
-      Escolha o seu desafio:</p>
+      <p class="tagline">Onze jeitos de provar que você conhece o Brasil —
+      e um atlas para estudar antes. Escolha o seu desafio:</p>
+
+      <div class="grupo-modos">
+        <h2>Estude</h2>
+        <button class="carta-modo" data-modo="estudo" type="button">
+          <span class="carta-icone">📖</span>
+          <span class="carta-texto"><b>Modo estudo</b>
+            <small>Mapa todo revelado: busque, clique e aprenda — com população, PIB e área</small></span>
+          <span class="carta-seta">›</span>
+        </button>
+      </div>
 
       <div class="grupo-modos">
         <h2>Cubra o mapa</h2>
@@ -155,6 +165,7 @@
               <option value="pop">Cobrir população</option>
               <option value="cidades">Cobrir número de cidades</option>
               <option value="area">Cobrir área (km²)</option>
+              <option value="pib">Cobrir PIB (R$)</option>
             </select>
           </label>
           <label class="check">
@@ -272,6 +283,14 @@
           <p class="nota-config">Cite <b>todos</b> os municípios da região
           escolhida acima, no seu ritmo. O progresso (e o tempo) fica salvo
           neste navegador — pause e continue quando quiser.</p>
+        </div>
+
+        <div class="config-modo" data-modo="estudo" hidden>
+          <p class="nota-config">Sem pontuação, sem relógio: o mapa da região
+          abre <b>todo revelado</b> para você estudar. Busque qualquer
+          município (ou clique nele no mapa) e veja a ficha completa —
+          população, PIB, área, posição nos rankings e com quem faz divisa.
+          A lista lateral traz os rankings por população, PIB e área.</p>
         </div>
 
         <div class="config-modo" data-modo="caminho" hidden>

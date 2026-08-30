@@ -24,6 +24,7 @@ var DADOS = (function () {
       pop: m[5],
       capital: m[6] === 1,
       area: m[7], // km² (IBGE 2022)
+      pib: m[8],  // R$ mil (IBGE, PIB dos Municípios 2023)
       chave: normalizar(m[1]),
     };
   });
@@ -46,6 +47,7 @@ var DADOS = (function () {
 
   var siglasUF = new Set(municipios.map(function (m) { return m.uf.toLowerCase(); }));
   var popTotal = municipios.reduce(function (s, m) { return s + m.pop; }, 0);
+  var pibTotal = municipios.reduce(function (s, m) { return s + m.pib; }, 0);
 
   // Interpreta o texto digitado. Aceita "nome", "nome, uf" e "nome uf";
   // espaços são opcionais ("riodejaneiro" vale por "rio de janeiro").
@@ -88,6 +90,7 @@ var DADOS = (function () {
     municipios: municipios,
     porChave: porChave,
     popTotal: popTotal,
+    pibTotal: pibTotal,
     total: municipios.length,
     normalizar: normalizar,
     buscar: buscar,
