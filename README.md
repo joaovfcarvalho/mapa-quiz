@@ -16,7 +16,8 @@ antes de acabarem os palpites — ou o tempo. Por padrão vale a regra dura: uma
 círculo não pode mais ser usada como palpite (desligável na configuração).
 
 **2. Círculos por população** — cada cidade chutada vira o centro de um círculo
-que cresce até somar a população alvo (ex.: 1 milhão de habitantes). Cidades
+que cresce até somar a população alvo (ex.: 1 milhão de habitantes) — ou, se
+preferir, até somar o PIB alvo (ex.: R$ 50 bilhões). Cidades
 grandes geram círculos pequenos; cidades vazias geram círculos enormes.
 Estratégia: onde ancorar os círculos para cobrir o máximo do Brasil? Aqui a
 ordem importa ainda mais: com a regra padrão, cidade coberta não vale mais
@@ -30,10 +31,11 @@ até o tom cheio quando ela está 100% respondida. Tudo configurável: largura
 em km, quantidade de cidades por faixa e o centro dos anéis.
 
 **4. Top N cidades** — o modo raiz do HugeQuiz: cite de memória as N maiores
-cidades (100 por padrão), de preferência contra o relógio. Cada acerto acende
+cidades (100 por padrão), de preferência contra o relógio — com o ranking por
+população ou por PIB, à sua escolha. Cada acerto acende
 a cidade no mapa com a posição no ranking, e um placar por porte mostra
 quantas você já achou em cada faixa de população (ex.: 3/10 entre 500 mil e
-1 milhão).
+1 milhão) — ou de PIB, no ranking por PIB (ex.: 5/9 entre R$ 50 e 100 bi).
 
 **5. Onde estou?** — o jogo sorteia um município secreto (com o porte mínimo
 que você escolher) e cada palpite responde com a distância e a direção até

@@ -55,7 +55,7 @@
         <button class="carta-modo" data-modo="pop" type="button">
           <span class="carta-icone">⭕</span>
           <span class="carta-texto"><b>Círculos por população</b>
-            <small>O círculo cresce até somar a população alvo</small></span>
+            <small>O círculo cresce até somar a população — ou o PIB — alvo</small></span>
           <span class="carta-seta">›</span>
         </button>
       </div>
@@ -65,7 +65,7 @@
         <button class="carta-modo" data-modo="topn" type="button">
           <span class="carta-icone">🏙️</span>
           <span class="carta-texto"><b>Top N cidades</b>
-            <small>Cite as maiores cidades contra o relógio</small></span>
+            <small>Cite as maiores cidades — por população ou PIB — contra o relógio</small></span>
           <span class="carta-seta">›</span>
         </button>
         <button class="carta-modo" data-modo="faixas" type="button">
@@ -180,8 +180,17 @@
         </div>
 
         <div class="config-modo" data-modo="pop" hidden>
-          <label>População por círculo (hab.)
+          <label>O círculo cresce até somar
+            <select id="cfg-pop-metrica">
+              <option value="pop">População (hab.)</option>
+              <option value="pib">PIB (R$)</option>
+            </select>
+          </label>
+          <label id="rotulo-pop-alvo">População por círculo (hab.)
             <input type="number" id="cfg-pop-alvo" value="1000000" min="10000" max="100000000" step="50000">
+          </label>
+          <label id="rotulo-pop-alvo-pib" hidden>PIB por círculo (R$ bilhões)
+            <input type="number" id="cfg-pop-alvo-pib" value="50" min="1" max="10000" step="5">
           </label>
           <label>Limite da partida
             <select id="cfg-pop-limite" class="sel-limite">
@@ -237,6 +246,12 @@
         <div class="config-modo" data-modo="topn" hidden>
           <label>Quantas cidades (as N maiores)
             <input type="number" id="cfg-topn-n" value="100" min="5" max="500" step="5">
+          </label>
+          <label>Ranking por
+            <select id="cfg-topn-metrica">
+              <option value="pop">População</option>
+              <option value="pib">PIB (R$)</option>
+            </select>
           </label>
           <label>Limite de tempo
             <select id="cfg-topn-limite" class="sel-limite">
