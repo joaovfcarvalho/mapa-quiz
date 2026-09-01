@@ -408,9 +408,9 @@
 
   var DESCRICOES = {
     dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo da região antes de acabarem os palpites — ou o tempo.",
-    pop: "Cada cidade chutada vira o centro de um círculo que cresce até somar a população alvo. Escolha bem para cobrir o máximo da região.",
+    pop: "Cada cidade chutada vira o centro de um círculo que cresce até somar a população — ou o PIB — alvo. Escolha bem para cobrir o máximo da região.",
     faixas: "O mapa é dividido em faixas (ou numa grade de quadrados) e você precisa nomear as maiores cidades de cada uma. A cor da faixa vai se intensificando conforme você acerta.",
-    topn: "O modo raiz: cite de memória as N maiores cidades da região. Cada acerto acende a cidade no mapa e mostra a posição no ranking.",
+    topn: "O modo raiz: cite de memória as N maiores cidades da região — por população ou por PIB. Cada acerto acende a cidade no mapa e mostra a posição no ranking.",
     ondestou: "O jogo sorteia um município secreto e cada palpite responde com a distância e a direção até ele. Encontre-o no menor número de palpites — a cor dos pontos esquenta conforme você chega perto.",
     clique: "O jogo mostra o nome de um município e você clica no mapa onde acha que ele fica. Até 15 km de erro vale 100%; a pontuação cai até zerar em 500 km.",
     maratona: "O desafio definitivo: cite todos os municípios da região, no seu ritmo. O progresso e o tempo ficam salvos neste navegador — pause e continue quando quiser.",
@@ -575,17 +575,31 @@
     }
     if (modoAtual === "pop") {
       var cfgP = {
-        popAlvo: num("cfg-pop-alvo", 10000, 100000000),
+        metrica: $("cfg-pop-metrica").value,
         homonimos: $("cfg-pop-homonimos").checked,
         bloqueio: $("cfg-pop-bloqueio").checked,
         uf: uf || undefined,
       };
+      // o alvo por população mantém o formato antigo da chave ("pop|alvo=N")
+      // para não invalidar recordes já salvos; o PIB (em R$ bilhões no campo,
+      // R$ mil no motor) entra com o marcador de métrica
+      var chaveAlvoP, alvoTxtP;
+      if (cfgP.metrica === "pib") {
+        var alvoBi = num("cfg-pop-alvo-pib", 1, 10000);
+        cfgP.pibAlvo = alvoBi * 1e6; // R$ bilhões -> R$ mil
+        chaveAlvoP = "pop|metrica=pib|alvo=" + alvoBi;
+        alvoTxtP = "PIB de R$ " + fmtInt(alvoBi) + " bi por círculo";
+      } else {
+        cfgP.popAlvo = num("cfg-pop-alvo", 10000, 100000000);
+        chaveAlvoP = "pop|alvo=" + cfgP.popAlvo;
+        alvoTxtP = fmtInt(cfgP.popAlvo) + " hab. por círculo";
+      }
       var limP = lerLimite("pop", cfgP);
       return {
         cfg: cfgP,
-        chave: "pop|alvo=" + cfgP.popAlvo + limP.chave +
+        chave: chaveAlvoP + limP.chave +
           (cfgP.homonimos ? "|homonimos=1" : "") + (cfgP.bloqueio ? "|bloqueio=1" : "") + sufChave,
-        rotulo: "Círculos por população · " + fmtInt(cfgP.popAlvo) + " hab. por círculo · " +
+        rotulo: "Círculos por população · " + alvoTxtP + " · " +
           limP.rotulo + (cfgP.homonimos ? " · homônimas juntas" : "") +
           (cfgP.bloqueio ? " · coberta não vale" : "") + sufRotulo,
       };
@@ -691,10 +705,13 @@
     if (modoAtual === "topn") {
       var cfgT = {
         n: num("cfg-topn-n", 5, 500),
+        metrica: $("cfg-topn-metrica").value,
         uf: uf || undefined,
       };
-      var chaveT = "topn|n=" + cfgT.n;
-      var rotuloT = "As " + cfgT.n + " maiores cidades";
+      // por população a chave mantém o formato antigo ("topn|n=N"), para não
+      // invalidar recordes já salvos
+      var chaveT = "topn|n=" + cfgT.n + (cfgT.metrica === "pib" ? "|metrica=pib" : "");
+      var rotuloT = "As " + cfgT.n + " maiores cidades" + (cfgT.metrica === "pib" ? " por PIB" : "");
       if ($("cfg-topn-limite").value === "tempo") {
         cfgT.tempoMin = num("cfg-topn-tempo", 1, 240);
         chaveT += "|tempo=" + cfgT.tempoMin;
@@ -993,7 +1010,7 @@
       linhas.push("Área coberta: <b>" + fmtArea(jogo.areaCoberta) + "</b> de " +
         fmtArea(jogo.uniArea) + " (<b>" + fmtPct(pct) + "</b>)");
       linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b>");
-    } else if (jogoModo === "dist" && jogo.cfg.metrica === "pib") {
+    } else if ((jogoModo === "dist" || jogoModo === "pop") && jogo.cfg.metrica === "pib") {
       linhas.push("PIB coberto: <b>" + fmtPib(jogo.pibCoberto) + "</b> de " +
         fmtPib(jogo.uniPib) + " (<b>" + fmtPct(pct) + "</b>)");
       linhas.push("Cidades cobertas: <b>" + fmtInt(jogo.cobertos.size) + "</b>");
@@ -1164,13 +1181,15 @@
       : j.muns[0].nome + " ×" + j.muns.length + " (" +
         j.muns.map(function (m) { return m.uf; }).join(", ") + ")";
     var ordem = jogo.jogadas.length;
+    var porPib = jogo.cfg.metrica === "pib";
+    var ganho = porPib
+      ? "+" + fmtPib(j.ganhoPib) + " de PIB"
+      : "+" + fmtPop(j.ganhoPop) + " hab.";
     var detalhe = jogoModo === "pop" && j.circulos.length === 1
-      ? "raio " + Math.round(j.circulos[0].raioKm) + " km · +" + fmtPop(j.ganhoPop) + " hab. novos · +" + fmtInt(j.novos.length) + " cidades"
+      ? "raio " + Math.round(j.circulos[0].raioKm) + " km · " + ganho + " novos · +" + fmtInt(j.novos.length) + " cidades"
       : jogoModo === "dist" && jogo.cfg.metrica === "area"
       ? "+" + fmtArea(j.ganhoArea) + " · +" + fmtInt(j.novos.length) + " cidades"
-      : jogoModo === "dist" && jogo.cfg.metrica === "pib"
-      ? "+" + fmtPib(j.ganhoPib) + " de PIB · +" + fmtInt(j.novos.length) + " cidades"
-      : "+" + fmtPop(j.ganhoPop) + " hab. · +" + fmtInt(j.novos.length) + " cidades";
+      : ganho + " · +" + fmtInt(j.novos.length) + " cidades";
     var item = document.createElement("div");
     item.className = "item-jogada";
     item.innerHTML = "<b>" + ordem + ". " + nome + "</b><br><small>" + detalhe + "</small>";
@@ -1222,7 +1241,9 @@
     });
     var nomes = r.revelados.map(function (par) {
       return par.rank !== undefined
-        ? par.rank + "º — " + nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab."
+        ? par.rank + "º — " + nomeUF(par.mun) + " · " + (jogo.cfg.metrica === "pib"
+            ? fmtPib(par.mun.pib) + " de PIB"
+            : fmtPop(par.mun.pop) + " hab.")
         : nomeUF(par.mun) + " — " + (jogo.cfg.tipo === "grade" ? "célula " : "faixa ") + par.faixa.rotulo;
     });
     feedback("✔ " + nomes.join(" · "), "ok");
@@ -2027,9 +2048,12 @@
         : jogoModo === "cerco"
         ? "fica em <b>" + df.mun.uf + "</b>"
         : "está na " + (jogo.cfg.tipo === "grade" ? "célula" : "faixa") + " <b>" + df.faixa.rotulo + "</b>";
+      var medida = jogoModo === "topn" && jogo.cfg.metrica === "pib"
+        ? "<b>" + fmtPib(df.mun.pib) + "</b> de PIB"
+        : "<b>" + fmtPop(df.mun.pop) + " hab.</b>";
       caixa.innerHTML = "💡 Dica " + dicasUsadas + "/3 (−1 acerto): o maior " +
         (jogoModo === "cerco" ? "vizinho" : "alvo") + " que falta começa com <b>«" +
-        df.mun.nome.charAt(0) + "»</b>, tem <b>" + fmtPop(df.mun.pop) + " hab.</b> e " + onde + ".";
+        df.mun.nome.charAt(0) + "»</b>, tem " + medida + " e " + onde + ".";
       caixa.hidden = false;
     }
     atualizarBotaoDica();
@@ -2128,7 +2152,7 @@
       placar = fmtInt(jogo.cobertos.size) + " cidades";
     } else if (jogoModo === "dist" && jogo.cfg.metrica === "area") {
       placar = fmtArea(jogo.areaCoberta);
-    } else if (jogoModo === "dist" && jogo.cfg.metrica === "pib") {
+    } else if ((jogoModo === "dist" || jogoModo === "pop") && jogo.cfg.metrica === "pib") {
       placar = fmtPib(jogo.pibCoberto) + " de PIB";
     } else {
       placar = fmtPop(jogo.popCoberta) + " hab.";
@@ -2204,8 +2228,7 @@
     if (jogoModo === "dist" || jogoModo === "pop") {
       // no objetivo de área/PIB, "maior" é pelo próprio critério; nos demais,
       // por população
-      var criterio = jogoModo === "dist" &&
-        (jogo.cfg.metrica === "area" || jogo.cfg.metrica === "pib")
+      var criterio = jogo.cfg.metrica === "area" || jogo.cfg.metrica === "pib"
         ? jogo.cfg.metrica : "pop";
       var fora = jogo.universo.filter(function (m) { return !jogo.cobertos.has(m.idx); });
       if (fora.length === 0) return "";
@@ -2341,23 +2364,37 @@
     { min: 5e4, rotulo: "50 a 100 mil" },
     { min: 0, rotulo: "menos de 50 mil" },
   ];
-  var topnPorte = null; // linhas de contagem por faixa de população
+  // idem para o ranking por PIB (valores em R$ mil, a unidade dos dados)
+  var FAIXAS_PIB = [
+    { min: 1e8, rotulo: "R$ 100 bi ou mais" },
+    { min: 5e7, rotulo: "R$ 50 a 100 bi" },
+    { min: 2e7, rotulo: "R$ 20 a 50 bi" },
+    { min: 1e7, rotulo: "R$ 10 a 20 bi" },
+    { min: 5e6, rotulo: "R$ 5 a 10 bi" },
+    { min: 0, rotulo: "menos de R$ 5 bi" },
+  ];
+  var topnPorte = null;      // linhas de contagem por faixa de porte
+  var topnValor = null;      // função município -> valor do ranking (pop ou pib)
 
   function montarListaTopN(jogo) {
     var alvo = $("lista-jogo");
     alvo.innerHTML = "";
+    var porPib = jogo.cfg.metrica === "pib";
+    topnValor = porPib
+      ? function (m) { return m.pib; }
+      : function (m) { return m.pop; };
     var item = document.createElement("div");
     item.className = "item-faixa";
     var chips = jogo.alvos.map(function (m, i) {
       return '<span class="chip" data-rank="' + (i + 1) + '">' + (i + 1) + " •••</span>";
     }).join("");
-    var portes = FAIXAS_POP.map(function (fx) {
+    var portes = (porPib ? FAIXAS_PIB : FAIXAS_POP).map(function (fx) {
       return { min: fx.min, rotulo: fx.rotulo, total: 0, achados: 0 };
     });
-    // cada alvo cai na primeira faixa (de cima para baixo) que a população alcança
+    // cada alvo cai na primeira faixa (de cima para baixo) que o valor alcança
     jogo.alvos.forEach(function (m) {
       for (var i = 0; i < portes.length; i++) {
-        if (m.pop >= portes[i].min) { portes[i].total++; break; }
+        if (topnValor(m) >= portes[i].min) { portes[i].total++; break; }
       }
     });
     var htmlPortes = portes.map(function (p, i) {
@@ -2366,7 +2403,7 @@
         "</span><b id='topn-porte-" + i + "'>0/" + p.total + "</b></div>";
     }).join("");
     item.innerHTML = "<div class='titulo-faixa'><span>As " + jogo.alvosTotal +
-      " maiores</span><span id='topn-contador'>0/" + jogo.alvosTotal +
+      " maiores" + (porPib ? " por PIB" : "") + "</span><span id='topn-contador'>0/" + jogo.alvosTotal +
       "</span></div><div class='portes'>" + htmlPortes +
       "</div><div class='chips'>" + chips + "</div>";
     alvo.appendChild(item);
@@ -2390,7 +2427,7 @@
     if (!faltante && topnPorte) {
       for (var i = 0; i < topnPorte.length; i++) {
         var p = topnPorte[i];
-        if (mun.pop >= p.min) {
+        if (topnValor(mun) >= p.min) {
           p.achados++;
           if (p.el) {
             p.el.textContent = p.achados + "/" + p.total;
@@ -2492,7 +2529,8 @@
         setVal("cfg-dist-raio", p.raio);
         if (p.metrica) $("cfg-dist-metrica").value = p.metrica;
       } else {
-        setVal("cfg-pop-alvo", p.alvo);
+        $("cfg-pop-metrica").value = p.metrica === "pib" ? "pib" : "pop";
+        setVal(p.metrica === "pib" ? "cfg-pop-alvo-pib" : "cfg-pop-alvo", p.alvo);
       }
       $("cfg-" + modo + "-homonimos").checked = p.homonimos === "1";
       $("cfg-" + modo + "-bloqueio").checked = p.bloqueio === "1";
@@ -2528,6 +2566,7 @@
       setVal("cfg-faixas-tempo", p.tempo);
     } else {
       setVal("cfg-topn-n", p.n);
+      $("cfg-topn-metrica").value = p.metrica === "pib" ? "pib" : "pop";
       $("cfg-topn-limite").value = p.tempo ? "tempo" : "livre";
       setVal("cfg-topn-tempo", p.tempo);
     }
@@ -2767,10 +2806,15 @@
     $("rotulo-faixas-tempo").hidden = $("cfg-faixas-limite").value !== "tempo";
     $("rotulo-topn-tempo").hidden = $("cfg-topn-limite").value !== "tempo";
     $("rotulo-mancha-tempo").hidden = $("cfg-mancha-limite").value !== "tempo";
+    // nos círculos por população, o campo do alvo acompanha a métrica
+    var popPorPib = $("cfg-pop-metrica").value === "pib";
+    $("rotulo-pop-alvo").hidden = popPorPib;
+    $("rotulo-pop-alvo-pib").hidden = !popPorPib;
   }
   document.querySelectorAll(".sel-limite").forEach(function (s) {
     s.addEventListener("change", atualizarCamposLimite);
   });
+  $("cfg-pop-metrica").addEventListener("change", atualizarCamposLimite);
   document.querySelectorAll("#config input, #config select").forEach(function (c) {
     c.addEventListener("change", atualizarRecordeUI);
   });
