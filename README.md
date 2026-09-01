@@ -1,11 +1,21 @@
-# 🗺️ Quiz do Mapa do Brasil
+# 🗺️ Mapa Quiz
 
-**Jogue online:** https://joaovfcarvalho.github.io/mapa-quiz/
+**Jogue online:** https://mapaquiz.com.br
 
 Jogo de quiz geográfico no estilo dos quizzes de mapa do HugeQuiz, cobrindo os
 5.571 municípios do Brasil. Roda 100% offline no navegador — basta abrir o
 `index.html` (duplo clique) — e guarda seus recordes pessoais por configuração
 no `localStorage` do navegador.
+
+## Desafio do dia
+
+Todo dia o jogo sorteia **um município secreto, o mesmo para todo mundo**
+(entre os de 100 mil+ habitantes), e você o procura como no "Onde estou?":
+cada palpite responde com a distância e a direção. Uma jogada por dia; o
+resultado vira uma linha de emojis para compartilhar (🟩 até 50 km, 🟨 até
+200, 🟧 até 500, 🟥 até 1.000, ⬛ além disso, 💡 por dica, 🎯 no acerto), e
+dias seguidos vencidos formam a sequência 🔥. O sorteio é determinístico
+(semente = número do dia desde 1º/9/2026), então não depende de servidor.
 
 ## Modos de jogo
 
@@ -115,6 +125,13 @@ mesmo desafio.
 **Relatório pós-partida** — ao final, o jogo mostra o que de maior ficou de
 fora: população na mesa e as maiores cidades esquecidas.
 
+## Tutorial
+
+Na primeira visita um tutorial guiado (holofote sobre cada parte da tela)
+apresenta o Desafio do dia, os modos, os três botões do mapa (🛰️ Satélite,
+● Pontos, ⬡ Formas), o zoom, a digitação e os recordes. Ele volta pelo botão
+❔ Como jogar, no topo.
+
 ## Seus pontos cegos
 
 A página `estatisticas.html` (botão 📊 Pontos cegos no topo) guarda, só no
@@ -126,7 +143,7 @@ diferentes ela apareceu.
 
 ## Mapa de densidade de municípios
 
-Além do quiz, a página `densidade.html` (botão 📍 Densidade no topo) mostra um
+Fora do jogo (sem link na navegação), a página `densidade.html` mostra um
 mapa de calor do Brasil: cada ponto do território é colorido pela quantidade
 de municípios (sedes municipais) existentes num raio de X km dele — raio
 ajustável de 20 a 500 km. Passe o mouse para ler o valor em qualquer ponto e
@@ -155,13 +172,21 @@ recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
   área e PIB. Com o botão ⬡ Formas ligado, o território inteiro do município
   responde ao mouse — não é preciso acertar o pontinho da sede.
 
-## Recordes
+## Recordes e backup
 
 Cada combinação exata de modo + parâmetros tem seu próprio recorde (maior %;
 em caso de empate, menor tempo), salvo no navegador. O botão 🏆 Recordes lista
 todos, com opção de apagar individualmente ou tudo — e de exportar/importar um
-backup em JSON (a importação mescla, ficando sempre com o melhor recorde de
-cada configuração).
+**backup completo** em JSON: recordes, progresso da maratona, municípios já
+citados (pontos cegos) e histórico do Desafio do dia. A importação só mescla
+(melhor recorde de cada configuração, união dos municípios da maratona, maior
+contador dos pontos cegos, união dos dias), nunca apaga nada. É o jeito de
+levar o progresso de um navegador ou aparelho para outro. Backups antigos
+(só recordes) continuam válidos.
+
+O botão 📣 no fim de cada partida compartilha o resultado (menu nativo no
+celular; copia o texto no desktop) com o link de desafio da mesma
+configuração.
 
 ## Dados
 
@@ -210,26 +235,72 @@ os outros 5.568 municípios formam um único bloco conexo.
 ```
 mapa-quiz/
 ├── index.html          # página única do jogo
-├── densidade.html      # mapa de densidade de municípios
+├── privacidade.html    # política de privacidade (LGPD, Analytics, AdSense)
 ├── estatisticas.html   # mapa dos seus pontos cegos
+├── densidade.html      # mapa de densidade de municípios (fora da navegação)
+├── CNAME, robots.txt, sitemap.xml, manifest.webmanifest
 ├── css/style.css
+├── fonts/              # Sora (OFL), hospedada localmente
+├── img/                # ícone, silhueta do Brasil e imagem de compartilhamento
 ├── js/
+│   ├── config.js       # IDs de serviços (GA4, AdSense, Pix) — o único a editar
+│   ├── site.js         # aviso de privacidade, analytics, anúncios, apoio, compartilhar
 │   ├── geo.js          # haversine, rumo, círculos geodésicos, projeção
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
 │   ├── modos.js        # motores dos 11 modos de jogo + grafo de divisas
 │   ├── recordes.js     # recordes no localStorage
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
 │   ├── estatisticas.js # mapa e listas dos pontos cegos
-│   └── app.js          # interface, mapa SVG, zoom/pan
+│   ├── tutorial.js     # tutorial guiado
+│   └── app.js          # interface, mapa SVG, zoom/pan, Desafio do dia, backup
 ├── data/               # dados embutidos (gerados)
-└── tools/              # build_data.py e build_satelite.py (regeram os dados)
+└── tools/              # build_data.py, build_satelite.py, build_marca.py, og.html
 ```
 
-## Publicação
+## Publicação e domínio
 
-O site é servido pelo GitHub Pages a partir da branch `gh-pages`. Para publicar
-uma atualização, envie o conteúdo da `main` para lá:
+O site é servido pelo GitHub Pages a partir da branch `gh-pages`, no domínio
+**mapaquiz.com.br** (arquivo `CNAME` na raiz). Para publicar uma atualização,
+envie o conteúdo da `main` para lá:
 
 ```bash
 git push origin main:gh-pages
 ```
+
+DNS no registro.br (uma vez só), na zona de `mapaquiz.com.br`:
+
+| Tipo | Nome | Valor |
+|---|---|---|
+| A | `@` | `185.199.108.153` |
+| A | `@` | `185.199.109.153` |
+| A | `@` | `185.199.110.153` |
+| A | `@` | `185.199.111.153` |
+| CNAME | `www` | `joaovfcarvalho.github.io.` |
+
+Depois, em *Settings → Pages* do repositório, confirme o domínio
+`mapaquiz.com.br` e marque *Enforce HTTPS* (o certificado sai sozinho após a
+verificação do DNS, que pode levar até um dia).
+
+## Serviços externos (analytics, anúncios, apoio)
+
+Tudo fica desligado até preencher `js/config.js` — sem os IDs o jogo não
+carrega nada de terceiros e nem mostra o aviso de privacidade:
+
+- **`ga4`** — ID do Google Analytics 4 (`G-…`). Só é carregado após o
+  jogador aceitar o aviso; envia eventos como `partida_iniciada`,
+  `partida_encerrada`, `diario_jogado`, `compartilhou`, `tutorial_abriu`,
+  `apoio_abriu`.
+- **`adsense.cliente`** — ID do editor (`ca-pub-…`) e, opcionalmente, os
+  `slots` dos blocos. Os anúncios aparecem só na tela de resultado e no fim da
+  lista de modos, nunca durante a partida, e só após o consentimento. Para o
+  AdSense aprovar o site é preciso também um `ads.txt` na raiz com a linha
+  `google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0` (o ID sem o
+  prefixo `ca-`) — o painel do AdSense mostra a linha exata.
+- **`pix`** — chave, nome e cidade do recebedor. Liga o botão ☕ Apoiar, que
+  copia a chave ou o código "Pix copia e cola" (BR Code gerado no navegador,
+  com CRC). `apoioLinks` acrescenta links (apoia.se, Ko-fi…).
+- **`contatoEmail`** — aparece na política de privacidade.
+
+A imagem de compartilhamento (`img/og.png`, 1200×630) e os ícones são
+renderizados de `tools/og.html` e `img/icone.svg`; a silhueta do Brasil e o
+ícone vêm de `tools/build_marca.py`.

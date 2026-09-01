@@ -5,23 +5,42 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1b28">
 <meta name="apple-mobile-web-app-title" content="Mapa Quiz">
-<title>Quiz do Mapa do Brasil</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+<title>Mapa Quiz — o quiz dos 5.571 municípios do Brasil</title>
+<meta name="description" content="Doze modos de jogo sobre o mapa do Brasil: cubra o país com círculos, cite as maiores cidades, viaje por divisas municipais, ache o município secreto e encare o Desafio do dia. Grátis, sem cadastro.">
+<link rel="canonical" href="https://mapaquiz.com.br/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mapa Quiz">
+<meta property="og:title" content="Mapa Quiz — quantos municípios do Brasil você conhece?">
+<meta property="og:description" content="Doze modos de jogo sobre o mapa do Brasil, um Desafio do dia e 5.571 municípios para lembrar. Grátis, sem cadastro.">
+<meta property="og:url" content="https://mapaquiz.com.br/">
+<meta property="og:image" content="https://mapaquiz.com.br/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="pt_BR">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Mapa Quiz — quantos municípios do Brasil você conhece?">
+<meta name="twitter:description" content="Doze modos de jogo sobre o mapa do Brasil, um Desafio do dia e 5.571 municípios para lembrar.">
+<meta name="twitter:image" content="https://mapaquiz.com.br/img/og.png">
+<link rel="icon" href="img/icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="img/icone-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="fonts/sora.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <header>
   <a class="marca" href="index.html">
-    <span class="marca-icone">🗺️</span>
+    <span class="marca-icone"><img src="img/icone.svg" alt="" width="36" height="36"></span>
     <span class="marca-texto">
-      <b>Quiz do Mapa do Brasil</b>
+      <b>Mapa Quiz</b>
       <small>5.571 municípios na ponta da língua</small>
     </span>
   </a>
   <nav class="header-acoes">
+    <button id="btn-tutorial" class="botao-sec" type="button" title="Como jogar">❔<span class="rotulo-topo"> Como jogar</span></button>
     <a href="estatisticas.html" class="botao-sec" title="Pontos cegos">📊<span class="rotulo-topo"> Pontos cegos</span></a>
-    <a href="densidade.html" class="botao-sec" title="Densidade">📍<span class="rotulo-topo"> Densidade</span></a>
     <button id="btn-recordes" class="botao-sec" type="button" title="Recordes">🏆<span class="rotulo-topo"> Recordes</span></button>
+    <button id="btn-apoiar" class="botao-sec apoiar" type="button" title="Apoie o jogo" hidden>☕<span class="rotulo-topo"> Apoiar</span></button>
   </nav>
 </header>
 
@@ -30,6 +49,13 @@
 
     <!-- tela 1: escolha do modo -->
     <section id="tela-modos">
+      <button id="card-diario" class="card-diario" type="button" data-modo="diario">
+        <span class="card-diario-topo"><span class="card-diario-selo">Desafio do dia</span><span id="diario-num"></span></span>
+        <b id="diario-titulo">Ache o município secreto</b>
+        <small id="diario-sub">O mesmo para todo mundo, um por dia. Cada palpite diz a distância e a direção.</small>
+        <span id="diario-status" class="card-diario-status"></span>
+      </button>
+
       <p class="tagline">Onze jeitos de provar que você conhece o Brasil —
       e um atlas para estudar antes. Escolha o seu desafio:</p>
 
@@ -124,6 +150,14 @@
           <span class="carta-seta">›</span>
         </button>
       </div>
+
+      <div class="anuncio" data-slot="modos" hidden></div>
+      <footer class="rodape">
+        <a href="privacidade.html">Privacidade</a>
+        <a href="#" id="link-apoiar" hidden>Apoie o jogo</a>
+        <a href="https://github.com/joaovfcarvalho/mapa-quiz" target="_blank" rel="noopener">Código-fonte</a>
+        <span>Dados: IBGE · Censo 2022</span>
+      </footer>
     </section>
 
     <!-- tela 2: configuração do modo escolhido -->
@@ -387,8 +421,10 @@
       <div id="fim-jogo" hidden></div>
       <div id="fim-acoes" hidden>
         <button id="btn-jogar-novo" class="botao-pri" type="button">↺ Jogar de novo</button>
-        <button id="btn-mudar-config" class="botao-sec" type="button">⚙ Configurar</button>
+        <button id="btn-compartilhar" class="botao-sec" type="button" title="Compartilhar o resultado">📣 Compartilhar</button>
+        <button id="btn-mudar-config" class="botao-sec" type="button" title="Voltar à configuração">⚙</button>
       </div>
+      <div class="anuncio" data-slot="resultado" hidden></div>
       <div id="linha-acoes">
         <button id="btn-dica" class="botao-sec" type="button" hidden>💡 Dica</button>
         <button id="btn-encerrar" class="botao-sec" type="button">🏳️ Encerrar / revelar respostas</button>
@@ -433,11 +469,11 @@
       <h2>🏆 Recordes pessoais</h2>
       <button id="btn-fechar-recordes" class="botao-sec" type="button">✕</button>
     </div>
-    <p class="modal-nota">Os recordes ficam salvos neste navegador (localStorage), um por configuração de jogo. Exporte um backup para não perdê-los ou para levá-los a outro navegador.</p>
+    <p class="modal-nota">Os recordes ficam salvos neste navegador, um por configuração de jogo. O backup leva <b>tudo</b> — recordes, maratona, pontos cegos e Desafio do dia — para outro navegador ou aparelho; importar só acrescenta, nunca piora o que já está aqui.</p>
     <p class="modal-nota" id="nota-import" hidden></p>
     <div id="lista-recordes"></div>
     <div class="modal-acoes">
-      <button id="btn-exportar-recordes" class="botao-sec" type="button">⬇ Exportar backup</button>
+      <button id="btn-exportar-recordes" class="botao-sec" type="button">⬇ Exportar backup completo</button>
       <button id="btn-importar-recordes" class="botao-sec" type="button">⬆ Importar backup</button>
       <input type="file" id="arquivo-recordes" accept=".json,application/json" hidden>
     </div>
@@ -445,6 +481,8 @@
   </div>
 </div>
 
+<script src="js/config.js"></script>
+<script src="js/site.js"></script>
 <script src="data/municipios.js"></script>
 <script src="data/brasil_uf.js"></script>
 <script src="js/geo.js"></script>
@@ -452,5 +490,6 @@
 <script src="js/recordes.js"></script>
 <script src="js/modos.js"></script>
 <script src="js/app.js"></script>
+<script src="js/tutorial.js"></script>
 </body>
 </html>

@@ -459,14 +459,15 @@ var MODOS = (function () {
   // ---------------------------------------------------------------
   // Modo 5 — Onde estou?: o jogo sorteia um município secreto (com população
   // mínima cfg.minPop) e cada palpite responde com distância e direção.
-  // cfg: {minPop, uf?}
+  // cfg: {minPop, uf?, secreto?}
   // ---------------------------------------------------------------
   function JogoOndeEstou(cfg) {
     this.cfg = cfg;
     var u = universoDe(cfg);
     this.universo = u.lista;
     this.pool = this.universo.filter(function (m) { return m.pop >= cfg.minPop; });
-    this.secreto = this.pool[Math.floor(Math.random() * this.pool.length)];
+    // cfg.secreto (Desafio do dia) fixa o município; senão é sorteio
+    this.secreto = cfg.secreto || this.pool[Math.floor(Math.random() * this.pool.length)];
     this.palpites = [];          // {mun, distKm, rumo}
     this.usados = new Set();
     this.dicasDadas = 0;         // cada dica custa +1 palpite no placar

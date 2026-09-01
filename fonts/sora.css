@@ -1,0 +1,10 @@
+/* Sora (SIL Open Font License 1.1) — https://github.com/sora-xor/sora-font
+   Fonte variável, subconjunto latin do Google Fonts, hospedada aqui para o
+   jogo funcionar offline e sem chamadas a terceiros. */
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("sora-latin.woff2") format("woff2");
+}

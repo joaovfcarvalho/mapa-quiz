@@ -405,6 +405,8 @@
   var recentes = [];        // idx dos municípios do último acerto da maratona
   var rotulosRecentes = []; // rótulos <text> desses acertos (somem no próximo)
   var cliqueInicio = null;  // posição do mousedown para distinguir clique de arrasto
+  var diarioAtual = null;   // {n, chave} quando a partida é o Desafio do dia
+  var ultimoResultado = null; // {texto, url} do fim da última partida (compartilhar)
 
   var DESCRICOES = {
     dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo da região antes de acabarem os palpites — ou o tempo.",
@@ -435,6 +437,7 @@
     cerco: { icone: "🏰", nome: "Cerco" },
     mancha: { icone: "🌱", nome: "Mancha" },
     ponte: { icone: "🌉", nome: "Ponte" },
+    diario: { icone: "📅", nome: "Desafio do dia" },
   };
 
   // modos que precisam do grafo de divisas (data/vizinhos.js, ~360 KB,
@@ -469,6 +472,159 @@
     Object.keys(TELAS).forEach(function (t) {
       $(TELAS[t]).hidden = t !== nome;
     });
+    if (nome === "modos") atualizarCardDiario();
+  }
+
+  // ------------------------------------------------------------------
+  // Desafio do dia: um "Onde estou?" com o mesmo município secreto para
+  // todo mundo, sorteado por uma semente derivada da data. Uma jogada por
+  // dia; o resultado (e a sequência de dias) fica no localStorage.
+  // ------------------------------------------------------------------
+  var LS_DIARIO = "mapaquiz.diario.v1";
+  var DIARIO_EPOCA = Date.UTC(2026, 8, 1); // desafio #1 = 1º de setembro de 2026
+  var DIARIO_MIN_POP = 100000;
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  function chaveDia(d) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+  function numeroDia(d) {
+    var meio = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+    return Math.floor((meio - DIARIO_EPOCA) / 86400000) + 1;
+  }
+  // mulberry32: gerador determinístico a partir da semente inteira
+  function rngSemente(semente) {
+    var a = (semente * 2654435761) >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      var t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var poolDiario = null;
+  function secretoDoDia(n) {
+    if (!poolDiario) {
+      poolDiario = DADOS.municipios
+        .filter(function (m) { return m.pop >= DIARIO_MIN_POP; })
+        .sort(function (a, b) { return a.id - b.id; }); // ordem estável, não a de população
+    }
+    var r = rngSemente(n);
+    r(); r(); // descarta as primeiras saídas (sementes vizinhas parecidas)
+    return poolDiario[Math.floor(r() * poolDiario.length)];
+  }
+  function lerDiario() {
+    try { return JSON.parse(localStorage.getItem(LS_DIARIO)) || { dias: {} }; }
+    catch (e) { return { dias: {} }; }
+  }
+  function salvarDiario(d) {
+    try { localStorage.setItem(LS_DIARIO, JSON.stringify(d)); } catch (e) {}
+  }
+  // sequência: dias consecutivos (até hoje ou ontem) com o desafio vencido
+  function sequenciaDiario(dados) {
+    var d = new Date();
+    var seq = 0;
+    var hoje = dados.dias[chaveDia(d)];
+    if (!hoje) d.setDate(d.getDate() - 1); // hoje ainda não jogou: conta a partir de ontem
+    for (;;) {
+      var r = dados.dias[chaveDia(d)];
+      if (!r || !r.venceu) break;
+      seq++;
+      d.setDate(d.getDate() - 1);
+    }
+    return seq;
+  }
+  function emojisDiario(res) {
+    var s = "";
+    (res.dists || []).forEach(function (km) {
+      s += km === 0 ? "🎯" : km < 50 ? "🟩" : km < 200 ? "🟨" : km < 500 ? "🟧" : km < 1000 ? "🟥" : "⬛";
+    });
+    for (var i = 0; i < (res.dicas || 0); i++) s += "💡";
+    if (!res.venceu) s += "🏳️";
+    return s;
+  }
+  function textoDiario(n, res, seq) {
+    var d = new Date();
+    var total = (res.dists || []).length + (res.dicas || 0);
+    return "🗺️ Mapa Quiz · Desafio #" + n + " (" + pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1) + ")\n" +
+      emojisDiario(res) + " " + (res.venceu
+        ? total + (total === 1 ? " palpite" : " palpites")
+        : "não achei") +
+      (seq > 1 ? "\n🔥 " + seq + " dias seguidos" : "") +
+      "\n" + SITE.dominio.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  }
+  function tempoAteAmanha() {
+    var agora = new Date();
+    var amanha = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1);
+    var seg = Math.max(0, Math.floor((amanha - agora) / 1000));
+    return Math.floor(seg / 3600) + "h" + pad2(Math.floor(seg / 60) % 60) + "min" + pad2(seg % 60) + "s";
+  }
+  var relogioDiario = null;
+  function atualizarCardDiario() {
+    var card = $("card-diario");
+    if (!card) return;
+    var hoje = new Date();
+    var n = numeroDia(hoje);
+    var dados = lerDiario();
+    var res = dados.dias[chaveDia(hoje)];
+    var seq = sequenciaDiario(dados);
+    $("diario-num").textContent = "#" + n + " · " + pad2(hoje.getDate()) + "/" + pad2(hoje.getMonth() + 1);
+    card.classList.toggle("jogado", !!res);
+    clearInterval(relogioDiario);
+    if (res) {
+      var total = (res.dists || []).length + (res.dicas || 0);
+      $("diario-titulo").textContent = res.venceu
+        ? "Feito! Achou em " + total + (total === 1 ? " palpite" : " palpites")
+        : "Hoje não deu — amanhã tem outro";
+      $("diario-sub").textContent = emojisDiario(res) + " · toque para rever o mapa";
+      function relogio() {
+        $("diario-status").textContent = (seq > 0 ? "🔥 " + seq + (seq === 1 ? " dia seguido" : " dias seguidos") + " · " : "") +
+          "próximo em " + tempoAteAmanha();
+      }
+      relogio();
+      relogioDiario = setInterval(relogio, 1000);
+    } else {
+      $("diario-titulo").textContent = "Ache o município secreto de hoje";
+      $("diario-sub").textContent = "O mesmo para todo mundo, um por dia. Cada palpite diz a distância e a direção.";
+      $("diario-status").textContent = seq > 0
+        ? "🔥 " + seq + (seq === 1 ? " dia seguido" : " dias seguidos") + " — jogue hoje para manter"
+        : "▶ Jogar agora";
+    }
+  }
+  function iniciarDiario() {
+    var hoje = new Date();
+    var n = numeroDia(hoje);
+    modoAtual = "diario";
+    abandonarJogo();
+    diarioAtual = { n: n, chave: chaveDia(hoje), secreto: secretoDoDia(n) };
+    iniciar();
+    // dia já jogado: refaz os palpites gravados para mostrar o mapa e o resultado
+    var res = lerDiario().dias[diarioAtual.chave];
+    if (res && jogo) {
+      var muns = (res.ids || []).map(function (id) {
+        return DADOS.municipios.filter(function (m) { return m.id === id; })[0];
+      }).filter(Boolean);
+      jogo.dicasDadas = res.dicas || 0;
+      muns.forEach(function (m) { if (jogo && !jogo.encerrado) palpitarOnde(m.nome + ", " + m.uf); });
+      if (jogo && !jogo.encerrado) fimDeJogo(true);
+    }
+  }
+  // grava o resultado do dia (só uma vez) e devolve o registro
+  function registrarDiario() {
+    var dados = lerDiario();
+    var k = diarioAtual.chave;
+    if (!dados.dias[k]) {
+      dados.dias[k] = {
+        n: diarioAtual.n,
+        venceu: jogo.venceu,
+        ids: jogo.palpites.map(function (p) { return p.mun.id; }),
+        dists: jogo.palpites.map(function (p) { return Math.round(p.distKm); }),
+        dicas: jogo.dicasDadas,
+      };
+      salvarDiario(dados);
+      SITE.rastrear("diario_jogado", { numero: diarioAtual.n, venceu: jogo.venceu, palpites: jogo.totalPalpites() });
+    }
+    return dados.dias[k];
   }
 
   // Sair de uma partida (trocar de tela ou de modo): a maratona salva antes,
@@ -795,10 +951,21 @@
   }
 
   function iniciar() {
-    var lido = lerConfig();
-    if (lido.erro) {
-      atualizarRecordeUI();
-      return;
+    var lido;
+    if (modoAtual === "diario") {
+      lido = {
+        cfg: { minPop: DIARIO_MIN_POP, secreto: diarioAtual.secreto },
+        chave: "diario|n=" + diarioAtual.n,
+        rotulo: "Desafio do dia #" + diarioAtual.n + " · município secreto de " +
+          NOME_POOL[DIARIO_MIN_POP],
+      };
+    } else {
+      diarioAtual = null;
+      lido = lerConfig();
+      if (lido.erro) {
+        atualizarRecordeUI();
+        return;
+      }
     }
     // os modos de divisas dependem do grafo de vizinhos: carrega e volta aqui
     if (MODOS_COM_VIZINHOS[modoAtual] && !window.VIZINHOS) {
@@ -813,7 +980,10 @@
     if (modoAtual === "dist") jogo = new MODOS.JogoCirculosDistancia(lido.cfg);
     else if (modoAtual === "pop") jogo = new MODOS.JogoCirculosPopulacao(lido.cfg);
     else if (modoAtual === "topn") jogo = new MODOS.JogoTopN(lido.cfg);
-    else if (modoAtual === "ondestou") jogo = new MODOS.JogoOndeEstou(lido.cfg);
+    else if (modoAtual === "ondestou" || modoAtual === "diario") {
+      jogo = new MODOS.JogoOndeEstou(lido.cfg);
+      jogoModo = "ondestou"; // o diário joga com o motor e a interface do Onde estou?
+    }
     else if (modoAtual === "clique") jogo = new MODOS.JogoClique(lido.cfg);
     else if (modoAtual === "caminho") jogo = new MODOS.JogoCaminho(lido.cfg);
     else if (modoAtual === "cerco") jogo = new MODOS.JogoCerco(lido.cfg);
@@ -840,8 +1010,11 @@
 
     citadasPartida = new Set();
     dicasUsadas = 0;
-    var info = INFO_MODOS[jogoModo];
+    ultimoResultado = null;
+    document.querySelectorAll(".anuncio[data-slot='resultado']").forEach(function (a) { a.hidden = true; });
+    var info = INFO_MODOS[diarioAtual ? "diario" : jogoModo];
     $("jogo-titulo").textContent = info.icone + " " + info.nome;
+    SITE.rastrear("partida_iniciada", { modo: diarioAtual ? "diario" : jogoModo, regiao: jogo.cfg.uf || "BR" });
     // o resumo da configuração dispensa o nome do modo, que já está no título
     var sub = jogoRotulo;
     if (sub.indexOf(info.nome) === 0) {
@@ -1573,6 +1746,7 @@
   }
 
   function fimSessaoMaratona(completou) {
+    $("btn-compartilhar").hidden = true;
     clearInterval(timerInt);
     salvarProgressoMaratona();
     jogo.encerrado = true;
@@ -2133,25 +2307,62 @@
     } else {
       placar = fmtPop(jogo.popCoberta) + " hab.";
     }
-    var res = RECORDES.registrar(jogoChave, {
-      pct: pct,
-      placar: placar,
-      rotulo: jogoRotulo,
-      tempoSeg: tempoSeg,
-      data: new Date().toISOString(),
-    });
     var el = $("fim-jogo");
     el.hidden = false;
-    el.className = res.melhor ? "recorde" : "";
-    el.innerHTML = (porTempo ? "⏰ <b>Tempo esgotado!</b>" : "<b>Fim de jogo!</b>") +
-      " Resultado: <b>" + fmtPct(pct) + "</b> (" + placar +
-      ") em " + fmtTempo(tempoSeg) + ".<br>" +
-      (res.melhor
-        ? "🎉 <b>Novo recorde pessoal nesta configuração!</b>"
-        : "Seu recorde nesta configuração segue " + fmtPct(res.recorde.pct) +
-          " (" + res.recorde.placar + ", " + fmtTempo(res.recorde.tempoSeg) + ").") +
-      relatorioFinal(faltantes);
-    atualizarRecordeUI();
+    SITE.rastrear("partida_encerrada", { modo: diarioAtual ? "diario" : jogoModo, pct: Math.round(pct * 100), desistiu: !!desistiu });
+    if (diarioAtual) {
+      // o diário não entra nos recordes por configuração: tem o próprio
+      // histórico, a sequência de dias e o resultado em emojis
+      var resD = registrarDiario();
+      var dadosD = lerDiario();
+      var seq = sequenciaDiario(dadosD);
+      var totalD = jogo.totalPalpites();
+      el.className = jogo.venceu ? "recorde" : "";
+      el.innerHTML = "<div class='resultado-topo'>" +
+        (jogo.venceu ? "<span class='resultado-pct'>" + totalD + "</span>" : "") +
+        "<span class='resultado-titulo'>" +
+        (jogo.venceu ? (totalD === 1 ? "palpite. Na mosca!" : "palpites até achar") : "🏳️ Não foi hoje") +
+        "</span></div>" +
+        "<div class='diario-emojis'>" + emojisDiario(resD) + "</div>" +
+        "<div class='diario-seq'>" + (seq > 0 ? "🔥 <b>" + seq + (seq === 1 ? " dia seguido" : " dias seguidos") + "</b> · " : "") +
+        "próximo desafio em <span id='diario-relogio'>" + tempoAteAmanha() + "</span></div>" +
+        relatorioFinal(faltantes);
+      ultimoResultado = { texto: textoDiario(diarioAtual.n, resD, seq), url: null };
+      clearInterval(relogioDiario);
+      relogioDiario = setInterval(function () {
+        var r = $("diario-relogio");
+        if (r) r.textContent = tempoAteAmanha(); else clearInterval(relogioDiario);
+      }, 1000);
+      $("btn-jogar-novo").hidden = true; // uma jogada por dia
+      $("btn-compartilhar").hidden = false;
+      $("btn-compartilhar").textContent = "📣 Compartilhar";
+    } else {
+      var res = RECORDES.registrar(jogoChave, {
+        pct: pct,
+        placar: placar,
+        rotulo: jogoRotulo,
+        tempoSeg: tempoSeg,
+        data: new Date().toISOString(),
+      });
+      el.className = res.melhor ? "recorde" : "";
+      el.innerHTML = "<div class='resultado-topo'><span class='resultado-pct'>" + fmtPct(pct) +
+        "</span><span class='resultado-titulo'>" + (porTempo ? "⏰ Tempo esgotado" : "Fim de jogo") + "</span></div>" +
+        placar + " em " + fmtTempo(tempoSeg) + ".<br>" +
+        (res.melhor
+          ? "🎉 <b>Novo recorde pessoal nesta configuração!</b>"
+          : "Seu recorde nesta configuração segue " + fmtPct(res.recorde.pct) +
+            " (" + res.recorde.placar + ", " + fmtTempo(res.recorde.tempoSeg) + ").") +
+        relatorioFinal(faltantes);
+      ultimoResultado = {
+        texto: "🗺️ Mapa Quiz · " + jogoRotulo + "\n" +
+          "Fiz " + fmtPct(pct) + " (" + placar + ") em " + fmtTempo(tempoSeg) + ". Consegue bater?",
+        url: urlDesafio(jogoChave, pct),
+      };
+      $("btn-compartilhar").hidden = false;
+      $("btn-compartilhar").textContent = "📣 Desafiar";
+      atualizarRecordeUI();
+    }
+    SITE.mostrarAnuncios("resultado");
   }
 
   // Relatório pós-partida: o que de maior ficou de fora.
@@ -2441,15 +2652,21 @@
   // configuração, então o link carrega a chave (e o recorde de quem enviou
   // como marca a bater).
   // ------------------------------------------------------------------
+  function urlDesafio(chave, pct) {
+    var base = /^https?:/.test(location.protocol) ? location.href.split("#")[0] : SITE.dominio;
+    var url = base + "#d=" + encodeURIComponent(chave);
+    if (typeof pct === "number") url += "&rec=" + (Math.round(pct * 1000) / 10);
+    return url;
+  }
   function copiarDesafio() {
     var lido = lerConfig();
     if (lido.erro) {
       atualizarRecordeUI();
       return;
     }
-    var url = location.href.split("#")[0] + "#d=" + encodeURIComponent(lido.chave);
     var rec = RECORDES.obter(lido.chave);
-    if (rec) url += "&rec=" + (Math.round(rec.pct * 1000) / 10);
+    var url = urlDesafio(lido.chave, rec ? rec.pct : undefined);
+    SITE.rastrear("desafio_copiado", { modo: modoAtual });
     var btn = $("btn-desafio");
     function avisar() {
       btn.textContent = "✔ Link copiado!";
@@ -2827,14 +3044,85 @@
   });
 
   $("btn-desafio").addEventListener("click", copiarDesafio);
+  $("btn-compartilhar").addEventListener("click", function () {
+    if (!ultimoResultado) return;
+    SITE.compartilhar(ultimoResultado.texto, this, ultimoResultado.url);
+  });
+  $("card-diario").addEventListener("click", iniciarDiario);
+  if (SITE.temApoio()) {
+    $("link-apoiar").hidden = false;
+    $("link-apoiar").addEventListener("click", function (ev) { ev.preventDefault(); SITE.abrirApoio(); });
+  }
 
+  // Backup completo: recordes, maratona, municípios citados, desafio do dia
+  // e preferências — tudo que o jogo guarda neste navegador, num JSON só.
+  function lerLS(chave) {
+    try { return JSON.parse(localStorage.getItem(chave)); } catch (e) { return null; }
+  }
+  function exportarBackup() {
+    return JSON.stringify({
+      formato: "mapaquiz-backup",
+      versao: 2,
+      exportadoEm: new Date().toISOString(),
+      recordes: JSON.parse(RECORDES.exportarJson()).recordes,
+      maratona: lerMaratonas(),
+      citadas: lerLS(LS_CITADAS) || {},
+      diario: lerDiario(),
+    }, null, 2);
+  }
+  // Mescla um backup: recordes pelo critério de melhor; maratona por união
+  // dos municípios (e o maior tempo); citadas pelo maior contador; diário
+  // por união dos dias. Nunca apaga nada do que já está aqui.
+  function importarBackup(texto) {
+    var obj;
+    try { obj = JSON.parse(texto); } catch (e) { return { ok: false, msg: "Arquivo inválido: não é um JSON." }; }
+    if (!obj || typeof obj !== "object") return { ok: false, msg: "Arquivo não parece um backup deste jogo." };
+    var r = RECORDES.importarJson(JSON.stringify({ recordes: obj.recordes || {} }));
+    if (!r.ok) return r;
+    var partes = [r.msg.replace(/\.$/, "")];
+    if (obj.maratona && typeof obj.maratona === "object") {
+      var minhas = lerMaratonas();
+      var novosMar = 0;
+      Object.keys(obj.maratona).forEach(function (reg) {
+        var deles = obj.maratona[reg];
+        if (!deles || !Array.isArray(deles.ids)) return;
+        var minha = minhas[reg] || { ids: [], tempoSeg: 0 };
+        var ids = new Set(minha.ids);
+        deles.ids.forEach(function (id) { if (!ids.has(id)) { ids.add(id); novosMar++; } });
+        minhas[reg] = { ids: Array.from(ids), tempoSeg: Math.max(minha.tempoSeg || 0, deles.tempoSeg || 0) };
+      });
+      try { localStorage.setItem(LS_MARATONA, JSON.stringify(minhas)); } catch (e) {}
+      if (novosMar) partes.push(novosMar + " município(s) a mais na maratona");
+    }
+    if (obj.citadas && typeof obj.citadas === "object") {
+      var tally = lerLS(LS_CITADAS) || {};
+      Object.keys(obj.citadas).forEach(function (id) {
+        tally[id] = Math.max(tally[id] || 0, obj.citadas[id] || 0);
+      });
+      try { localStorage.setItem(LS_CITADAS, JSON.stringify(tally)); } catch (e) {}
+      tallyCitadas = null; // relê na próxima partida
+      partes.push("pontos cegos mesclados");
+    }
+    if (obj.diario && obj.diario.dias) {
+      var meu = lerDiario();
+      var novosDias = 0;
+      Object.keys(obj.diario.dias).forEach(function (k) {
+        if (!meu.dias[k]) { meu.dias[k] = obj.diario.dias[k]; novosDias++; }
+      });
+      salvarDiario(meu);
+      if (novosDias) partes.push(novosDias + " dia(s) de desafio");
+      atualizarCardDiario();
+    }
+    return { ok: true, msg: "Backup importado: " + partes.join(", ") + "." };
+  }
   $("btn-exportar-recordes").addEventListener("click", function () {
-    var blob = new Blob([RECORDES.exportarJson()], { type: "application/json" });
+    var blob = new Blob([exportarBackup()], { type: "application/json" });
     var a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "mapa-quiz-recordes.json";
+    a.download = "mapa-quiz-backup.json";
     a.click();
     URL.revokeObjectURL(a.href);
+    SITE.rastrear("backup_exportado");
   });
   $("btn-importar-recordes").addEventListener("click", function () {
     $("arquivo-recordes").click();
@@ -2845,7 +3133,7 @@
     if (!arq) return;
     var leitor = new FileReader();
     leitor.onload = function () {
-      var r = RECORDES.importarJson(leitor.result);
+      var r = importarBackup(leitor.result);
       var nota = $("nota-import");
       nota.hidden = false;
       nota.textContent = r.ok ? "✔ " + r.msg : "⚠️ " + r.msg;
@@ -2876,6 +3164,7 @@
     $("dica-zoom").textContent = "pinça: zoom · arraste: mover · toque duplo: mapa inteiro";
   }
   atualizarCamposLimite();
+  atualizarCardDiario();
   aplicarDesafioDaURL();
   // um link de desafio colado na aba já aberta também vale
   window.addEventListener("hashchange", aplicarDesafioDaURL);

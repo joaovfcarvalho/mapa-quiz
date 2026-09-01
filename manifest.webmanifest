@@ -1,0 +1,15 @@
+{
+  "name": "Mapa Quiz — municípios do Brasil",
+  "short_name": "Mapa Quiz",
+  "description": "Doze modos de jogo sobre o mapa do Brasil e um Desafio do dia.",
+  "lang": "pt-BR",
+  "start_url": "./index.html?fonte=pwa",
+  "display": "standalone",
+  "background_color": "#0b141d",
+  "theme_color": "#0e1b28",
+  "icons": [
+    { "src": "img/icone-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "img/icone-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "img/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

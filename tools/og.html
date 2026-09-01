@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>og</title>
+<link rel="stylesheet" href="../fonts/sora.css">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    font-family: "Sora", system-ui, sans-serif; color: #e8eff5;
+    background: radial-gradient(90% 120% at 85% 50%, #1c2f42 0%, #0e1b28 55%, #0b141d 100%);
+    position: relative;
+  }
+  #mapa { position: absolute; right: 40px; top: 30px; height: 570px; }
+  .texto { position: absolute; left: 72px; top: 0; height: 630px; display: flex; flex-direction: column; justify-content: center; gap: 18px; width: 560px; }
+  .marca { display: flex; align-items: center; gap: 16px; }
+  .marca img { width: 64px; height: 64px; border-radius: 16px; }
+  .marca b { font-size: 52px; font-weight: 800; letter-spacing: -.02em; }
+  h2 { margin: 6px 0 0; font-size: 34px; font-weight: 600; line-height: 1.25; color: #ffffff; }
+  h2 span { color: #f5b942; }
+  p { margin: 0; font-size: 20px; line-height: 1.45; color: #93a7ba; }
+  .url { margin-top: 14px; display: inline-flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 999px; background: rgba(245,185,66,.14); border: 1px solid rgba(245,185,66,.5); color: #ffd479; font-size: 22px; font-weight: 600; width: max-content; }
+</style></head>
+<body>
+<svg id="mapa" viewBox="0 0 1000 1000"></svg>
+<div class="texto">
+  <div class="marca"><img src="../img/icone.svg" alt=""><b>Mapa Quiz</b></div>
+  <h2>Quantos dos <span>5.571 municípios</span> do Brasil você conhece?</h2>
+  <p>Doze modos de jogo sobre o mapa, um Desafio do dia e recordes para bater. Grátis, sem cadastro.</p>
+  <div class="url">🗺️ mapaquiz.com.br</div>
+</div>
+<script src="../data/brasil_uf.js"></script>
+<script src="../data/municipios.js"></script>
+<script>
+  var K = Math.cos(14 * Math.PI / 180);
+  var xs = [], ys = [];
+  BRASIL_UF.forEach(function (a) { a.forEach(function (p) { xs.push(p[0] * K); ys.push(-p[1]); }); });
+  var xmin = Math.min.apply(null, xs), xmax = Math.max.apply(null, xs);
+  var ymin = Math.min.apply(null, ys), ymax = Math.max.apply(null, ys);
+  var esc = 1000 / Math.max(xmax - xmin, ymax - ymin);
+  var ox = (1000 - (xmax - xmin) * esc) / 2, oy = (1000 - (ymax - ymin) * esc) / 2;
+  function X(lng) { return ox + (lng * K - xmin) * esc; }
+  function Y(lat) { return oy + (-lat - ymin) * esc; }
+  var svg = document.getElementById("mapa");
+  var d = BRASIL_UF.map(function (a) {
+    return "M" + a.map(function (p) { return X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1); }).join("L") + "Z";
+  }).join("");
+  var ns = "http://www.w3.org/2000/svg";
+  var path = document.createElementNS(ns, "path");
+  path.setAttribute("d", d);
+  path.setAttribute("fill", "#16273a");
+  path.setAttribute("stroke", "#4b6a8a");
+  path.setAttribute("stroke-width", "1.2");
+  svg.appendChild(path);
+  // pontos coloridos por população (mesma escala do jogo)
+  function cor(pop) {
+    var t = Math.max(0, Math.min(1, (Math.log10(Math.max(pop, 1000)) - 3) / 4));
+    var a = [245, 208, 76], b = [238, 108, 47], c = [122, 16, 32];
+    var p = t < .5 ? [a, b, t * 2] : [b, c, (t - .5) * 2];
+    return "rgb(" + p[0].map(function (v, i) { return Math.round(v + (p[1][i] - v) * p[2]); }).join(",") + ")";
+  }
+  MUNICIPIOS.slice().reverse().forEach(function (m) {
+    var c = document.createElementNS(ns, "circle");
+    c.setAttribute("cx", X(m[4]).toFixed(1)); c.setAttribute("cy", Y(m[3]).toFixed(1));
+    var r = m[5] > 1000000 ? 7 : m[5] > 300000 ? 4.5 : m[5] > 100000 ? 3 : 1.6;
+    c.setAttribute("r", r);
+    c.setAttribute("fill", cor(m[5]));
+    c.setAttribute("opacity", m[5] > 100000 ? .95 : .55);
+    svg.appendChild(c);
+  });
+</script>
+</body></html>
