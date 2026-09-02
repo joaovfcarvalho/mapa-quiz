@@ -550,8 +550,7 @@
       emojisDiario(res) + " " + (res.venceu
         ? total + (total === 1 ? " palpite" : " palpites")
         : "não achei") +
-      (seq > 1 ? "\n🔥 " + seq + " dias seguidos" : "") +
-      "\n" + SITE.dominio.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      (seq > 1 ? "\n🔥 " + seq + " dias seguidos" : "");
   }
   function tempoAteAmanha() {
     var agora = new Date();
@@ -2351,7 +2350,7 @@
         "<div class='diario-seq'>" + (seq > 0 ? "🔥 <b>" + seq + (seq === 1 ? " dia seguido" : " dias seguidos") + "</b> · " : "") +
         "próximo desafio em <span id='diario-relogio'>" + tempoAteAmanha() + "</span></div>" +
         relatorioFinal(faltantes);
-      ultimoResultado = { texto: textoDiario(diarioAtual.n, resD, seq), url: null };
+      ultimoResultado = { texto: textoDiario(diarioAtual.n, resD, seq), url: urlDiario() };
       clearInterval(relogioDiario);
       relogioDiario = setInterval(function () {
         var r = $("diario-relogio");
@@ -2689,11 +2688,19 @@
   // configuração, então o link carrega a chave (e o recorde de quem enviou
   // como marca a bater).
   // ------------------------------------------------------------------
-  function urlDesafio(chave, pct) {
+  function baseDesafio() {
     var base = /^https?:/.test(location.protocol) ? location.href.split("#")[0] : SITE.dominio;
-    var url = base + "#d=" + encodeURIComponent(chave);
+    return /\/$/.test(base) ? base : base + "/";
+  }
+  function urlDesafio(chave, pct) {
+    var url = baseDesafio() + "#d=" + encodeURIComponent(chave);
     if (typeof pct === "number") url += "&rec=" + (Math.round(pct * 1000) / 10);
     return url;
+  }
+  // o link do Desafio do dia não carrega configuração: abre o desafio da data
+  // em que for aberto (o município secreto vem da data, não do link)
+  function urlDiario() {
+    return baseDesafio() + "#diario";
   }
   function copiarDesafio() {
     var lido = lerConfig();
@@ -2717,6 +2724,12 @@
   }
 
   function aplicarDesafioDaURL() {
+    if (location.hash === "#diario") {
+      // link compartilhado do Desafio do dia: pula a tela inicial e já abre o jogo
+      SITE.rastrear("diario_via_link", {});
+      iniciarDiario();
+      return;
+    }
     if (location.hash.indexOf("#d=") !== 0) return;
     var partes = location.hash.slice(3).split("&");
     var chave = decodeURIComponent(partes[0]);

@@ -208,7 +208,9 @@ levar o progresso de um navegador ou aparelho para outro. Backups antigos
 
 O botão 📣 no fim de cada partida compartilha o resultado (menu nativo no
 celular; copia o texto no desktop) com o link de desafio da mesma
-configuração.
+configuração. No Desafio do dia o link é `mapaquiz.com.br/#diario`, que
+abre direto o desafio da data em que for aberto, sem passar pela tela
+inicial.
 
 ## Dados
 

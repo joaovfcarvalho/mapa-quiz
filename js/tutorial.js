@@ -176,7 +176,7 @@ var TUTORIAL = (function () {
     // primeira visita: só quando a tela de modos está à vista (um link de
     // desafio ou o modo diário pulam direto para o jogo)
     var telaModos = $("tela-modos");
-    if (!visto() && telaModos && !telaModos.hidden && location.hash.indexOf("#d=") !== 0) {
+    if (!visto() && telaModos && !telaModos.hidden && location.hash.indexOf("#d=") !== 0 && location.hash !== "#diario") {
       setTimeout(abrir, 700);
     }
   });
