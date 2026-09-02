@@ -15,7 +15,7 @@ window.MAPAQUIZ_CONFIG = {
   // nunca durante a partida. Os slots são os IDs dos blocos criados no painel
   // do AdSense (vazio = bloco automático).
   adsense: {
-    cliente: "",
+    cliente: "ca-pub-3843329468867244",
     slots: { resultado: "", modos: "" },
   },
 
