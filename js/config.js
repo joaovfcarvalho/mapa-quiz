@@ -8,7 +8,7 @@ window.MAPAQUIZ_CONFIG = {
 
   // Google Analytics 4 — ID de métrica, ex.: "G-XXXXXXXXXX".
   // Só carrega depois que o jogador aceita o aviso de privacidade.
-  ga4: "",
+  ga4: "G-JX91GS2KVY",
 
   // Google AdSense — ID do editor, ex.: "ca-pub-1234567890123456".
   // Os anúncios aparecem só na tela de resultado e no fim da lista de modos,
