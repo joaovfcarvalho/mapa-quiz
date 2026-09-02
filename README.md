@@ -26,7 +26,8 @@ antes de acabarem os palpites — ou o tempo. Por padrão vale a regra dura: uma
 círculo não pode mais ser usada como palpite (desligável na configuração).
 
 **2. Círculos por população** — cada cidade chutada vira o centro de um círculo
-que cresce até somar a população alvo (ex.: 1 milhão de habitantes). Cidades
+que cresce até somar a população alvo (ex.: 1 milhão de habitantes) — ou, se
+preferir, até somar o PIB alvo (ex.: R$ 50 bilhões). Cidades
 grandes geram círculos pequenos; cidades vazias geram círculos enormes.
 Estratégia: onde ancorar os círculos para cobrir o máximo do Brasil? Aqui a
 ordem importa ainda mais: com a regra padrão, cidade coberta não vale mais
@@ -40,10 +41,11 @@ até o tom cheio quando ela está 100% respondida. Tudo configurável: largura
 em km, quantidade de cidades por faixa e o centro dos anéis.
 
 **4. Top N cidades** — o modo raiz do HugeQuiz: cite de memória as N maiores
-cidades (100 por padrão), de preferência contra o relógio. Cada acerto acende
+cidades (100 por padrão), de preferência contra o relógio — com o ranking por
+população ou por PIB, à sua escolha. Cada acerto acende
 a cidade no mapa com a posição no ranking, e um placar por porte mostra
 quantas você já achou em cada faixa de população (ex.: 3/10 entre 500 mil e
-1 milhão).
+1 milhão) — ou de PIB, no ranking por PIB (ex.: 5/9 entre R$ 50 e 100 bi).
 
 **5. Onde estou?** — o jogo sorteia um município secreto (com o porte mínimo
 que você escolher) e cada palpite responde com a distância e a direção até
@@ -131,6 +133,26 @@ Na primeira visita um tutorial guiado (holofote sobre cada parte da tela)
 apresenta o Desafio do dia, os modos, os três botões do mapa (🛰️ Satélite,
 ● Pontos, ⬡ Formas), o zoom, a digitação e os recordes. Ele volta pelo botão
 ❔ Como jogar, no topo.
+## Quiz dos rios do Brasil
+
+A página `rios.html` (botão 🌊 Rios no topo) é um segundo quiz, agora de
+hidrografia: digite o nome de um rio (`rio amazonas`, `sao francisco`,
+`paraibadosul` — as mesmas regras frouxas de digitação do quiz principal) e o
+traçado inteiro dele acende no mapa, da nascente à foz. O placar conta os
+quilômetros de rio acesos; a espessura de cada traço acompanha a extensão, e
+os rios ainda não descobertos aparecem como um relevo esmaecido no papel
+(desligável no botão 🌊 Traços) — dá para caçar um meandro intrigante e tentar
+adivinhar quem ele é.
+
+Dois conjuntos: **grandes rios** (nível 1 da hidrografia da ANA, 79 alvos) ou
+**todos com afluentes** (níveis 1 + 2, 412 alvos e ~116 mil km). Rios
+homônimos acendem juntos e contam uma vez — há cinco Rio Verde e seis Rio
+Branco. Nomes com alternativa oficial ("Rio São Manuel ou Teles Pires")
+valem pelas duas. Jogue livre ou **contra o relógio** (minutos à escolha):
+o tempo esgotado encerra a partida sozinho. Dica 💡 aponta o maior que falta;
+encerrar revela os esquecidos em pontilhado vermelho e registra o recorde no
+navegador — cada combinação de conjunto e duração tem o seu, como nos outros
+modos.
 
 ## Seus pontos cegos
 
@@ -200,6 +222,7 @@ configuração.
 | Forma dos municípios (botão ⬡) | IBGE, API de malhas (qualidade mínima) |
 | Grafo de divisas (modos Caminho/Cerco/Mancha/Ponte) | derivado da malha municipal pelo `build_data.py` |
 | Fundo de satélite (botão 🛰️) | NASA Blue Marble Next Generation, 500 m/pixel (domínio público) |
+| Traçado e nome dos rios (quiz dos rios) | ANA/SNIRH, base hidrográfica ottocodificada, camadas "Hidrografia nível 1 e 2" |
 
 O grafo de "quem faz divisa com quem" não vem de nenhuma fonte extra: como os
 polígonos do IBGE encaixam exatamente ao longo das fronteiras, o
@@ -218,7 +241,17 @@ usam. Para regenerar a partir das fontes:
 cd tools
 python3 build_data.py          # baixa tudo da internet
 python3 build_satelite.py      # recorta o fundo de satélite dos tiles da NASA
+python3 build_rios.py          # baixa a hidrografia da ANA e gera data/rios.js
 ```
+
+No `build_rios.py`, os trechos da ANA chegam já generalizados pelo servidor
+(`maxAllowableOffset`) para a escala do mapa, são emendados por curso d'água
+(o mesmo curso ottocodificado troca de nome ao longo do caminho:
+Guaporé→Mamoré→Madeira é um código só) e recortados ao contorno das UFs com
+uma folga de ~10 km, para não picotar os rios que correm exatamente sobre a
+fronteira (Paraguai, Uruguai, Javari…). Rios estrangeiros que só encostam na
+fronteira (Beni, Marañon) ficam de fora. O resultado, `data/rios.js`
+(~770 KB, 229 KB gzipado), só é carregado pela página do quiz de rios.
 
 Observações: as distâncias usam o centroide (sede) de cada município, não o
 polígono; no objetivo "cobrir área", município coberto conta o território
@@ -236,6 +269,7 @@ os outros 5.568 municípios formam um único bloco conexo.
 mapa-quiz/
 ├── index.html          # página única do jogo
 ├── privacidade.html    # política de privacidade (LGPD, Analytics, AdSense)
+├── rios.html           # quiz dos rios do Brasil
 ├── estatisticas.html   # mapa dos seus pontos cegos
 ├── densidade.html      # mapa de densidade de municípios (fora da navegação)
 ├── CNAME, robots.txt, sitemap.xml, manifest.webmanifest
@@ -249,12 +283,13 @@ mapa-quiz/
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
 │   ├── modos.js        # motores dos 11 modos de jogo + grafo de divisas
 │   ├── recordes.js     # recordes no localStorage
+│   ├── rios.js         # quiz dos rios: busca, placar e mapa próprio
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
 │   ├── estatisticas.js # mapa e listas dos pontos cegos
 │   ├── tutorial.js     # tutorial guiado
 │   └── app.js          # interface, mapa SVG, zoom/pan, Desafio do dia, backup
 ├── data/               # dados embutidos (gerados)
-└── tools/              # build_data.py, build_satelite.py, build_marca.py, og.html
+└── tools/              # build_data.py, build_satelite.py, build_rios.py, build_marca.py, og.html
 ```
 
 ## Publicação e domínio

@@ -109,19 +109,23 @@ var MODOS = (function () {
   };
 
   // ---------------------------------------------------------------
-  // Modo 2 — Círculos por população: o círculo cresce a partir da cidade
-  // chutada até somar a população alvo.
-  // cfg: {popAlvo, palpites? (sem limite se ausente), uf?}
+  // Modo 2 — Círculos por população (ou PIB): o círculo cresce a partir da
+  // cidade chutada até somar a população alvo — ou, com metrica 'pib', até
+  // somar o PIB alvo.
+  // cfg: {metrica?: 'pop'|'pib', popAlvo (hab.) ou pibAlvo (R$ mil),
+  //       palpites? (sem limite se ausente), uf?}
   // ---------------------------------------------------------------
   function JogoCirculosPopulacao(cfg) {
     this.cfg = cfg;
     var u = universoDe(cfg);
     this.universo = u.lista;
     this.uniPop = u.pop;
+    this.uniPib = u.pib;
     this.jogadas = [];
     this.usados = new Set();   // idx dos municípios já chutados
     this.cobertos = new Set();
     this.popCoberta = 0;
+    this.pibCoberto = 0;       // R$ mil
     this.encerrado = false;
   }
   JogoCirculosPopulacao.prototype.palpitesRestantes = function () {
@@ -143,14 +147,16 @@ var MODOS = (function () {
 
     var novos = [];
     var ganhoPop = 0;
+    var ganhoPib = 0;
     var circulos = [];
     var cobertos = this.cobertos;
-    var popAlvo = this.cfg.popAlvo;
+    var porPib = this.cfg.metrica === "pib";
+    var alvo = porPib ? this.cfg.pibAlvo : this.cfg.popAlvo;
     var uni = this.universo;
     lista.forEach(function (mun) {
       usados.add(mun.idx);
 
-      // Ordena o universo pela distância à cidade chutada e acumula população
+      // Ordena o universo pela distância à cidade chutada e acumula a métrica
       // (cidades já cobertas também contam para "encher" o círculo).
       var porDist = uni
         .map(function (m) {
@@ -162,25 +168,28 @@ var MODOS = (function () {
       var raio = 0;
       for (var i = 0; i < porDist.length; i++) {
         var m = porDist[i].m;
-        acumulada += m.pop;
+        acumulada += porPib ? m.pib : m.pop;
         raio = porDist[i].d;
         if (!cobertos.has(m.idx)) {
           cobertos.add(m.idx);
           novos.push(m.idx);
           ganhoPop += m.pop;
+          ganhoPib += m.pib;
         }
-        if (acumulada >= popAlvo) break;
+        if (acumulada >= alvo) break;
       }
       raio = Math.max(raio, 8); // raio mínimo só para o círculo aparecer no mapa
-      circulos.push({ mun: mun, raioKm: raio, popDentro: acumulada });
+      circulos.push({ mun: mun, raioKm: raio, valorDentro: acumulada });
     });
     this.popCoberta += ganhoPop;
-    var jogada = { muns: lista, circulos: circulos, novos: novos, ganhoPop: ganhoPop };
+    this.pibCoberto += ganhoPib;
+    var jogada = { muns: lista, circulos: circulos, novos: novos, ganhoPop: ganhoPop, ganhoPib: ganhoPib };
     this.jogadas.push(jogada);
     if (this.cfg.palpites && this.jogadas.length >= this.cfg.palpites) this.encerrado = true;
     return { tipo: "ok", jogada: jogada };
   };
   JogoCirculosPopulacao.prototype.pct = function () {
+    if (this.cfg.metrica === "pib") return this.pibCoberto / this.uniPib;
     return this.popCoberta / this.uniPop;
   };
 
@@ -385,9 +394,10 @@ var MODOS = (function () {
   };
 
   // ---------------------------------------------------------------
-  // Modo 4 — Top N: citar de memória as N maiores cidades do universo.
-  // Os alvos são revelados no mapa e na lista com a posição no ranking.
-  // cfg: {n, uf?, tempoMin?}
+  // Modo 4 — Top N: citar de memória as N maiores cidades do universo — por
+  // população (padrão) ou por PIB (metrica 'pib'). Os alvos são revelados no
+  // mapa e na lista com a posição no ranking.
+  // cfg: {n, metrica?: 'pop'|'pib', uf?, tempoMin?}
   // ---------------------------------------------------------------
   function JogoTopN(cfg) {
     this.cfg = cfg;
@@ -396,7 +406,12 @@ var MODOS = (function () {
     this.uniPop = u.pop;
     this.encerrado = false;
     this.achadosTotal = 0;
-    this.alvos = this.universo.slice(0, Math.min(cfg.n, this.universo.length));
+    // o universo já vem ordenado por população; para o ranking por PIB o
+    // recorte dos N maiores sai de uma cópia reordenada
+    var ordenado = cfg.metrica === "pib"
+      ? this.universo.slice().sort(function (a, b) { return b.pib - a.pib; })
+      : this.universo;
+    this.alvos = ordenado.slice(0, Math.min(cfg.n, ordenado.length));
     this.alvosTotal = this.alvos.length;
     this.achados = new Set();
     this.rankPorAlvo = new Map(); // idx do município -> posição (1..N)
