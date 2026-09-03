@@ -401,6 +401,65 @@ main {
 #fim-acoes { display: flex; gap: 8px; }
 #fim-acoes .botao-pri { flex: 1; }
 
+/* ---------- placar geral (ranking público por configuração) ---------- */
+.placar-geral {
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: rgba(106, 178, 239, .08);
+  border: 1px solid rgba(106, 178, 239, .3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.placar-geral[hidden] { display: none; }
+.placar-titulo { font-family: var(--fonte-display); font-weight: 700; font-size: 13.5px; }
+.placar-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.placar-lista li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-areas: "pos nome pct" "pos det det";
+  column-gap: 8px;
+  align-items: baseline;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.placar-lista li:nth-child(odd) { background: rgba(255, 255, 255, .03); }
+.placar-lista li.eu { background: rgba(245, 185, 66, .14); outline: 1px solid rgba(245, 185, 66, .35); }
+.placar-lista .pos { grid-area: pos; color: var(--texto-suave); font-weight: 700; }
+.placar-lista li:nth-child(1) .pos { color: var(--ouro-claro); }
+.placar-lista .nome { grid-area: nome; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.placar-lista .pct { grid-area: pct; font-weight: 700; color: var(--info); }
+.placar-lista li.eu .pct { color: var(--ouro-claro); }
+.placar-lista .det { grid-area: det; font-size: 11.5px; color: var(--texto-suave); }
+.placar-vazio, .placar-total, .placar-nota, .placar-msg { margin: 0; font-size: 12.5px; color: var(--texto-suave); }
+.placar-msg { color: var(--ok); font-weight: 600; }
+.placar-msg b { color: var(--ouro-claro); }
+.placar-msg.erro { color: var(--ruim); font-weight: 500; }
+.placar-geral a { color: var(--info); }
+.placar-form { display: flex; gap: 7px; }
+.placar-nome {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--texto);
+  background: #0d1824;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+}
+.placar-nome:focus {
+  outline: none;
+  border-color: var(--info);
+  box-shadow: 0 0 0 3px rgba(106, 178, 239, .18);
+}
+.placar-nome::placeholder { color: #5f7488; }
+.placar-resumo { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(245, 185, 66, .3); color: var(--texto-suave); }
+.placar-resumo b { color: var(--info); }
+
 #lista-jogo { display: flex; flex-direction: column; gap: 7px; font-size: 13px; }
 .item-jogada {
   padding: 7px 10px;

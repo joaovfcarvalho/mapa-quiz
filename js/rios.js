@@ -199,12 +199,14 @@
       r.n + " rios para citar, " + fmt(r.kmTotal) + " km de traçado no total." +
       (cfg.tempoMin ? " Contra o relógio: " + cfg.tempoMin + " min." : "");
     var rec = RECORDES.obter(cfg.chave);
-    $("recorde-atual").hidden = !rec;
-    if (rec) {
-      $("recorde-atual").innerHTML = "Seu recorde nesta configuração: <b>" +
+    $("recorde-atual").hidden = !rec && !PLACAR.ativo;
+    $("recorde-atual").innerHTML = rec
+      ? "Seu recorde nesta configuração: <b>" +
         rec.pct.toFixed(1).replace(".", ",") + "%</b> dos km (" + rec.placar +
-        ") em " + fmtTempo(rec.tempoSeg) + ".";
-    }
+        ") em " + fmtTempo(rec.tempoSeg) + "."
+      : "Você ainda não jogou nesta configuração.";
+    // líder do placar geral desta configuração (só com o Supabase configurado)
+    PLACAR.resumo($("recorde-atual"), cfg.chave, { pct: fmtPctPlacar });
   }
 
   function iniciar() {
@@ -232,6 +234,7 @@
     $("secao-jogo").hidden = false;
     $("fim-jogo").hidden = true;
     $("fim-acoes").hidden = true;
+    PLACAR.limpar($("placar-geral"));
     $("dica-atual").hidden = true;
     $("feedback").textContent = "";
     $("feedback").className = "";
@@ -402,8 +405,13 @@
     $("fim-jogo").className = res.melhor ? "recorde" : "";
     $("fim-jogo").innerHTML = html;
     $("fim-acoes").hidden = false;
+    // placar geral: aqui o % local vai de 0 a 100; o placar trabalha de 0 a 1
+    PLACAR.montar($("placar-geral"), jogo.cfg.chave,
+      { pct: pct / 100, placar: placar, tempoSeg: jogo.tempoFinal, melhor: res.melhor },
+      { pct: fmtPctPlacar, tempo: fmtTempo });
     atualizarPlacar();
   }
+  function fmtPctPlacar(x) { return (x * 100).toFixed(1).replace(".", ",") + "%"; }
 
   function voltarConfig() {
     if (jogo && jogo.timer) clearInterval(jogo.timer);

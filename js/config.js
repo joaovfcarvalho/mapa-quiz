@@ -29,6 +29,15 @@ window.MAPAQUIZ_CONFIG = {
   // links extras de apoio, ex.: [{ rotulo: "apoia.se", url: "https://apoia.se/..." }]
   apoioLinks: [],
 
+  // Placar geral (ranking público por configuração, sem login): URL e chave
+  // pública (anon/publishable) de um projeto Supabase com o esquema de
+  // tools/placar.sql aplicado. Vazio = o bloco "Placar geral" não aparece e
+  // nada sai do navegador.
+  placar: {
+    url: "",   // ex.: "https://abcdefghijkl.supabase.co"
+    chave: "", // ex.: "sb_publishable_..." ou a anon key (eyJ...)
+  },
+
   // e-mail de contato exibido na política de privacidade
   contatoEmail: "",
 };

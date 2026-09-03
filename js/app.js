@@ -944,6 +944,8 @@
         " · tempo " + fmtTempo(rec.tempoSeg) +
         " · " + rec.jogos + (rec.jogos === 1 ? " jogo" : " jogos");
     }
+    // líder do placar geral desta configuração (só com o Supabase configurado)
+    PLACAR.resumo(el, lido.chave, { pct: fmtPct });
   }
 
   // ------------------------------------------------------------------
@@ -1044,6 +1046,7 @@
     document.body.classList.add("jogo-ativo");
     $("fim-jogo").hidden = true;
     $("fim-acoes").hidden = true;
+    PLACAR.limpar($("placar-geral"));
     $("feedback").textContent = "";
     $("feedback").className = "";
     $("dica-atual").hidden = true;
@@ -2360,6 +2363,7 @@
       $("btn-jogar-novo").hidden = true; // uma jogada por dia
       $("btn-compartilhar").hidden = false;
       $("btn-compartilhar").textContent = "📣 Compartilhar";
+      PLACAR.limpar($("placar-geral")); // o diário não entra no placar geral
     } else {
       var res = RECORDES.registrar(jogoChave, {
         pct: pct,
@@ -2384,6 +2388,10 @@
       };
       $("btn-compartilhar").hidden = false;
       $("btn-compartilhar").textContent = "📣 Desafiar";
+      // placar geral da configuração (só aparece com o Supabase configurado)
+      PLACAR.montar($("placar-geral"), jogoChave,
+        { pct: pct, placar: placar, tempoSeg: tempoSeg, melhor: res.melhor },
+        { pct: fmtPct, tempo: fmtTempo });
       atualizarRecordeUI();
     }
     SITE.mostrarAnuncios("resultado");
@@ -3112,6 +3120,7 @@
       maratona: lerMaratonas(),
       citadas: lerLS(LS_CITADAS) || {},
       diario: lerDiario(),
+      placar: PLACAR.exportar() || undefined, // apelido e passe do placar geral
     }, null, 2);
   }
   // Mescla um backup: recordes pelo critério de melhor; maratona por união
@@ -3157,6 +3166,7 @@
       if (novosDias) partes.push(novosDias + " dia(s) de desafio");
       atualizarCardDiario();
     }
+    if (obj.placar && PLACAR.importar(obj.placar)) partes.push("apelido do placar geral");
     return { ok: true, msg: "Backup importado: " + partes.join(", ") + "." };
   }
   $("btn-exportar-recordes").addEventListener("click", function () {

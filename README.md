@@ -210,6 +210,40 @@ O botão 📣 no fim de cada partida compartilha o resultado (menu nativo no
 celular; copia o texto no desktop) com o link de desafio da mesma
 configuração.
 
+## Placar geral (sem login)
+
+Com o Supabase configurado (ver abaixo), o fim de cada partida — no quiz
+principal e no dos rios — mostra o **placar geral daquela configuração**: os
+dez melhores resultados de quem jogou exatamente o mesmo desafio, e um campo
+para registrar o seu com um **apelido**. Não há cadastro nem senha: o
+navegador gera um código aleatório (o "passe") que prende o apelido a ele —
+ninguém sobrescreve o recorde do `joao-o-craque` sem o passe, e o passe viaja
+no backup completo para outro aparelho. Quem receber um link de desafio joga
+a mesma chave de configuração e cai no mesmo placar. Depois de escolher o
+apelido, cada novo recorde pessoal é registrado sozinho (o servidor guarda só
+o melhor de cada apelido por configuração); o link "Sair do placar" esquece o
+apelido. A tela de configuração mostra o líder da configuração escolhida
+("Recorde geral: 87,0% por joao-o-craque"). O Desafio do dia fica de fora —
+ele tem a própria sequência e o resultado em emojis.
+
+Como tudo roda no navegador, o placar funciona na base da confiança: os
+valores passam por validação de faixa e de formato e há um freio de ritmo por
+passe, mas nada impede alguém decidido de enviar um resultado inventado.
+Linhas suspeitas se apagam pelo painel do Supabase.
+
+Para ligar:
+
+1. Crie um projeto no [Supabase](https://supabase.com) (o plano gratuito
+   basta; escolha a região São Paulo).
+2. No *SQL Editor*, cole e execute `tools/placar.sql` (tabela `placar`,
+   políticas de leitura e a função `registrar_placar`, a única porta de
+   escrita — a chave pública só lê as colunas públicas e chama a função).
+3. Em *Settings → API*, copie a *Project URL* e a chave pública
+   (*publishable* ou *anon*) para `placar.url` e `placar.chave` em
+   `js/config.js`.
+
+Sem os dois campos preenchidos o bloco não aparece e nada sai do navegador.
+
 ## Dados
 
 | Dado | Fonte |
@@ -283,13 +317,14 @@ mapa-quiz/
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
 │   ├── modos.js        # motores dos 11 modos de jogo + grafo de divisas
 │   ├── recordes.js     # recordes no localStorage
+│   ├── placar.js       # placar geral por configuração (Supabase, sem login)
 │   ├── rios.js         # quiz dos rios: busca, placar e mapa próprio
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
 │   ├── estatisticas.js # mapa e listas dos pontos cegos
 │   ├── tutorial.js     # tutorial guiado
 │   └── app.js          # interface, mapa SVG, zoom/pan, Desafio do dia, backup
 ├── data/               # dados embutidos (gerados)
-└── tools/              # build_data.py, build_satelite.py, build_rios.py, build_marca.py, og.html
+└── tools/              # build_data.py, build_satelite.py, build_rios.py, build_marca.py, og.html, placar.sql
 ```
 
 ## Publicação e domínio
@@ -334,6 +369,8 @@ carrega nada de terceiros e nem mostra o aviso de privacidade:
 - **`pix`** — chave, nome e cidade do recebedor. Liga o botão ☕ Apoiar, que
   copia a chave ou o código "Pix copia e cola" (BR Code gerado no navegador,
   com CRC). `apoioLinks` acrescenta links (apoia.se, Ko-fi…).
+- **`placar`** — URL e chave pública do projeto Supabase com o esquema de
+  `tools/placar.sql`; liga o placar geral por configuração (ver acima).
 - **`contatoEmail`** — aparece na política de privacidade.
 
 A imagem de compartilhamento (`img/og.png`, 1200×630) e os ícones são
