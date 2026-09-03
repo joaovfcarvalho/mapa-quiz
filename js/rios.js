@@ -6,81 +6,11 @@
   var SVG_NS = "http://www.w3.org/2000/svg";
   var $ = function (id) { return document.getElementById(id); };
 
-  // ------------------------------------------------------------------
-  // Normalização e busca — as mesmas regras de digitação do quiz de
-  // municípios: acentos, maiúsculas, hífens e espaços não importam
-  // ------------------------------------------------------------------
-  function normalizar(s) {
-    return String(s)
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/['’´`]/g, "")
-      .replace(/-/g, " ")
-      .replace(/[^a-z0-9 ]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  // Alvos do conjunto escolhido, com os rios homônimos fundidos num alvo só
-  // (há cinco Rio Verde: digitou "verde", acendem os cinco e contam uma vez).
-  // Cada alvo: {nome, nivel, km, linhas, chaves, el, achado}
-  function montarAlvos(conjunto) {
-    var porNome = new Map();
-    RIOS.forEach(function (r) {
-      var nome = r[0], nivel = r[1], km = r[2], linhas = r[3];
-      if (conjunto === "grandes" && nivel !== 1) return;
-      var alvo = porNome.get(nome);
-      if (!alvo) {
-        porNome.set(nome, (alvo = {
-          nome: nome, nivel: nivel, km: 0, linhas: [], partes: 0,
-          el: null, achado: false,
-        }));
-      }
-      alvo.nivel = Math.min(alvo.nivel, nivel);
-      alvo.km += km;
-      alvo.partes += 1;
-      alvo.linhas = alvo.linhas.concat(linhas);
-    });
-    var alvos = Array.from(porNome.values());
-    alvos.sort(function (a, b) { return b.km - a.km; });
-
-    // índice de busca: cada forma aceita aponta para os alvos que casa —
-    // sem o prefixo "rio", sem artigo inicial e tudo junto também valem;
-    // nomes com alternativas ("Rio São Manuel ou Teles Pires") valem pelas duas
-    var indice = new Map();
-    function indexar(chave, alvo) {
-      if (!chave) return;
-      var lista = indice.get(chave);
-      if (!lista) indice.set(chave, (lista = []));
-      if (lista.indexOf(alvo) === -1) lista.push(alvo);
-      var junta = chave.replace(/ /g, "");
-      if (junta !== chave) indexar(junta, alvo);
-    }
-    alvos.forEach(function (alvo) {
-      var resto = normalizar(alvo.nome).replace(/^rio /, "");
-      resto.split(" ou ").forEach(function (alt) {
-        indexar(alt, alvo);
-        var semArtigo = alt.replace(/^d(a|as|o|os|e) /, "");
-        if (semArtigo !== alt) indexar(semArtigo, alvo);
-      });
-    });
-    return { alvos: alvos, indice: indice };
-  }
-
-  // Todas as formas que a digitação pode ter assumido, na ordem de tentativa.
-  function buscar(indice, texto) {
-    var t = normalizar(texto);
-    if (!t) return [];
-    var formas = [t, t.replace(/^rio /, ""), t.replace(/ /g, ""), t.replace(/ /g, "").replace(/^rio/, "")];
-    var achados = [];
-    formas.forEach(function (f) {
-      (indice.get(f) || []).forEach(function (alvo) {
-        if (achados.indexOf(alvo) === -1) achados.push(alvo);
-      });
-    });
-    return achados;
-  }
+  // Normalização, alvos e busca vivem em js/rios_motor.js — o mesmo código
+  // que o servidor do placar geral usa para refazer as partidas.
+  var normalizar = RIOS_MOTOR.normalizar;
+  var montarAlvos = RIOS_MOTOR.montarAlvos;
+  var buscar = RIOS_MOTOR.buscar;
 
   function fmt(n) { return Math.round(n).toLocaleString("pt-BR"); }
   function fmtTempo(seg) {
@@ -209,8 +139,21 @@
     PLACAR.resumo($("recorde-atual"), cfg.chave, { pct: fmtPctPlacar });
   }
 
+  // Com o placar geral ligado, a partida nasce no servidor (que a refaz no
+  // fim para conferir o resultado); sem resposta, joga-se sem placar.
+  var partidaPronta = false;
   function iniciar() {
     var cfg = lerConfig();
+    if (PLACAR.ativo && !partidaPronta) {
+      $("btn-iniciar").disabled = true;
+      PLACAR.iniciarPartida(cfg.chave).then(function () {
+        partidaPronta = true;
+        $("btn-iniciar").disabled = false;
+        iniciar();
+      });
+      return;
+    }
+    partidaPronta = false;
     var m = montarAlvos(cfg.conjunto);
     var kmTotal = 0;
     m.alvos.forEach(function (a) { kmTotal += a.km; });
@@ -308,6 +251,7 @@
     if (!jogo || jogo.encerrado) return;
     var texto = $("input-palpite").value;
     if (!normalizar(texto)) return;
+    PLACAR.anotar("p", texto); // diário da partida, para o servidor refazer
     var achados = buscar(jogo.indice, texto);
     if (!achados.length) {
       feedback("Não encontrei rio com esse nome no jogo. Vale com ou sem o \"rio\" na frente.", "erro");
@@ -405,16 +349,20 @@
     $("fim-jogo").className = res.melhor ? "recorde" : "";
     $("fim-jogo").innerHTML = html;
     $("fim-acoes").hidden = false;
-    // placar geral: aqui o % local vai de 0 a 100; o placar trabalha de 0 a 1
-    PLACAR.montar($("placar-geral"), jogo.cfg.chave,
-      { pct: pct / 100, placar: placar, tempoSeg: jogo.tempoFinal, melhor: res.melhor },
-      { pct: fmtPctPlacar, tempo: fmtTempo });
+    // placar geral: o servidor refaz a partida pelo diário e devolve a nota
+    // dele; só ela pode ser registrada
+    var chave = jogo.cfg.chave;
+    PLACAR.encerrarPartida({ placar: placar }).then(function (julg) {
+      if (julg) julg.melhor = res.melhor;
+      PLACAR.montar($("placar-geral"), chave, julg, { pct: fmtPctPlacar, tempo: fmtTempo });
+    });
     atualizarPlacar();
   }
   function fmtPctPlacar(x) { return (x * 100).toFixed(1).replace(".", ",") + "%"; }
 
   function voltarConfig() {
     if (jogo && jogo.timer) clearInterval(jogo.timer);
+    if (jogo && !jogo.encerrado) PLACAR.abandonarPartida();
     jogo = null;
     while (gRios.firstChild) gRios.removeChild(gRios.firstChild);
     document.body.classList.remove("jogo-ativo");

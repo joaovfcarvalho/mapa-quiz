@@ -226,23 +226,45 @@ apelido. A tela de configuração mostra o líder da configuração escolhida
 ("Recorde geral: 87,0% por joao-o-craque"). O Desafio do dia fica de fora —
 ele tem a própria sequência e o resultado em emojis.
 
-Como tudo roda no navegador, o placar funciona na base da confiança: os
-valores passam por validação de faixa e de formato e há um freio de ritmo por
-passe, mas nada impede alguém decidido de enviar um resultado inventado.
-Linhas suspeitas se apagam pelo painel do Supabase.
+**O servidor é o juiz.** A interface nunca envia uma pontuação. Ao iniciar
+uma partida ela pede ao servidor (uma Edge Function do Supabase,
+`supabase/functions/placar`) que a registre; ele devolve um número de partida
+e uma **semente** para os sorteios (município secreto, alvos do clique, do
+cerco e da ponte). Durante o jogo o navegador anota um **diário** — cada texto
+digitado, cada clique no mapa, cada dica pedida, na ordem — e, ao fim, envia
+só o diário. O servidor refaz a partida com o **mesmo motor do jogo**
+(`js/modos.js`, `js/dados.js`, `js/geo.js`, `js/rios_motor.js` e os dados,
+baixados do próprio site — sem cópia para envelhecer), mede o tempo pelo
+relógio dele e é a nota **dele** que vai para o placar. Partidas rápidas
+demais (menos de meio segundo por ação) ou que estouram o limite de tempo são
+recusadas; a chave de configuração precisa estar no formato canônico
+(`MODOS.configDeChave` recusa qualquer coisa fora das faixas da tela). O
+que continua impossível de impedir é um robô que *jogue* bem de verdade — o
+diário dele é uma partida legítima. O diário fica guardado na tabela
+`partidas` para conferência; linhas suspeitas se apagam pelo painel.
 
 Para ligar:
 
 1. Crie um projeto no [Supabase](https://supabase.com) (o plano gratuito
    basta; escolha a região São Paulo).
-2. No *SQL Editor*, cole e execute `tools/placar.sql` (tabela `placar`,
-   políticas de leitura e a função `registrar_placar`, a única porta de
-   escrita — a chave pública só lê as colunas públicas e chama a função).
-3. Em *Settings → API*, copie a *Project URL* e a chave pública
+2. No *SQL Editor*, cole e execute `tools/placar.sql` (tabelas `partidas` e
+   `placar`, leitura pública só das colunas públicas do placar e a função
+   `registrar_placar`, que só o serviço chama).
+3. Publique a Edge Function: com a
+   [CLI do Supabase](https://supabase.com/docs/guides/functions/quickstart)
+   instalada, na raiz do repositório,
+   `supabase link --project-ref <ref>` e depois
+   `supabase functions deploy placar` (o `supabase/config.toml` já a marca
+   como pública, sem JWT). Ela baixa o motor de `https://mapaquiz.com.br`;
+   para apontar para outro endereço, defina a variável `MAPAQUIZ_SITE` em
+   *Edge Functions → Secrets*.
+4. Em *Settings → API*, copie a *Project URL* e a chave pública
    (*publishable* ou *anon*) para `placar.url` e `placar.chave` em
    `js/config.js`.
 
 Sem os dois campos preenchidos o bloco não aparece e nada sai do navegador.
+Se o servidor não responder ao iniciar uma partida, ela segue normal, só sem
+placar (o bloco explica).
 
 ## Dados
 
@@ -317,13 +339,15 @@ mapa-quiz/
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
 │   ├── modos.js        # motores dos 11 modos de jogo + grafo de divisas
 │   ├── recordes.js     # recordes no localStorage
-│   ├── placar.js       # placar geral por configuração (Supabase, sem login)
-│   ├── rios.js         # quiz dos rios: busca, placar e mapa próprio
+│   ├── placar.js       # placar geral: partida no servidor, diário, apelido e passe
+│   ├── rios_motor.js   # quiz dos rios: alvos e busca (compartilhado com o servidor)
+│   ├── rios.js         # quiz dos rios: placar e mapa próprio
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
 │   ├── estatisticas.js # mapa e listas dos pontos cegos
 │   ├── tutorial.js     # tutorial guiado
 │   └── app.js          # interface, mapa SVG, zoom/pan, Desafio do dia, backup
 ├── data/               # dados embutidos (gerados)
+├── supabase/           # Edge Function `placar` (o juiz do placar geral) e config.toml
 └── tools/              # build_data.py, build_satelite.py, build_rios.py, build_marca.py, og.html, placar.sql
 ```
 
@@ -370,7 +394,8 @@ carrega nada de terceiros e nem mostra o aviso de privacidade:
   copia a chave ou o código "Pix copia e cola" (BR Code gerado no navegador,
   com CRC). `apoioLinks` acrescenta links (apoia.se, Ko-fi…).
 - **`placar`** — URL e chave pública do projeto Supabase com o esquema de
-  `tools/placar.sql`; liga o placar geral por configuração (ver acima).
+  `tools/placar.sql` e a Edge Function publicada; liga o placar geral por
+  configuração (ver acima).
 - **`contatoEmail`** — aparece na política de privacidade.
 
 A imagem de compartilhamento (`img/og.png`, 1200×630) e os ícones são

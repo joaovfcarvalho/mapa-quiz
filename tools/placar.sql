@@ -1,18 +1,45 @@
 -- Placar geral do Mapa Quiz — esquema para o Supabase (Postgres + PostgREST).
 --
 -- Cole este arquivo inteiro no SQL Editor do projeto (Dashboard → SQL Editor →
--- New query → Run). Depois copie a URL do projeto e a chave pública
--- (Settings → API → Project URL e anon/publishable key) para `placar` em
--- js/config.js. Rodar de novo é seguro (tudo é "if not exists"/"or replace").
+-- New query → Run). Rodar de novo é seguro (tudo é "if not exists"/"or replace").
+-- Depois publique a Edge Function `placar` (supabase/functions/placar) e copie
+-- a URL do projeto e a chave pública (Settings → API) para `placar` em
+-- js/config.js.
 --
--- Modelo: uma linha por (configuração, apelido) com o melhor resultado. Não há
--- login: cada navegador gera um "passe" aleatório (UUID) que acompanha o
--- apelido — só quem tem o passe atualiza a linha daquele apelido. Toda escrita
--- passa pela função registrar_placar, que valida os campos; a chave pública
--- (anon) só consegue LER as colunas públicas e CHAMAR a função.
+-- Modelo:
+--   partidas — uma linha por partida iniciada. A Edge Function cria a linha
+--              ao começar o jogo (com a semente dos sorteios), refaz a partida
+--              pelo diário de eventos ao fim e grava a nota DELA (pct, tempo).
+--   placar   — uma linha por (configuração, apelido) com o melhor resultado.
+--              Só a Edge Function escreve (via registrar_placar, com a chave
+--              de serviço); a chave pública (anon) só LÊ as colunas públicas.
+-- Não há login: cada navegador gera um "passe" (UUID) que acompanha o apelido
+-- — só quem tem o passe atualiza a linha daquele apelido.
 
 create extension if not exists unaccent with schema extensions;
 
+-- ---------------------------------------------------------------- partidas
+create table if not exists public.partidas (
+  id            uuid        primary key default gen_random_uuid(),
+  chave         text        not null,
+  semente       bigint      not null,            -- semente dos sorteios (0..2^32-1)
+  iniciada_em   timestamptz not null default now(),
+  encerrada_em  timestamptz,                     -- preenchida quando o diário foi conferido
+  pct           double precision check (pct >= 0 and pct <= 1),
+  placar        text,                            -- texto curto do resultado (só exibição)
+  tempo_seg     integer     check (tempo_seg >= 0),
+  eventos       jsonb,                           -- diário conferido (auditoria/moderação)
+  registrada    boolean     not null default false,
+  nome          text                             -- apelido com que foi registrada
+);
+create index if not exists partidas_limpeza_idx on public.partidas (registrada, iniciada_em);
+
+-- ninguém além do serviço (Edge Function) toca nas partidas
+alter table public.partidas enable row level security;
+revoke all on table public.partidas from anon, authenticated;
+grant all on table public.partidas to service_role;
+
+-- ------------------------------------------------------------------ placar
 create table if not exists public.placar (
   id            bigint generated always as identity primary key,
   chave         text        not null,            -- ex.: "topn|n=100|tempo=10|uf=SP"
@@ -35,13 +62,15 @@ create index if not exists placar_passe_idx
 -- Leitura pública das colunas públicas; nenhuma escrita direta.
 alter table public.placar enable row level security;
 revoke all on table public.placar from anon, authenticated;
+grant all on table public.placar to service_role;
 grant select (chave, nome, pct, placar, tempo_seg, atualizado_em)
   on table public.placar to anon, authenticated;
 drop policy if exists "placar: leitura publica" on public.placar;
 create policy "placar: leitura publica"
   on public.placar for select to anon, authenticated using (true);
 
--- Registra (ou melhora) o resultado de um apelido numa configuração.
+-- Registra (ou melhora) o resultado de um apelido numa configuração. Chamada
+-- só pela Edge Function (chave de serviço), depois de conferir a partida.
 -- Devolve {ok, melhorou, posicao, total, pct, tempo_seg} ou {ok:false, erro}.
 create or replace function public.registrar_placar(
   p_chave     text,
@@ -87,7 +116,7 @@ begin
     return jsonb_build_object('ok', false, 'erro', 'dados');
   end if;
 
-  -- freio simples contra scripts: no máximo 20 escritas por passe por minuto
+  -- freio simples: no máximo 20 escritas por passe por minuto
   select count(*) into v_recentes
     from public.placar
    where passe = p_passe and atualizado_em > now() - interval '1 minute';
@@ -137,9 +166,11 @@ begin
 end;
 $$;
 
+-- só o serviço chama a função: a interface não tem como inventar uma nota
 revoke all on function public.registrar_placar(text, text, double precision, text, integer, uuid) from public;
-grant execute on function public.registrar_placar(text, text, double precision, text, integer, uuid)
-  to anon, authenticated;
+revoke all on function public.registrar_placar(text, text, double precision, text, integer, uuid) from anon, authenticated;
+grant execute on function public.registrar_placar(text, text, double precision, text, integer, uuid) to service_role;
 
 -- Moderação: para tirar um apelido ou um resultado suspeito, basta apagar a
 -- linha pelo Table Editor (ou: delete from public.placar where nome_norm = '...').
+-- O diário da partida fica em partidas.eventos para conferência.

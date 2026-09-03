@@ -631,6 +631,7 @@
   // o mapa volta ao Brasil inteiro e as camadas de jogo são limpas.
   function abandonarJogo() {
     if (jogo && !jogo.encerrado) salvarProgressoMaratona();
+    if (jogo && !jogo.encerrado) PLACAR.abandonarPartida();
     clearInterval(timerInt);
     jogo = null;
     document.body.classList.remove("jogo-ativo");
@@ -969,6 +970,7 @@
     });
   }
 
+  var partidaPronta = null; // resposta do servidor do placar à espera de iniciar()
   function iniciar() {
     var lido;
     if (modoAtual === "diario") {
@@ -990,6 +992,26 @@
     if (MODOS_COM_VIZINHOS[modoAtual] && !window.VIZINHOS) {
       carregarVizinhos(iniciar);
       return;
+    }
+    // com o placar geral ligado, a partida nasce no servidor (que a refaz no
+    // fim para conferir o resultado) e o sorteio usa a semente que ele mandou;
+    // sem resposta, a partida segue normal, só sem placar
+    if (PLACAR.ativo && modoAtual !== "maratona" && modoAtual !== "estudo" && modoAtual !== "diario") {
+      if (!partidaPronta) {
+        $("btn-iniciar").disabled = true;
+        $("btn-jogar-novo").disabled = true;
+        PLACAR.iniciarPartida(lido.chave).then(function (p) {
+          partidaPronta = p || { semSemente: true };
+          $("btn-iniciar").disabled = false;
+          $("btn-jogar-novo").disabled = false;
+          iniciar();
+        });
+        return;
+      }
+      if (typeof partidaPronta.semente === "number") {
+        lido.cfg.rng = MODOS.geradorAleatorio(partidaPronta.semente);
+      }
+      partidaPronta = null;
     }
     limparCamadasDeJogo();
     jogoModo = modoAtual;
@@ -1286,6 +1308,8 @@
   function palpitar() {
     if (!jogo || jogo.encerrado) return;
     var texto = $("input-palpite").value;
+    // diário da partida: o servidor do placar refaz cada palpite na ordem
+    if (jogoModo !== "estudo" && DADOS.normalizar(texto)) PLACAR.anotar("p", texto);
     if (jogoModo === "faixas" || jogoModo === "topn") return palpitarAlvos(texto);
     if (jogoModo === "maratona") return palpitarMaratona(texto);
     if (jogoModo === "estudo") return buscarEstudo(texto);
@@ -2154,6 +2178,7 @@
   function responderClique(lat, lng) {
     var r = jogo.responder(lat, lng);
     if (!r) return;
+    PLACAR.anotar("c", lat, lng);
     // marca o clique (X), o lugar certo e a linha entre os dois
     var cx = proj.x(lng), cy = proj.y(lat);
     var vx = proj.x(r.mun.lng), vy = proj.y(r.mun.lat);
@@ -2189,6 +2214,7 @@
     if (jogoModo === "ondestou") {
       var d = jogo.dica();
       if (!d) return;
+      PLACAR.anotar("d");
       dicasUsadas = jogo.dicasDadas;
       var texto = d.tipo === "uf" ? "o município secreto fica em <b>" + NOMES_UF[d.valor] + " (" + d.valor + ")</b>"
         : d.tipo === "letra" ? "o nome começa com <b>«" + d.valor + "»</b>"
@@ -2204,6 +2230,7 @@
     } else if (jogoModo === "caminho" || jogoModo === "ponte" || jogoModo === "mancha") {
       var dv = jogo.dica(); // caminho e ponte já contam o custo no motor
       if (!dv) return;
+      PLACAR.anotar("d");
       dicasUsadas++;        // na mancha o desconto sai daqui no fim da partida
       var custo = jogoModo === "caminho" ? "+1 salto"
         : jogoModo === "ponte" ? "+1 município"
@@ -2219,6 +2246,7 @@
       if (dicasUsadas >= 3) return;
       var df = jogo.dica();
       if (!df) return;
+      PLACAR.anotar("d");
       dicasUsadas++;
       var onde = df.rank !== undefined
         ? "é o <b>" + df.rank + "º</b> do ranking"
@@ -2388,10 +2416,13 @@
       };
       $("btn-compartilhar").hidden = false;
       $("btn-compartilhar").textContent = "📣 Desafiar";
-      // placar geral da configuração (só aparece com o Supabase configurado)
-      PLACAR.montar($("placar-geral"), jogoChave,
-        { pct: pct, placar: placar, tempoSeg: tempoSeg, melhor: res.melhor },
-        { pct: fmtPct, tempo: fmtTempo });
+      // placar geral: o servidor refaz a partida pelo diário e devolve a nota
+      // dele; só ela pode ser registrada (só aparece com o Supabase configurado)
+      var chaveFim = jogoChave;
+      PLACAR.encerrarPartida({ placar: placar }).then(function (julg) {
+        if (julg) julg.melhor = res.melhor;
+        PLACAR.montar($("placar-geral"), chaveFim, julg, { pct: fmtPct, tempo: fmtTempo });
+      });
       atualizarRecordeUI();
     }
     SITE.mostrarAnuncios("resultado");

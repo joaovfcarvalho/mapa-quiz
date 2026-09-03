@@ -76,19 +76,28 @@
     <h2>Placar geral (opcional)</h2>
     <p>No fim de uma partida você pode registrar seu resultado no <b>placar
     geral</b> daquela configuração, para se comparar com quem jogou o mesmo
-    desafio. Não há cadastro, login nem senha: você escolhe um <b>apelido</b>
-    e ele vai para o servidor junto com o resultado (porcentagem, placar,
-    tempo e a configuração jogada) e com um código aleatório gerado pelo seu
+    desafio. Para que ninguém invente resultados, quem dá a nota é o
+    servidor: quando o placar está ligado, cada partida (fora a maratona, o
+    modo estudo e o Desafio do dia) é registrada no servidor ao começar e, ao
+    terminar, o navegador envia o <b>diário da partida</b> — os nomes que
+    você digitou, os pontos em que clicou no mapa e as dicas que pediu, na
+    ordem, sem nada além disso. O servidor refaz a partida e calcula a
+    porcentagem e o tempo. Esse diário não tem nome, apelido, endereço nem
+    identificador seu; partidas que você não registra com um apelido são
+    apagadas em até dois dias.</p>
+    <p>Registrar é opcional e não há cadastro, login nem senha: você escolhe
+    um <b>apelido</b> e ele fica associado àquela partida e ao resultado
+    calculado pelo servidor, junto com um código aleatório gerado pelo seu
     navegador, que serve só para que ninguém sobrescreva o seu apelido. Nada
     disso identifica você — por isso pedimos que use um apelido, não o nome
     completo. Depois que você escolhe o apelido, seus novos recordes pessoais
     são registrados automaticamente; o link “Sair do placar”, no mesmo bloco,
-    apaga o apelido deste navegador e interrompe os envios. Ver o placar (os
-    dez melhores da configuração) também consulta o servidor, mas não envia
-    nada seu. Os dados ficam numa base do <b>Supabase</b> hospedada no Brasil
-    (São Paulo) e são públicos por natureza: qualquer jogador vê os apelidos
-    e resultados. Para retirar um apelido do placar, peça pelo contato
-    abaixo.</p>
+    apaga o apelido deste navegador e interrompe os registros. Ver o placar
+    (os dez melhores da configuração) também consulta o servidor, mas não
+    envia nada seu. Os dados ficam numa base do <b>Supabase</b> hospedada no
+    Brasil (São Paulo) e o placar é público por natureza: qualquer jogador vê
+    os apelidos e resultados. Para retirar um apelido do placar, peça pelo
+    contato abaixo.</p>
 
     <h2>Estatísticas de uso</h2>
     <p>Para saber quantas pessoas jogam e quais modos elas preferem, o site

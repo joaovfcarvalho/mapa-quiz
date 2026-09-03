@@ -1,0 +1,7 @@
+# Configuração da CLI do Supabase para este repositório (só a Edge Function
+# do placar geral). Publique com: supabase functions deploy placar
+#
+# A função é pública por natureza (o jogo não tem login): sem exigir JWT,
+# aceita tanto a anon key antiga quanto as chaves "publishable" novas.
+[functions.placar]
+verify_jwt = false

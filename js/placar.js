@@ -1,12 +1,19 @@
 "use strict";
-// Placar geral: um ranking público por configuração de jogo, sem login. No
-// fim da partida o jogador escolhe um apelido e o resultado vai para uma
-// tabela no Supabase (Postgres + API REST); quem jogar a mesma configuração
-// vê os mesmos nomes. Não há conta nem senha: o navegador guarda um "passe"
-// aleatório que prende o apelido a este aparelho (ninguém sobrescreve o
-// recorde do "joao-o-craque" sem ele) — e o passe viaja no backup, como o
-// resto do progresso. Sem `placar.url`/`placar.chave` em js/config.js o
-// módulo fica inerte e o jogo continua 100% local.
+// Placar geral: um ranking público por configuração de jogo, sem login.
+//
+// Como funciona: ao iniciar uma partida o navegador pede ao servidor (uma
+// Edge Function do Supabase) que a registre; o servidor devolve um número de
+// partida e uma semente para os sorteios. Durante a partida o navegador
+// anota um diário (o que foi digitado, onde clicou, quando pediu dica) e, ao
+// fim, manda o diário: o servidor refaz a partida com o mesmo motor do jogo,
+// mede o tempo pelo relógio dele e é a nota DELE que vai para o placar — a
+// interface nunca envia uma pontuação, só o que o jogador fez.
+//
+// Sem conta nem senha: o jogador escolhe um apelido e o navegador guarda um
+// "passe" aleatório que prende o apelido a ele (ninguém sobrescreve o recorde
+// do "joao-o-craque" sem o passe); o passe viaja no backup completo. Sem
+// `placar.url`/`placar.chave` em js/config.js nada disto roda e o jogo segue
+// 100% local.
 var PLACAR = (function () {
   var CFG = (window.MAPAQUIZ_CONFIG || {}).placar || {};
   var URL_BASE = String(CFG.url || "").replace(/\/+$/, "");
@@ -15,6 +22,7 @@ var PLACAR = (function () {
   var LS_PASSE = "mapaquiz.placar.passe";
   var TOP_N = 10;
   var CACHE_MS = 60 * 1000;
+  var MAX_EVENTOS = 8000;
   var ativo = !!(URL_BASE && CHAVE_API && window.fetch && window.Promise);
   var cache = {}; // chave -> {quando, top, total}
 
@@ -38,8 +46,7 @@ var PLACAR = (function () {
     return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20);
   }
   // O passe fica também em memória: se o localStorage estiver bloqueado, a
-  // sessão inteira ainda usa um passe só (senão o segundo envio do mesmo
-  // apelido já cairia em "nome em uso").
+  // sessão inteira ainda usa um passe só.
   var passeMem = null;
   function passe() {
     var p = lerLS(LS_PASSE) || passeMem;
@@ -79,8 +86,8 @@ var PLACAR = (function () {
     };
   }
 
-  // Top N de uma configuração: [{nome, pct, placar, tempo_seg, atualizado_em}]
-  // e o total de jogadores registrados nela. Cache curto por chave.
+  // Top N de uma configuração (leitura direta da tabela, via PostgREST):
+  // [{nome, pct, placar, tempo_seg, atualizado_em}] e o total de jogadores.
   function top(chave, forcar) {
     if (!ativo) return Promise.reject(new Error("placar desligado"));
     var c = cache[chave];
@@ -106,35 +113,94 @@ var PLACAR = (function () {
     });
   }
 
-  // Registra (ou melhora) o resultado do apelido nesta configuração.
-  // resultado: {pct (0..1), placar, tempoSeg}. Resolve com a resposta do
-  // servidor: {ok, melhorou, posicao, total, pct, tempo_seg} ou {ok:false, erro}.
-  function registrar(chave, nome, resultado) {
-    if (!ativo) return Promise.reject(new Error("placar desligado"));
-    var v = validarNome(nome);
-    if (v.erro) return Promise.resolve({ ok: false, erro: "nome", msg: v.erro });
-    var corpo = {
-      p_chave: chave,
-      p_nome: v.nome,
-      p_pct: Math.max(0, Math.min(1, +resultado.pct || 0)),
-      p_placar: String(resultado.placar || "").slice(0, 80),
-      p_tempo_seg: Math.max(0, Math.round(+resultado.tempoSeg || 0)),
-      p_passe: passe(),
-    };
-    return fetch(URL_BASE + "/rest/v1/rpc/registrar_placar", {
+  // Chamada à Edge Function do placar (iniciar / encerrar / registrar).
+  function chamar(corpo, timeoutMs) {
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, timeoutMs || 10000) : null;
+    return fetch(URL_BASE + "/functions/v1/placar", {
       method: "POST",
       headers: cabecalhos(),
       body: JSON.stringify(corpo),
+      signal: ctrl ? ctrl.signal : undefined,
     }).then(function (resp) {
-      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      if (timer) clearTimeout(timer);
+      if (!resp.ok && resp.status !== 400) throw new Error("HTTP " + resp.status);
       return resp.json();
-    }).then(function (r) {
-      if (r && r.ok) {
-        gravarLS(LS_NOME, v.nome);
-        delete cache[chave];
-      }
-      return r;
+    }, function (e) {
+      if (timer) clearTimeout(timer);
+      throw e;
     });
+  }
+
+  // ---------------- partida (diário) ----------------
+  var partida = null; // {id, semente, chave, eventos, geracao}
+  var geracao = 0;    // cresce a cada partida nova: descarta respostas atrasadas
+
+  // Pede ao servidor uma partida nova. Resolve com {semente} (ou null se o
+  // placar não respondeu — a partida segue sem ele).
+  function iniciarPartida(chave) {
+    geracao++;
+    partida = null;
+    if (!ativo) return Promise.resolve(null);
+    var minhaGeracao = geracao;
+    return chamar({ acao: "iniciar", chave: chave }, 5000).then(function (r) {
+      if (minhaGeracao !== geracao || !r || !r.ok) return null;
+      partida = { id: r.partida, semente: r.semente, chave: chave, eventos: [], geracao: minhaGeracao };
+      return { semente: r.semente };
+    }, function () {
+      return null;
+    });
+  }
+
+  // Anota um evento do diário: "p" (texto digitado), "d" (dica pedida),
+  // "c" (clique no mapa: lat, lng).
+  function anotar(tipo, a, b) {
+    if (!partida || partida.eventos.length >= MAX_EVENTOS) return;
+    if (tipo === "p") partida.eventos.push(["p", String(a).slice(0, 80)]);
+    else if (tipo === "d") partida.eventos.push(["d"]);
+    else if (tipo === "c") partida.eventos.push(["c", +a, +b]);
+  }
+
+  function abandonarPartida() {
+    partida = null;
+    geracao++;
+  }
+
+  // Manda o diário; o servidor refaz a partida e devolve a nota dele.
+  // Resolve sempre com um julgamento: {ok:true, partida, pct, placar,
+  // tempo_seg} ou {ok:false, motivo}.
+  function encerrarPartida(extra) {
+    if (!ativo) return Promise.resolve({ ok: false, motivo: "desligado" });
+    if (!partida) return Promise.resolve({ ok: false, motivo: "sem_partida", geracao: geracao });
+    var p = partida;
+    partida = null;
+    return chamar({
+      acao: "encerrar",
+      partida: p.id,
+      eventos: p.eventos,
+      placar: String((extra && extra.placar) || "").slice(0, 80),
+    }, 20000).then(function (r) {
+      if (r && r.ok) {
+        return { ok: true, partida: p.id, chave: p.chave, pct: r.pct, placar: r.placar, tempo_seg: r.tempo_seg, geracao: p.geracao };
+      }
+      return { ok: false, motivo: (r && r.erro) || "servidor", geracao: p.geracao };
+    }, function () {
+      return { ok: false, motivo: "rede", geracao: p.geracao };
+    });
+  }
+
+  // Registra a partida (já conferida pelo servidor) com um apelido.
+  function registrar(partidaId, nome) {
+    var v = validarNome(nome);
+    if (v.erro) return Promise.resolve({ ok: false, erro: "nome", msg: v.erro });
+    return chamar({ acao: "registrar", partida: partidaId, nome: v.nome, passe: passe() }, 15000)
+      .then(function (r) {
+        if (r && r.ok) {
+          gravarLS(LS_NOME, v.nome);
+          cache = {};
+        }
+        return r;
+      });
   }
 
   var MSG_ERRO = {
@@ -142,7 +208,19 @@ var PLACAR = (function () {
       "Escolha outro — ou importe aqui o backup do outro aparelho para continuar com ele.",
     nome: "Apelido inválido: 2 a 20 caracteres, só letras, números, espaço, ponto, hífen ou sublinhado.",
     limite: "Calma! Muitos envios em pouco tempo — tente de novo daqui a pouco.",
-    chave: "Esta configuração não pode entrar no placar geral.",
+    ja_registrada: "Esta partida já foi registrada no placar.",
+    partida: "O servidor não encontrou esta partida — jogue de novo para registrar.",
+  };
+  var MSG_MOTIVO = {
+    sem_partida: "Esta partida começou sem conexão com o placar geral, então não pode ser registrada. A próxima entra normalmente.",
+    rede: "Sem conexão com o placar geral no fim da partida: o resultado não pôde ser conferido nem registrado.",
+    servidor: "O placar geral não conseguiu conferir esta partida agora.",
+    tempo: "O servidor não conseguiu validar o tempo desta partida (relógio do servidor × duração da partida), então ela não entra no placar.",
+    ritmo: "Palpites rápidos demais para o servidor confiar nesta partida — ela não entra no placar.",
+    chave: "Esta configuração não entra no placar geral.",
+    replay: "O servidor não conseguiu refazer esta partida — ela não entra no placar.",
+    ja_encerrada: "Esta partida já tinha sido enviada ao placar.",
+    partida: "O servidor não encontrou esta partida.",
   };
 
   // ---------------- formatação ----------------
@@ -162,19 +240,23 @@ var PLACAR = (function () {
   function ordinal(n) { return n + "º"; }
 
   // ---------------- widget da tela de resultado ----------------
-  // Monta em `el` o bloco "Placar geral" da configuração `chave`. Com
-  // `resultado` ({pct, placar, tempoSeg, melhor}) mostra também o formulário
-  // de apelido; se o jogador já tem apelido e fez recorde pessoal, envia
-  // sozinho (o servidor só guarda o melhor de cada apelido, então mandar um
-  // resultado pior seria inútil). `fmt` = {pct, tempo} para formatar.
-  function montar(el, chave, resultado, fmt) {
+  // Monta em `el` o bloco "Placar geral" da configuração `chave`. `julg` é o
+  // julgamento do servidor (de encerrarPartida) mais `melhor` (recorde
+  // pessoal local): com ok=true aparece o formulário de apelido — e, se o
+  // jogador já tem apelido e fez recorde pessoal, o registro vai sozinho (o
+  // servidor guarda só o melhor de cada apelido, então mandar um resultado
+  // pior seria inútil). `fmt` = {pct, tempo} para formatar.
+  function montar(el, chave, julg, fmt) {
     if (!el) return;
     if (!ativo) { el.hidden = true; el.innerHTML = ""; return; }
+    // resposta de uma partida que já não é a atual (o jogador começou outra)
+    if (julg && julg.geracao !== undefined && julg.geracao !== geracao) return;
     fmt = fmt || {};
     var fPct = fmt.pct || fmtPctPadrao;
     var fTempo = fmt.tempo || fmtTempoPadrao;
     var nome = nomeSalvo();
-    var estado = { enviado: false, resposta: null, msg: "", erro: false };
+    var estado = { enviando: false, resposta: null, msg: "", erro: false, digitado: undefined };
+    var dadosAtuais = null;
     el.hidden = false;
     el.className = "placar-geral";
 
@@ -198,25 +280,36 @@ var PLACAR = (function () {
     }
 
     function formulario() {
-      if (!resultado) return "";
+      if (!julg || julg.motivo === "desligado") return "";
+      if (!julg.ok) {
+        return "<p class='placar-nota'>" + (MSG_MOTIVO[julg.motivo] || MSG_MOTIVO.servidor) + "</p>";
+      }
+      var conferida = "Conferida pelo servidor: <b>" + fPct(julg.pct) + "</b> em " + fTempo(julg.tempo_seg) + ".";
       if (estado.resposta && estado.resposta.ok) {
         var r = estado.resposta;
         var texto = r.melhorou
           ? "✔ Registrado como <b>" + esc(nomeSalvo()) + "</b>: você é " + ordinal(r.posicao) + " de " + r.total + "."
           : "Seu melhor como <b>" + esc(nomeSalvo()) + "</b> segue " + fPct(r.pct) + " (" + fTempo(r.tempo_seg) +
             "), " + ordinal(r.posicao) + " de " + r.total + ".";
-        return "<p class='placar-msg'>" + texto + " <a href='#' class='placar-trocar'>trocar apelido</a></p>";
+        return "<p class='placar-msg'>" + texto + "</p>" +
+          "<p class='placar-nota'>" + conferida + " <a href='#' class='placar-trocar'>Trocar de apelido</a> a partir da próxima partida.</p>";
+      }
+      if (estado.registrada) {
+        return "<p class='placar-nota'>" + conferida + "</p>";
       }
       var salvo = nomeSalvo();
       var valor = estado.digitado !== undefined ? estado.digitado : salvo;
-      return "<form class='placar-form' autocomplete='off'>" +
+      return "<p class='placar-nota'>" + conferida + "</p>" +
+        "<form class='placar-form' autocomplete='off'>" +
         "<input type='text' class='placar-nome' maxlength='20' placeholder='seu apelido (ex.: joao-o-craque)' " +
         "value='" + esc(valor) + "' autocapitalize='none' spellcheck='false'>" +
-        "<button type='submit' class='botao-sec'>" + (estado.enviando ? "Enviando…" : "Registrar") + "</button>" +
+        "<button type='submit' class='botao-sec'" + (estado.enviando ? " disabled" : "") + ">" +
+        (estado.enviando ? "Enviando…" : "Registrar") + "</button>" +
         "</form>" +
         (estado.msg ? "<p class='placar-msg" + (estado.erro ? " erro" : "") + "'>" + estado.msg + "</p>" : "") +
-        (salvo ? "<p class='placar-nota'>Apelidos não têm senha: seus próximos recordes pessoais vão sozinhos para o placar. " +
-          "<a href='#' class='placar-sair'>Sair do placar</a></p>"
+        (salvo
+          ? "<p class='placar-nota'>Apelidos não têm senha: seus próximos recordes pessoais vão sozinhos para o placar. " +
+            "<a href='#' class='placar-sair'>Sair do placar</a></p>"
           : "<p class='placar-nota'>Sem cadastro: o apelido fica preso a este navegador (e ao seu backup). Use um apelido, não seu nome completo.</p>");
     }
 
@@ -232,11 +325,8 @@ var PLACAR = (function () {
       var trocar = el.querySelector(".placar-trocar");
       if (trocar) trocar.addEventListener("click", function (ev) {
         ev.preventDefault();
-        estado.resposta = null;
-        estado.msg = "";
-        render(dadosAtuais);
-        var inp = el.querySelector(".placar-nome");
-        if (inp) { inp.focus(); inp.select(); }
+        esquecerNome();
+        trocar.textContent = "✔ Na próxima partida o apelido será pedido de novo.";
       });
       var sair = el.querySelector(".placar-sair");
       if (sair) sair.addEventListener("click", function (ev) {
@@ -247,7 +337,6 @@ var PLACAR = (function () {
       });
     }
 
-    var dadosAtuais = null;
     function carregar(forcar) {
       return top(chave, forcar).then(function (d) {
         dadosAtuais = d;
@@ -259,7 +348,7 @@ var PLACAR = (function () {
 
     function enviar(ev) {
       if (ev) ev.preventDefault();
-      if (estado.enviando) return;
+      if (estado.enviando || !julg || !julg.ok) return;
       var inp = el.querySelector(".placar-nome");
       var digitado = inp ? inp.value : nomeSalvo();
       estado.digitado = digitado; // sobrevive às re-renderizações do bloco
@@ -273,16 +362,18 @@ var PLACAR = (function () {
       estado.enviando = true;
       estado.msg = "";
       render(dadosAtuais);
-      registrar(chave, v.nome, resultado).then(function (r) {
+      registrar(julg.partida, v.nome).then(function (r) {
         estado.enviando = false;
         if (r && r.ok) {
           nome = v.nome;
           estado.resposta = r;
+          estado.registrada = true;
           estado.erro = false;
           if (window.SITE && SITE.rastrear) SITE.rastrear("placar_registrou", { melhorou: !!r.melhorou });
           carregar(true);
         } else {
           estado.erro = true;
+          if (r && r.erro === "ja_registrada") estado.registrada = true;
           estado.msg = (r && (r.msg || MSG_ERRO[r.erro])) || "Não deu para registrar agora. Tente de novo.";
           render(dadosAtuais);
         }
@@ -297,7 +388,7 @@ var PLACAR = (function () {
     render(null);
     carregar(false).then(function () {
       // apelido já escolhido + recorde pessoal novo → registra sem pedir
-      if (resultado && resultado.melhor && nomeSalvo()) enviar();
+      if (julg && julg.ok && julg.melhor && nomeSalvo()) enviar();
     });
   }
 
@@ -387,6 +478,10 @@ var PLACAR = (function () {
     esquecerNome: esquecerNome,
     validarNome: validarNome,
     top: top,
+    iniciarPartida: iniciarPartida,
+    anotar: anotar,
+    abandonarPartida: abandonarPartida,
+    encerrarPartida: encerrarPartida,
     registrar: registrar,
     montar: montar,
     limpar: limpar,

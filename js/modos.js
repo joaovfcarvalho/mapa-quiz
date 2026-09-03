@@ -4,6 +4,23 @@
 var MODOS = (function () {
   var municipios = DADOS.municipios; // já ordenados por população (desc)
 
+  // Sorteios (secreto do Onde estou?, alvos do clique, do cerco e da ponte):
+  // por padrão Math.random; com cfg.rng (gerador com semente, vindo do placar
+  // geral) o servidor consegue refazer exatamente o mesmo sorteio.
+  function aleatorio(cfg) { return cfg && cfg.rng ? cfg.rng() : Math.random(); }
+
+  // Gerador determinístico (mulberry32) a partir de uma semente inteira.
+  function geradorAleatorio(semente) {
+    var a = (semente >>> 0) || 1;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      var t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
   // Universo da partida: o Brasil inteiro ou só os municípios de uma UF
   // (cfg.uf). O filtro preserva a ordenação por população.
   function universoDe(cfg) {
@@ -482,7 +499,7 @@ var MODOS = (function () {
     this.universo = u.lista;
     this.pool = this.universo.filter(function (m) { return m.pop >= cfg.minPop; });
     // cfg.secreto (Desafio do dia) fixa o município; senão é sorteio
-    this.secreto = cfg.secreto || this.pool[Math.floor(Math.random() * this.pool.length)];
+    this.secreto = cfg.secreto || this.pool[Math.floor(aleatorio(cfg) * this.pool.length)];
     this.palpites = [];          // {mun, distKm, rumo}
     this.usados = new Set();
     this.dicasDadas = 0;         // cada dica custa +1 palpite no placar
@@ -549,7 +566,7 @@ var MODOS = (function () {
     // sorteio sem reposição (Fisher–Yates parcial)
     var copia = pool.slice();
     for (var i = copia.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
+      var j = Math.floor(aleatorio(cfg) * (i + 1));
       var tmp = copia[i]; copia[i] = copia[j]; copia[j] = tmp;
     }
     this.alvos = copia.slice(0, Math.min(cfg.rodadas, copia.length));
@@ -868,7 +885,7 @@ var MODOS = (function () {
         this.erroInicial = "A região não tem municípios desse porte para o sorteio — escolha um porte menor.";
         return;
       }
-      alvo = pool[Math.floor(Math.random() * pool.length)];
+      alvo = pool[Math.floor(aleatorio(cfg) * pool.length)];
     }
     this.alvo = alvo;
     this.alvos = adj[alvo.idx]; // já ordenados por população (desc)
@@ -1025,8 +1042,8 @@ var MODOS = (function () {
     var achou = null;
     // sorteia até achar um par conectado e não trivial (3+ saltos de distância)
     for (var t = 0; t < 400 && !achou; t++) {
-      var a = pool[Math.floor(Math.random() * pool.length)];
-      var b = pool[Math.floor(Math.random() * pool.length)];
+      var a = pool[Math.floor(aleatorio(cfg) * pool.length)];
+      var b = pool[Math.floor(aleatorio(cfg) * pool.length)];
       if (!a || !b || a.idx === b.idx) continue;
       var caminho = menorCaminho(a, b, this.permitido);
       if (caminho && caminho.length - 1 >= 3) achou = { a: a, b: b, caminho: caminho };
@@ -1179,7 +1196,172 @@ var MODOS = (function () {
     return Math.min(1, this.minMeio / (this.usados + this.dicasDadas));
   };
 
+  // ---------------------------------------------------------------
+  // Configuração a partir da chave de recorde ("modo|param=valor|…"), que é
+  // a serialização canônica que a interface grava e que o placar geral usa
+  // para agrupar partidas. O servidor do placar refaz cada partida a partir
+  // dela, então aqui valem exatamente as mesmas faixas que a tela de
+  // configuração impõe; uma chave fora do formato canônico (parâmetro fora
+  // da faixa, ordem trocada, município inexistente) é recusada.
+  // Devolve {modo, cfg, chave} ou {erro}.
+  // ---------------------------------------------------------------
+  var _porId = null;
+  function municipioPorId(id) {
+    if (!_porId) {
+      _porId = new Map();
+      municipios.forEach(function (m) { _porId.set(String(m.id), m); });
+    }
+    return _porId.get(String(id)) || null;
+  }
+  var _ufs = null;
+  function ufValida(uf) {
+    if (!_ufs) {
+      _ufs = new Set();
+      municipios.forEach(function (m) { _ufs.add(m.uf); });
+    }
+    return _ufs.has(uf);
+  }
+  function configDeChave(chave) {
+    var tokens = String(chave || "").split("|");
+    var modo = tokens[0];
+    var p = {};
+    for (var i = 1; i < tokens.length; i++) {
+      var t = tokens[i];
+      var k = t.indexOf("=");
+      if (k <= 0 || p.hasOwnProperty(t.slice(0, k))) return { erro: "chave" };
+      p[t.slice(0, k)] = t.slice(k + 1);
+    }
+    function inteiro(v, min, max) {
+      if (v === undefined || !/^\d+$/.test(v)) return null;
+      var n = parseInt(v, 10);
+      return n < min || n > max ? null : n;
+    }
+    var uf;
+    if (p.uf !== undefined) {
+      if (!ufValida(p.uf)) return { erro: "chave" };
+      uf = p.uf;
+    }
+    var suf = uf ? "|uf=" + uf : "";
+    var cfg = { uf: uf };
+    var canon;
+    var tempo = null;
+    if (p.tempo !== undefined) {
+      tempo = inteiro(p.tempo, 1, 240);
+      if (tempo === null) return { erro: "chave" };
+    }
+    if (modo === "dist" || modo === "pop") {
+      var limite;
+      if (tempo !== null) {
+        if (p.palpites !== undefined) return { erro: "chave" };
+        cfg.tempoMin = tempo;
+        limite = "|tempo=" + tempo;
+      } else {
+        cfg.palpites = inteiro(p.palpites, 1, 100);
+        if (cfg.palpites === null) return { erro: "chave" };
+        limite = "|palpites=" + cfg.palpites;
+      }
+      cfg.homonimos = p.homonimos === "1";
+      cfg.bloqueio = p.bloqueio === "1";
+      var opc = (cfg.homonimos ? "|homonimos=1" : "") + (cfg.bloqueio ? "|bloqueio=1" : "");
+      if (modo === "dist") {
+        cfg.raio = inteiro(p.raio, 10, 2000);
+        cfg.metrica = p.metrica;
+        if (cfg.raio === null || ["pop", "cidades", "area", "pib"].indexOf(cfg.metrica) < 0) return { erro: "chave" };
+        canon = "dist|raio=" + cfg.raio + limite + "|metrica=" + cfg.metrica + opc + suf;
+      } else if (p.metrica === "pib") {
+        var alvoBi = inteiro(p.alvo, 1, 10000);
+        if (alvoBi === null) return { erro: "chave" };
+        cfg.metrica = "pib";
+        cfg.pibAlvo = alvoBi * 1e6;
+        canon = "pop|metrica=pib|alvo=" + alvoBi + limite + opc + suf;
+      } else {
+        if (p.metrica !== undefined) return { erro: "chave" };
+        cfg.metrica = "pop";
+        cfg.popAlvo = inteiro(p.alvo, 10000, 100000000);
+        if (cfg.popAlvo === null) return { erro: "chave" };
+        canon = "pop|alvo=" + cfg.popAlvo + limite + opc + suf;
+      }
+    } else if (modo === "ondestou" || modo === "clique") {
+      cfg.minPop = inteiro(p.pool, 0, 100000000);
+      if (cfg.minPop === null) return { erro: "chave" };
+      var pool = municipios.filter(function (m) { return m.pop >= cfg.minPop && (!uf || m.uf === uf); });
+      if (modo === "ondestou") {
+        if (pool.length < 2) return { erro: "chave" };
+        canon = "ondestou|pool=" + cfg.minPop + suf;
+      } else {
+        cfg.rodadas = inteiro(p.rodadas, 3, 50);
+        if (cfg.rodadas === null || cfg.rodadas > pool.length) return { erro: "chave" };
+        canon = "clique|pool=" + cfg.minPop + "|rodadas=" + cfg.rodadas + suf;
+      }
+    } else if (modo === "caminho") {
+      cfg.origem = municipioPorId(p.de);
+      cfg.destino = municipioPorId(p.para);
+      if (!cfg.origem || !cfg.destino || cfg.origem.idx === cfg.destino.idx) return { erro: "chave" };
+      if (uf && (cfg.origem.uf !== uf || cfg.destino.uf !== uf)) return { erro: "chave" };
+      canon = "caminho|de=" + cfg.origem.id + "|para=" + cfg.destino.id + suf;
+    } else if (modo === "cerco") {
+      if (p.alvo !== undefined) {
+        cfg = { alvo: municipioPorId(p.alvo) };
+        if (!cfg.alvo) return { erro: "chave" };
+        canon = "cerco|alvo=" + cfg.alvo.id;
+      } else {
+        cfg.minPop = inteiro(p.pool, 0, 100000000);
+        if (cfg.minPop === null) return { erro: "chave" };
+        canon = "cerco|pool=" + cfg.minPop + suf;
+      }
+    } else if (modo === "mancha") {
+      if (tempo !== null) cfg.tempoMin = tempo;
+      canon = "mancha" + (tempo !== null ? "|tempo=" + tempo : "") + suf;
+    } else if (modo === "ponte") {
+      cfg.minPop = inteiro(p.pool, 0, 100000000);
+      if (cfg.minPop === null) return { erro: "chave" };
+      canon = "ponte|pool=" + cfg.minPop + suf;
+    } else if (modo === "topn") {
+      cfg.n = inteiro(p.n, 5, 500);
+      if (cfg.n === null || (p.metrica !== undefined && p.metrica !== "pib")) return { erro: "chave" };
+      cfg.metrica = p.metrica === "pib" ? "pib" : "pop";
+      if (tempo !== null) cfg.tempoMin = tempo;
+      canon = "topn|n=" + cfg.n + (cfg.metrica === "pib" ? "|metrica=pib" : "") +
+        (tempo !== null ? "|tempo=" + tempo : "") + suf;
+    } else if (modo === "faixas") {
+      cfg.tipo = p.tipo;
+      cfg.largura = inteiro(p.largura, 50, 2000);
+      cfg.topN = inteiro(p.top, 1, 10);
+      if (["lat", "lng", "aneis", "grade"].indexOf(cfg.tipo) < 0 || cfg.largura === null || cfg.topN === null) return { erro: "chave" };
+      canon = "faixas|tipo=" + cfg.tipo + "|largura=" + cfg.largura + "|top=" + cfg.topN;
+      if (cfg.tipo === "aneis") {
+        cfg.centro = municipioPorId(p.centro);
+        if (!cfg.centro) return { erro: "chave" };
+        canon += "|centro=" + cfg.centro.id;
+      } else if (p.centro !== undefined) return { erro: "chave" };
+      if (tempo !== null) cfg.tempoMin = tempo;
+      canon += (tempo !== null ? "|tempo=" + tempo : "") + suf;
+    } else {
+      return { erro: "modo" }; // maratona, estudo, diário e desconhecidos: sem placar
+    }
+    if (canon !== chave) return { erro: "chave" };
+    return { modo: modo, cfg: cfg, chave: canon };
+  }
+
+  // Motor correspondente à configuração (para refazer uma partida).
+  function criarJogo(modo, cfg) {
+    if (modo === "dist") return new JogoCirculosDistancia(cfg);
+    if (modo === "pop") return new JogoCirculosPopulacao(cfg);
+    if (modo === "topn") return new JogoTopN(cfg);
+    if (modo === "ondestou") return new JogoOndeEstou(cfg);
+    if (modo === "clique") return new JogoClique(cfg);
+    if (modo === "caminho") return new JogoCaminho(cfg);
+    if (modo === "cerco") return new JogoCerco(cfg);
+    if (modo === "mancha") return new JogoMancha(cfg);
+    if (modo === "ponte") return new JogoPonte(cfg);
+    if (modo === "faixas") return new JogoFaixas(cfg);
+    return null;
+  }
+
   return {
+    geradorAleatorio: geradorAleatorio,
+    configDeChave: configDeChave,
+    criarJogo: criarJogo,
     JogoCirculosDistancia: JogoCirculosDistancia,
     JogoCirculosPopulacao: JogoCirculosPopulacao,
     JogoFaixas: JogoFaixas,
