@@ -73,6 +73,15 @@ header {
 header h1 { margin: 0; font-size: 16px; font-weight: 700; }
 .header-acoes { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .header-acoes .botao-sec { padding: 7px 12px; font-size: 12.5px; }
+.outros-modos { position: relative; }
+.outros-modos summary { cursor: pointer; list-style: none; }
+.outros-modos summary::-webkit-details-marker { display: none; }
+.outros-modos-links { position: absolute; right: 0; top: calc(100% + 8px); z-index: 100; width: 265px; padding: 6px; background: var(--painel-2); border: 1px solid var(--borda-forte); border-radius: 12px; box-shadow: 0 12px 32px #0006; }
+.outros-modos-links a { display: block; padding: 12px; border-radius: 8px; color: var(--texto); text-decoration: none; font-size: 13px; }
+.outros-modos-links a:hover, .outros-modos-links a:focus-visible { background: var(--painel-3); }
+.outros-modos-links a[aria-current="page"] { color: var(--ouro-claro); }
+.outros-modos-links small { display: block; margin-top: 5px; color: var(--texto-suave); font-size: 11px; }
+@media (max-width: 600px) { .outros-modos-links { right: auto; left: 0; max-width: calc(100vw - 32px); } }
 
 main {
   flex: 1;
