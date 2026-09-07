@@ -5,6 +5,19 @@
   function normalizar(s) { return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, ''); }
   function fmtTempo(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
   var alvos = BAIRROS_RIO.map(function (b) { return Object.assign({}, b); });
+  var metricas = BAIRROS_METRICAS.criar(alvos, BAIRROS_RIO_META);
+  var objetivos = { bairros: 'Bairros', populacao: 'População', area: 'Área' };
+  function numero(n, casas) { return n.toLocaleString('pt-BR', { maximumFractionDigits: casas || 0 }); }
+  function percentual(n) { return n.toFixed(1).replace('.', ',') + '%'; }
+  function resumo() { return metricas.resumo(new Set(alvos.filter(function (b) { return b.achado; }).map(function (b) { return b.id; }))); }
+  function info(b) {
+    var pop = b.populacao === null ? 'população incluída em Brás de Pina' : numero(b.populacao) + ' hab.' + (b.id === '045' ? ' (com Argentino)' : '');
+    return pop + ' · ' + numero(b.area, 2) + ' km²';
+  }
+  function resultadoMetrica(r, objetivo) {
+    var valor = objetivo === 'populacao' ? numero(r.populacao) + ' hab.' : objetivo === 'area' ? numero(r.area, 2) + ' km²' : r.bairros + ' de ' + alvos.length + ' bairros';
+    return percentual(r.pct[objetivo]) + ' · ' + valor;
+  }
   var indice = new Map();
   function indexar(nome, b) {
     var chave = normalizar(nome), lista = indice.get(chave) || [];
@@ -34,7 +47,7 @@
   function aplicarViewBox() { svg.setAttribute('viewBox', [vb.x, vb.y, vb.w, vb.h].join(' ')); }
   aplicarViewBox();
   var tooltip = $('tooltip');
-  function mostrarNome(b) { if (b.achado || (jogo && jogo.encerrado)) feedback(b.nome + ' · RA ' + b.ra, 'ok'); }
+  function mostrarNome(b) { if (b.achado || (jogo && jogo.encerrado)) feedback(b.nome + ' · ' + info(b) + ' · RA ' + b.ra, 'ok'); }
   alvos.forEach(function (b) {
     var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', b.aneis.map(function (r) { return r.map(function (p, i) { return (i ? 'L' : 'M') + proj.x(p[0]).toFixed(2) + ' ' + proj.y(p[1]).toFixed(2); }).join('') + 'Z'; }).join(''));
@@ -43,7 +56,7 @@
     path.addEventListener('focus', function () { mostrarNome(b); });
     path.addEventListener('mouseenter', function () {
       if (!b.achado && !(jogo && jogo.encerrado)) return;
-      tooltip.textContent = b.nome; tooltip.hidden = false;
+      tooltip.textContent = b.nome + ' · ' + info(b); tooltip.hidden = false;
       tooltip.style.left = '12px'; tooltip.style.top = '60px';
     });
     path.addEventListener('mouseleave', function () { tooltip.hidden = true; });
@@ -52,12 +65,16 @@
   var jogo = null;
   function config() {
     var minutos = $('cfg-limite').value === 'tempo' ? Math.max(1, Math.min(240, parseInt($('cfg-tempo').value, 10) || 10)) : 0;
-    return { minutos: minutos, chave: 'bairros-rio|base=2026-09|tempo=' + minutos, rotulo: 'Bairros do Rio · ' + (minutos ? minutos + ' min' : 'sem limite') };
+    var objetivo = $('cfg-objetivo').value;
+    // Keep existing count records; weighted objectives have independent versioned keys.
+    var chave = 'bairros-rio|base=2026-09|tempo=' + minutos;
+    if (objetivo !== 'bairros') chave += '|objetivo=' + objetivo + '|dados=' + BAIRROS_RIO_META.versaoMetricas;
+    return { minutos: minutos, objetivo: objetivo, chave: chave, rotulo: 'Bairros do Rio · ' + objetivos[objetivo] + ' · ' + (minutos ? minutos + ' min' : 'sem limite') };
   }
   function atualizarConfig() {
     var cfg = config(), rec = RECORDES.obter(cfg.chave);
     $('rotulo-tempo').hidden = !cfg.minutos;
-    $('resumo-conjunto').textContent = alvos.length + ' bairros para descobrir. ' + (cfg.minutos ? cfg.minutos + ' minutos.' : 'Jogue no seu ritmo.');
+    $('resumo-conjunto').textContent = alvos.length + ' bairros · ' + numero(metricas.total.populacao) + ' habitantes · ' + numero(metricas.total.area, 2) + ' km². Seu recorde vale pelo percentual de ' + objetivos[cfg.objetivo].toLowerCase() + '. ' + (cfg.minutos ? cfg.minutos + ' minutos.' : 'Jogue no seu ritmo.');
     $('recorde-atual').hidden = !rec;
     if (rec) $('recorde-atual').textContent = 'Seu recorde: ' + rec.placar + ' em ' + fmtTempo(rec.tempoSeg) + '.';
   }
@@ -67,9 +84,19 @@
     return false;
   }
   function placar() {
-    var n = jogo.achados, t = tempo();
-    $('barra-progresso').style.width = (100 * n / alvos.length) + '%';
-    $('placar-linhas').textContent = n + ' / ' + alvos.length + ' bairros · ' + (100 * n / alvos.length).toFixed(1).replace('.', ',') + '% · ' + (jogo.cfg.minutos && !jogo.encerrado ? 'Restam ' + fmtTempo(Math.max(0, jogo.cfg.minutos * 60 - t)) : fmtTempo(t));
+    var r = resumo(), t = tempo();
+    $('barra-progresso').style.width = r.pct[jogo.cfg.objetivo] + '%';
+    $('placar-linhas').replaceChildren();
+    var ordem = [jogo.cfg.objetivo].concat(Object.keys(objetivos).filter(function (o) { return o !== jogo.cfg.objetivo; }));
+    ordem.forEach(function (o) {
+      var linha = document.createElement('span'); linha.dataset.metrica = o;
+      linha.className = o === jogo.cfg.objetivo ? 'metrica-principal' : '';
+      linha.textContent = objetivos[o] + ': ' + resultadoMetrica(r, o);
+      $('placar-linhas').appendChild(linha);
+    });
+    var top = document.createElement('span'); top.id = 'placar-top10'; top.textContent = '★ Você acertou ' + r.top10 + ' dos 10 bairros mais populosos.';
+    var tempoLinha = document.createElement('span'); tempoLinha.textContent = jogo.cfg.minutos && !jogo.encerrado ? 'Restam ' + fmtTempo(Math.max(0, jogo.cfg.minutos * 60 - t)) : 'Tempo: ' + fmtTempo(t);
+    $('placar-linhas').append(top, tempoLinha);
   }
   function feedback(s, classe) { $('feedback').textContent = s; $('feedback').className = classe || ''; }
   function iniciar() {
@@ -82,7 +109,7 @@
     ['input-palpite', 'btn-palpitar', 'btn-dica', 'btn-encerrar'].forEach(function (id) { $(id).disabled = false; });
     $('lista-acertos').replaceChildren(); $('input-palpite').value = ''; feedback('');
     $('jogo-titulo').textContent = 'Bairros do Rio';
-    $('jogo-subtitulo').textContent = 'Município do Rio de Janeiro · ' + alvos.length + ' bairros';
+    $('jogo-subtitulo').textContent = 'Objetivo: ' + objetivos[jogo.cfg.objetivo].toLowerCase() + ' · ' + alvos.length + ' bairros';
     document.body.classList.add('jogo-ativo'); placar(); $('input-palpite').focus();
     jogo.timer = setInterval(function () { if (!expirou()) placar(); }, 1000);
   }
@@ -97,11 +124,13 @@
     b.achado = true; jogo.achados++;
     alvos.forEach(function (a) { a.el.classList.remove('recente'); });
     b.el.classList.add('acertado', 'recente'); revelar(b);
-    var item = document.createElement('div'); item.textContent = b.nome; $('lista-acertos').prepend(item);
-    feedback('✓ ' + b.nome, 'ok'); $('input-palpite').value = ''; $('input-palpite').focus(); $('dica-atual').hidden = true;
+    var item = document.createElement('div'), nome = document.createElement('b'), detalhe = document.createElement('small');
+    nome.textContent = b.nome; detalhe.textContent = info(b); item.append(nome, detalhe); $('lista-acertos').prepend(item);
+    var grupoPendente = (b.id === '045' || b.id === '166') && !alvos.filter(function (a) { return a.id === '045' || a.id === '166'; }).every(function (a) { return a.achado; });
+    feedback('✓ ' + b.nome + ' · ' + info(b) + (grupoPendente ? '. A população conjunta entra ao acertar Brás de Pina e Argentino.' : ''), 'ok'); $('input-palpite').value = ''; $('input-palpite').focus(); $('dica-atual').hidden = true;
     placar(); if (jogo.achados === alvos.length) encerrar(false);
   }
-  function revelar(b) { b.el.setAttribute('tabindex', '0'); b.el.setAttribute('aria-label', b.nome); }
+  function revelar(b) { b.el.setAttribute('tabindex', '0'); b.el.setAttribute('aria-label', b.nome + ' · ' + info(b)); }
   function dica() {
     if (!jogo || jogo.encerrado || expirou()) return;
     var faltam = alvos.filter(function (b) { return !b.achado; });
@@ -117,14 +146,16 @@
     $('dica-atual').hidden = true; tooltip.hidden = true;
     var faltam = alvos.filter(function (b) { return !b.achado; });
     alvos.forEach(function (b) { b.el.classList.remove('recente'); revelar(b); if (!b.achado) b.el.classList.add('faltante'); });
-    var resultado = jogo.achados + ' de ' + alvos.length + ' bairros';
-    var rec = RECORDES.registrar(jogo.cfg.chave, { pct: 100 * jogo.achados / alvos.length, placar: resultado, rotulo: jogo.cfg.rotulo, tempoSeg: jogo.tempoFinal, data: new Date().toISOString() });
+    var r = resumo();
+    var resultado = objetivos[jogo.cfg.objetivo] + ': ' + resultadoMetrica(r, jogo.cfg.objetivo);
+    var rec = RECORDES.registrar(jogo.cfg.chave, { pct: r.pct[jogo.cfg.objetivo], placar: resultado, rotulo: jogo.cfg.rotulo, tempoSeg: jogo.tempoFinal, data: new Date().toISOString() });
     $('fim-jogo').className = rec.melhor ? 'recorde' : '';
-    $('fim-jogo').textContent = (porTempo ? 'Tempo esgotado! ' : !faltam.length ? 'Você completou o Rio! ' : '') + resultado + ' em ' + fmtTempo(jogo.tempoFinal) + ' · ' + jogo.dicas + ' dica(s).' + (rec.melhor ? ' 🏆 Novo recorde pessoal!' : '');
+    $('fim-jogo').textContent = (porTempo ? 'Tempo esgotado! ' : !faltam.length ? 'Você completou o Rio! ' : '') + resultado + ' em ' + fmtTempo(jogo.tempoFinal) + ' · ' + jogo.dicas + ' dica(s). Você acertou ' + r.top10 + ' dos 10 bairros mais populosos.' + (rec.melhor ? ' 🏆 Novo recorde pessoal!' : '');
     if (faltam.length) {
       var details = document.createElement('details'), summary = document.createElement('summary'), ul = document.createElement('ul');
       details.className = 'relatorio'; summary.textContent = 'Ver os ' + faltam.length + ' bairros que faltaram (em coral no mapa)';
-      faltam.forEach(function (b) { var li = document.createElement('li'); li.textContent = b.nome; ul.appendChild(li); });
+      faltam.sort(function (a, b) { return jogo.cfg.objetivo === 'bairros' ? a.nome.localeCompare(b.nome, 'pt-BR') : (b[jogo.cfg.objetivo] || 0) - (a[jogo.cfg.objetivo] || 0); });
+      faltam.forEach(function (b) { var li = document.createElement('li'); li.textContent = b.nome + ' · ' + info(b); ul.appendChild(li); });
       details.append(summary, ul); $('fim-jogo').appendChild(details);
     }
     $('fim-jogo').hidden = false; $('fim-acoes').hidden = false; placar();
@@ -138,7 +169,7 @@
     atualizarConfig(); $('btn-iniciar').focus();
   };
   $('input-palpite').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); palpitar(); } });
-  ['cfg-limite', 'cfg-tempo'].forEach(function (id) { $(id).addEventListener('input', atualizarConfig); });
+  ['cfg-objetivo', 'cfg-limite', 'cfg-tempo'].forEach(function (id) { $(id).addEventListener('input', atualizarConfig); });
   $('btn-tracos').onclick = function () { var ocultos = svg.classList.toggle('sem-tracos'); $('btn-tracos').setAttribute('aria-pressed', String(!ocultos)); };
   $('btn-tracos').setAttribute('aria-pressed', 'true');
   $('fonte-data').textContent = 'Base consultada em ' + BAIRROS_RIO_META.consultadoEm.split('-').reverse().join('/') + '.';

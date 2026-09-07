@@ -163,6 +163,23 @@ jogo, com chaves próprias por duração e versão da base. Os limites podem ser
 ocultados, e o mapa aceita zoom, arrasto e pinça. Não há consultas externas
 para jogar: a geometria fica em `data/bairros_rio.js`, carregada só nesta página.
 
+O objetivo pode ser **bairros**, **população** ou **área**. A barra de progresso,
+o percentual final e o recorde seguem o critério escolhido; o placar acompanha
+os três e mostra “Você acertou X dos 10 bairros mais populosos”. Cada acerto,
+a lista e o mapa revelado mostram habitantes e km². Os recordes anteriores
+por quantidade de bairros são preservados; população e área têm chaves próprias
+por objetivo, duração e versão dos dados.
+
+A população vem do **Censo 2022 / IPP** (6.211.223 habitantes no total), e a área
+vem do campo `Shape__Area` da cartografia municipal em metros quadrados, convertido
+para km² antes da simplificação do mapa. São referências de datas distintas.
+Argentino não tem população individual nessa base: pertence ao conjunto censitário
+de Brás de Pina (45.048 habitantes). Essa população só é creditada quando ambos
+forem acertados, sem estimar a divisão nem contar habitantes duas vezes. O ranking
+usa as unidades da base censitária; esse conjunto não está entre os 10 primeiros.
+O gerador interrompe a execução se aparecer outra lacuna que exija revisar essa
+correspondência. Testes dos cálculos: `node tools/test_bairros_metricas.cjs`.
+
 Fonte: [Limite de Bairros — Prefeitura do Rio / IPP](https://pgeo3.rio.rj.gov.br/arcgis/rest/services/Cartografia/Limites_administrativos/FeatureServer/4).
 Para regenerar: `node tools/build_bairros_rio.mjs` (Node 18+). Se a composição
 dos bairros mudar, atualize também a versão da base na chave dos recordes.

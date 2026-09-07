@@ -45,6 +45,31 @@ const server = require('node:http').createServer((req, res) => {
     for (const name of names) await guess(name);
     assert.equal(await page.locator('.acertado').count(), 166);
     assert.match(await page.locator('#fim-jogo').innerText(), /Você completou/);
+    assert.match(await page.locator('#placar-top10').innerText(), /10 dos 10/);
+    // Weighted objectives affect the progress bar and saved record, not just labels.
+    for (const objetivo of ['populacao', 'area']) {
+      await page.click('#btn-de-novo');
+      await page.selectOption('#cfg-objetivo', objetivo);
+      await page.click('#btn-iniciar'); await guess('Campo Grande');
+      const expected = await page.evaluate(o => {
+        const b = BAIRROS_RIO.find(b => b.nome === 'Campo Grande');
+        return 100 * b[o] / BAIRROS_RIO.reduce((s, b) => s + (b[o] || 0), 0);
+      }, objetivo);
+      const width = await page.locator('#barra-progresso').evaluate(el => parseFloat(el.style.width));
+      assert.ok(Math.abs(width - expected) < .0001);
+      assert.match(await page.locator('#lista-acertos').innerText(), /352\.704 hab\./);
+      assert.match(await page.locator('#lista-acertos').innerText(), /km²/);
+      await page.click('#btn-encerrar');
+      const records = await page.evaluate(() => JSON.parse(localStorage.getItem('mapaquiz_recordes_v1')));
+      const key = Object.keys(records).find(k => k.includes('|objetivo=' + objetivo));
+      assert.ok(key); assert.ok(Math.abs(records[key].pct - expected) < 1e-9);
+      assert.ok(records['bairros-rio|base=2026-09|tempo=0'], 'Existing count record survives');
+    }
+    await page.click('#btn-de-novo'); await page.selectOption('#cfg-objetivo', 'populacao'); await page.click('#btn-iniciar');
+    const topNames = await page.evaluate(() => BAIRROS_RIO.slice().sort((a,b) => b.populacao-a.populacao).slice(0,8).map(b=>b.nome));
+    for (const name of topNames) await guess(name);
+    assert.match(await page.locator('#placar-top10').innerText(), /8 dos 10/);
+    await page.click('#btn-encerrar');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.click('#btn-de-novo');
     await page.click('.outros-modos summary');

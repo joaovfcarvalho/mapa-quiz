@@ -11,3 +11,10 @@
 .fonte-bairros a { color: var(--info); }
 .relatorio summary { cursor: pointer; }
 .relatorio ul { padding-left: 20px; }
+.metrica-principal { color: var(--ouro-claro); font-weight: 700; }
+#placar-top10 { color: var(--ouro-claro); }
+#lista-acertos small { display: block; margin-top: 3px; color: var(--texto-suave); }
+#lista-acertos > div { padding: 7px 0; border-bottom: 1px solid var(--borda); }
+.nota-populacao { font-size: 11px; color: var(--texto-suave); line-height: 1.5; }
+.nota-populacao summary { cursor: pointer; }
+#tooltip { max-width: calc(100% - 24px); white-space: normal; }

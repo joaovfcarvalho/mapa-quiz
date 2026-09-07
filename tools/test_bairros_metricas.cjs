@@ -1,0 +1,27 @@
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const fs = require('node:fs');
+const model = require('../js/bairros-metricas.js');
+const ctx = {}; vm.runInNewContext(fs.readFileSync(require.resolve('../data/bairros_rio.js'), 'utf8'), ctx);
+const bairros = ctx.BAIRROS_RIO, meta = ctx.BAIRROS_RIO_META;
+const m = model.criar(bairros, meta);
+assert.equal(m.total.populacao, 6211223);
+assert.equal(m.total.bairros, 166);
+assert.ok(m.total.area > 1100 && m.total.area < 1300);
+assert.equal(bairros.filter(b => b.populacao === null).length, 1);
+const ids = bairros.map(b => b.id);
+const done = m.resumo(ids);
+assert.equal(done.top10, 10);
+for (const pct of Object.values(done.pct)) assert.ok(Math.abs(pct - 100) < 1e-9);
+assert.equal(m.resumo([]).populacao, 0);
+assert.equal(m.resumo(['045']).populacao, 0);
+assert.equal(m.resumo(['166']).populacao, 0);
+assert.equal(m.resumo(['045', '166']).populacao, 45048);
+assert.equal(m.resumo(['045', '166', '166']).populacao, 45048);
+assert.equal(m.resumo(m.top.slice(0, 8).flatMap(u => u.ids)).top10, 8);
+// A large neighborhood beats two small ones by population, while losing by count.
+const grande = m.resumo(['144']), pequenos = m.resumo(['013', '161']);
+assert.ok(grande.pct.populacao > pequenos.pct.populacao);
+assert.ok(grande.pct.bairros < pequenos.pct.bairros);
+assert.ok(grande.pct.area > pequenos.pct.area);
+console.log('PASS: census total, area units, complete/empty games, 8/10 rank, weighted scoring and population group without double counting.');
