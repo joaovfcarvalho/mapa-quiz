@@ -140,9 +140,39 @@ Na primeira visita um tutorial guiado (holofote sobre cada parte da tela)
 apresenta o Desafio do dia, os modos, os três botões do mapa (🛰️ Satélite,
 ● Pontos, ⬡ Formas), o zoom, a digitação e os recordes. Ele volta pelo botão
 ❔ Como jogar, no topo.
-## Quiz dos rios do Brasil
+## Outros modos: bairros e rios
 
-A página `rios.html` (botão 🌊 Rios no topo) é um segundo quiz, agora de
+O menu **Outros modos** no topo reúne **Rios do Brasil** e **Bairros do Rio**,
+sem acrescentar opções à configuração dos municípios. O menu funciona por
+teclado, fecha com Escape ou clique fora e indica a página atual.
+
+### Bairros do Rio
+
+`bairros-rio.html` é o quiz dos **166 bairros oficiais do município do Rio de
+Janeiro**, conforme a base da Prefeitura / IPP consultada em 07/09/2026.
+Cada nome correto colore seu território; o último acerto aparece em rosa.
+Acentos, maiúsculas, espaços e hífens são ignorados. São Cristóvão também
+vale pelo nome abreviado; Freguesia exige Jacarepaguá ou Ilha do Governador.
+Municípios vizinhos, regiões e localidades que não são bairros oficiais não
+contam como alvos.
+
+Jogue sem limite ou contra o relógio (1–240 minutos), com dicas gratuitas de
+inicial e região administrativa. Encerrar revela todos os bairros restantes
+no mapa e em uma lista. Os recordes usam o mesmo armazenamento e backup do
+jogo, com chaves próprias por duração e versão da base. Os limites podem ser
+ocultados, e o mapa aceita zoom, arrasto e pinça. Não há consultas externas
+para jogar: a geometria fica em `data/bairros_rio.js`, carregada só nesta página.
+
+Fonte: [Limite de Bairros — Prefeitura do Rio / IPP](https://pgeo3.rio.rj.gov.br/arcgis/rest/services/Cartografia/Limites_administrativos/FeatureServer/4).
+Para regenerar: `node tools/build_bairros_rio.mjs` (Node 18+). Se a composição
+dos bairros mudar, atualize também a versão da base na chave dos recordes.
+Validação de navegador: `node tools/test_bairros.cjs`, com Playwright no
+`NODE_PATH` e Microsoft Edge instalado. O teste cobre todos os nomes, relógio,
+recordes, dicas, ambiguidades, layout móvel e regressão básica dos outros modos.
+
+### Quiz dos rios do Brasil
+
+A página `rios.html` (em **Outros modos → Rios do Brasil**) é um segundo quiz, agora de
 hidrografia: digite o nome de um rio (`rio amazonas`, `sao francisco`,
 `paraibadosul` — as mesmas regras frouxas de digitação do quiz principal) e o
 traçado inteiro dele acende no mapa, da nascente à foz. O placar conta os

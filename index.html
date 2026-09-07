@@ -39,7 +39,13 @@
   </a>
   <nav class="header-acoes">
     <button id="btn-tutorial" class="botao-sec" type="button" title="Como jogar">❔<span class="rotulo-topo"> Como jogar</span></button>
-    <a href="rios.html" class="botao-sec" title="Quiz dos rios">🌊<span class="rotulo-topo"> Rios</span></a>
+    <details class="outros-modos">
+      <summary class="botao-sec">Outros modos <span aria-hidden="true">⌄</span></summary>
+      <div class="outros-modos-links">
+        <a href="rios.html">🌊 Rios do Brasil<small>Acenda os rios da nascente à foz</small></a>
+        <a href="bairros-rio.html">🏘️ Bairros do Rio<small>Descubra a cidade, bairro a bairro</small></a>
+      </div>
+    </details>
     <a href="estatisticas.html" class="botao-sec" title="Pontos cegos">📊<span class="rotulo-topo"> Pontos cegos</span></a>
     <button id="btn-recordes" class="botao-sec" type="button" title="Recordes">🏆<span class="rotulo-topo"> Recordes</span></button>
     <button id="btn-apoiar" class="botao-sec apoiar" type="button" title="Apoie o jogo" hidden>☕<span class="rotulo-topo"> Apoiar</span></button>
@@ -508,5 +514,6 @@
 <script src="js/modos.js"></script>
 <script src="js/app.js"></script>
 <script src="js/tutorial.js"></script>
+<script src="js/navegacao.js"></script>
 </body>
 </html>

@@ -1,0 +1,13 @@
+.bairro { fill: #e5ddcc; stroke: #ab9c80; stroke-width: .7; vector-effect: non-scaling-stroke; fill-rule: evenodd; }
+#mapa.sem-tracos .bairro:not(.acertado):not(.faltante) { stroke: transparent; }
+.bairro.acertado { fill: var(--azul); stroke: #fff; }
+.bairro.recente { fill: #f0287e; }
+.bairro.faltante { fill: #f5c9bb; stroke: var(--vermelho); stroke-dasharray: 3 2; }
+.bairro:focus { outline: none; stroke: #111; stroke-width: 3; }
+#lista-acertos { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.titulo-acertos { font-size: 13px; color: var(--texto-suave); }
+#recorde-atual { padding: 10px; border: 1px dashed var(--borda-forte); border-radius: 10px; font-size: 13px; }
+.fonte-bairros { font-size: 11px; }
+.fonte-bairros a { color: var(--info); }
+.relatorio summary { cursor: pointer; }
+.relatorio ul { padding-left: 20px; }
