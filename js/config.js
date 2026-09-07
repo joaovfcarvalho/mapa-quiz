@@ -18,7 +18,7 @@ window.MAPAQUIZ_CONFIG = {
   // gerado). Sem o slot o AdSense não serve o bloco — o espaço fica oculto.
   adsense: {
     cliente: "ca-pub-3843329468867244",
-    slots: { resultado: "", modos: "" },
+    slots: { resultado: "9096642809", modos: "7783561130" },
   },
 
   // Apoio via Pix: chave, nome e cidade do recebedor (os três são exigidos
