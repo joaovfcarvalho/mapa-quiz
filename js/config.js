@@ -12,8 +12,10 @@ window.MAPAQUIZ_CONFIG = {
 
   // Google AdSense — ID do editor, ex.: "ca-pub-1234567890123456".
   // Os anúncios aparecem só na tela de resultado e no fim da lista de modos,
-  // nunca durante a partida. Os slots são os IDs dos blocos criados no painel
-  // do AdSense (vazio = bloco automático).
+  // nunca durante a partida. Os slots são os IDs numéricos dos blocos criados
+  // no painel do AdSense (Anúncios → Por bloco de anúncios → Anúncio display,
+  // um bloco para cada espaço; o ID é o número em data-ad-slot do código
+  // gerado). Sem o slot o AdSense não serve o bloco — o espaço fica oculto.
   adsense: {
     cliente: "ca-pub-3843329468867244",
     slots: { resultado: "", modos: "" },

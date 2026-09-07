@@ -516,14 +516,45 @@ var MODOS = (function () {
     }
     return { tipo: "ok", mun: mun, distKm: d, rumo: r, acertou: this.venceu };
   };
-  // Dicas progressivas sobre o secreto: UF, primeira letra, população.
+  // Máscara do nome para a terceira dica: a inicial de cada palavra e o
+  // tamanho ("São José dos Campos" → "S__ J___ dos C_____"). Conectivos
+  // (de, da, dos…) aparecem inteiros: não dizem nada e atrapalhariam a leitura.
+  var CONECTIVOS = /^(de|da|do|das|dos|e|d')$/i;
+  function mascaraNome(nome) {
+    return nome.split(" ").map(function (palavra) {
+      if (CONECTIVOS.test(palavra)) return palavra;
+      return palavra.split("-").map(function (parte) {
+        return parte.charAt(0) + parte.slice(1).replace(/[^'’]/g, "_");
+      }).join("-");
+    }).join(" ");
+  }
+  // Dicas progressivas sobre o secreto, da mais ampla à mais específica —
+  // cada uma custa +1 palpite no placar:
+  //  1) a UF (a interface aproxima o mapa no estado);
+  //  2) o porte: população, posição no ranking da UF e a distância e a
+  //     direção a partir da capital (ou "é a capital");
+  //  3) a máscara do nome (iniciais de cada palavra e o tamanho).
   JogoOndeEstou.prototype.dica = function () {
     if (this.dicasDadas >= 3) return null;
     var etapa = this.dicasDadas++;
     var s = this.secreto;
-    if (etapa === 0) return { etapa: 1, tipo: "uf", valor: s.uf };
-    if (etapa === 1) return { etapa: 2, tipo: "letra", valor: s.nome.charAt(0) };
-    return { etapa: 3, tipo: "pop", valor: s.pop };
+    // municipios já vem em ordem de população: a posição na lista é o ranking
+    var daUF = municipios.filter(function (m) { return m.uf === s.uf; });
+    if (etapa === 0) return { etapa: 1, tipo: "uf", valor: s.uf, municipios: daUF };
+    if (etapa === 1) {
+      var capital = daUF.filter(function (m) { return m.capital; })[0] || null;
+      var d = { etapa: 2, tipo: "porte", uf: s.uf, pop: s.pop,
+        rank: daUF.indexOf(s) + 1, total: daUF.length, capital: s.capital };
+      if (capital && !s.capital) {
+        d.capitalNome = capital.nome;
+        d.distCapitalKm = GEO.haversineKm(capital.lat, capital.lng, s.lat, s.lng);
+        d.rumoCapital = GEO.rumo(capital.lat, capital.lng, s.lat, s.lng);
+      }
+      return d;
+    }
+    var palavras = s.nome.split(" ").filter(function (p) { return !CONECTIVOS.test(p); }).length;
+    return { etapa: 3, tipo: "nome", mascara: mascaraNome(s.nome), palavras: palavras,
+      letras: s.nome.replace(/[^A-Za-zÀ-ÿ]/g, "").length };
   };
   JogoOndeEstou.prototype.encerrar = function () {
     this.encerrado = true;

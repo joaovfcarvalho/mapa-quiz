@@ -56,19 +56,35 @@ var SITE = (function () {
 
   // Preenche um contêiner <div class="anuncio" data-slot="resultado"> com um
   // bloco do AdSense. Cada contêiner recebe o bloco uma vez só; sem
-  // configuração ou sem consentimento o contêiner fica escondido.
+  // configuração, sem consentimento ou sem o ID do bloco (slot) o contêiner
+  // fica escondido. O AdSense exige o slot: um <ins> sem data-ad-slot não
+  // serve anúncio nenhum — e empurrar um bloco num contêiner invisível
+  // (largura 0) dá erro e o bloco nunca mais é preenchido, por isso a
+  // chamada é adiada até o contêiner estar à vista.
+  var slotsAvisados = {};
   function mostrarAnuncio(el) {
     if (!el) return;
-    if (!adsCarregado || !ADS.cliente) { el.hidden = true; return; }
+    var slot = (ADS.slots || {})[el.dataset.slot];
+    if (!adsCarregado || !ADS.cliente || !slot) {
+      el.hidden = true;
+      if (adsCarregado && ADS.cliente && !slot && !slotsAvisados[el.dataset.slot]) {
+        slotsAvisados[el.dataset.slot] = true;
+        try {
+          console.warn("Mapa Quiz: bloco de anúncio '" + el.dataset.slot +
+            "' sem ID de slot em js/config.js (adsense.slots) — crie o bloco no painel do AdSense.");
+        } catch (e) {}
+      }
+      return;
+    }
     el.hidden = false;
     if (el.dataset.pronto) return;
+    if (el.offsetParent === null || el.clientWidth === 0) return; // ainda invisível: tenta de novo depois
     el.dataset.pronto = "1";
     var ins = document.createElement("ins");
     ins.className = "adsbygoogle";
     ins.style.display = "block";
     ins.setAttribute("data-ad-client", ADS.cliente);
-    var slot = (ADS.slots || {})[el.dataset.slot];
-    if (slot) ins.setAttribute("data-ad-slot", slot);
+    ins.setAttribute("data-ad-slot", slot);
     ins.setAttribute("data-ad-format", "auto");
     ins.setAttribute("data-full-width-responsive", "true");
     el.innerHTML = "<small class='anuncio-rotulo'>publicidade</small>";

@@ -51,7 +51,9 @@ quantas você já achou em cada faixa de população (ex.: 3/10 entre 500 mil e
 que você escolher) e cada palpite responde com a distância e a direção até
 ele; a cor dos pontos esquenta do azul ao vermelho conforme você se aproxima.
 Encontre-o no menor número de palpites: acertar de primeira vale 100%, e cada
-palpite (ou dica) extra desconta 4 pontos.
+palpite (ou dica) extra desconta 4 pontos. Antes do primeiro palpite uma caixa
+explica a missão; as três dicas (estado com zoom no mapa, porte e distância
+da capital, máscara do nome) ficam todas à vista conforme são pedidas.
 
 **6. Onde fica? (clique)** — o inverso: o jogo mostra o nome de um município
 e você clica no mapa onde acha que ele fica. Até 15 km de erro vale 100% da
@@ -107,12 +109,17 @@ com uma UF (o mapa aproxima o estado e municípios de fora somem). Raio de
 alvo: os vizinhos contam mesmo quando ficam do outro lado da divisa estadual.
 
 **Dicas** — nos modos de alvos nomeados (faixas, Top N, Onde estou?,
-maratona, e os quatro modos de divisas), o botão 💡 dá pistas do maior alvo
-que falta (primeira letra, população, onde). Nos modos com recorde cada dica
-tem custo: −1 acerto no resultado (faixas/Top N/Cerco/Mancha), +1 palpite no
-placar (Onde estou?) ou +1 salto/município (Caminho/Ponte); na maratona é de
-graça. No Caminho e na Ponte a dica aponta o próximo passo de um caminho
-mínimo.
+maratona, e os quatro modos de divisas), o botão 💡 — logo abaixo do campo
+de palpite, com o rótulo dizendo o que a próxima dica revela e quanto custa —
+dá pistas do maior alvo que falta (primeira letra, população, onde). Nos modos
+com recorde cada dica tem custo: −1 acerto no resultado (faixas/Top N/Cerco/
+Mancha), +1 palpite no placar (Onde estou?) ou +1 salto/município
+(Caminho/Ponte); na maratona é de graça. No Caminho e na Ponte a dica aponta o
+próximo passo de um caminho mínimo. No **Onde estou?** e no **Desafio do dia**
+as três dicas vão do amplo ao específico e ficam todas à vista: 1) o estado
+(e o mapa aproxima nele); 2) o porte — população, posição no ranking da UF e
+distância e direção a partir da capital (ou "é a capital"); 3) a máscara do
+nome, com a inicial de cada palavra e o tamanho (`S__ J___ dos C_____`).
 
 **Limite da partida** — nos modos de círculos, escolha entre limitar por
 número de palpites (ex.: 10 chutes, sem pressa) ou por tempo (ex.: 30 minutos
@@ -325,12 +332,21 @@ carrega nada de terceiros e nem mostra o aviso de privacidade:
   jogador aceitar o aviso; envia eventos como `partida_iniciada`,
   `partida_encerrada`, `diario_jogado`, `compartilhou`, `tutorial_abriu`,
   `apoio_abriu`.
-- **`adsense.cliente`** — ID do editor (`ca-pub-…`) e, opcionalmente, os
-  `slots` dos blocos. Os anúncios aparecem só na tela de resultado e no fim da
-  lista de modos, nunca durante a partida, e só após o consentimento. Para o
-  AdSense aprovar o site é preciso também um `ads.txt` na raiz com a linha
-  `google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0` (o ID sem o
-  prefixo `ca-`) — o painel do AdSense mostra a linha exata.
+- **`adsense.cliente`** — ID do editor (`ca-pub-…`) e os `slots` dos blocos
+  (IDs numéricos de dois blocos "Anúncio display" criados no painel do
+  AdSense, um para `resultado` e outro para `modos`). **Sem o slot o AdSense
+  não serve o bloco** — o espaço fica oculto e o console avisa. Os anúncios
+  aparecem só na tela de resultado e no fim da lista de modos, nunca durante
+  a partida, e só após o consentimento. Como o script do AdSense só é
+  injetado depois do aceite, o robô de verificação do AdSense não o encontra
+  no HTML; por isso cada página traz no `<head>` a tag
+  `<meta name="google-adsense-account" content="ca-pub-…">` (método oficial
+  de verificação, não carrega nada) — se trocar o ID do editor, troque nela
+  também. Para o AdSense aprovar o site é preciso ainda um `ads.txt` na raiz
+  com a linha `google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0` (o
+  ID sem o prefixo `ca-`) — o painel do AdSense mostra a linha exata. Os
+  anúncios só passam a aparecer depois que o site é aprovado na revisão do
+  AdSense (dias a semanas), e só para quem aceitou o aviso.
 - **`pix`** — chave, nome e cidade do recebedor. Liga o botão ☕ Apoiar, que
   copia a chave ou o código "Pix copia e cola" (BR Code gerado no navegador,
   com CRC). `apoioLinks` acrescenta links (apoia.se, Ko-fi…).

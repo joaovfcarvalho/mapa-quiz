@@ -472,7 +472,12 @@
     Object.keys(TELAS).forEach(function (t) {
       $(TELAS[t]).hidden = t !== nome;
     });
-    if (nome === "modos") atualizarCardDiario();
+    if (nome === "modos") {
+      atualizarCardDiario();
+      // o bloco de anúncio do fim da lista só pode ser preenchido com a
+      // tela à vista (numa visita por link de desafio ela começa oculta)
+      SITE.mostrarAnuncios("modos");
+    }
   }
 
   // ------------------------------------------------------------------
@@ -1047,6 +1052,7 @@
     $("feedback").textContent = "";
     $("feedback").className = "";
     $("dica-atual").hidden = true;
+    $("dica-atual").innerHTML = ""; // as dicas se acumulam dentro da partida, não entre partidas
     $("lista-jogo").innerHTML = "";
     $("input-palpite").value = "";
     $("input-palpite").disabled = false;
@@ -1127,17 +1133,21 @@
     if (jogoModo !== "clique") $("input-palpite").focus();
   }
 
+  // o que cada dica do Onde estou?/Desafio do dia revela, na ordem
+  var DICAS_ONDE = ["o estado", "o porte e a distância da capital", "as iniciais do nome"];
   function atualizarBotaoDica() {
     var btn = $("btn-dica");
     if (jogoModo === "maratona") {
-      btn.textContent = "💡 Dica (grátis)";
+      btn.textContent = "💡 Dica (grátis) · o maior que falta";
       btn.title = "Mostra pistas do maior município que ainda falta";
       btn.disabled = false;
       return;
     }
     // nos modos de divisas as dicas são ilimitadas, mas cada uma tem custo
     if (jogoModo === "caminho" || jogoModo === "ponte" || jogoModo === "mancha") {
-      btn.textContent = "💡 Dica";
+      btn.textContent = jogoModo === "caminho" ? "💡 Dica · custa +1 salto"
+        : jogoModo === "ponte" ? "💡 Dica · custa +1 município"
+        : "💡 Dica · desconta 1 município";
       btn.title = jogoModo === "caminho"
         ? "Pistas do próximo município de um caminho mínimo — cada dica custa +1 salto"
         : jogoModo === "ponte"
@@ -1147,10 +1157,18 @@
       return;
     }
     var restantes = Math.max(0, 3 - dicasUsadas);
-    btn.textContent = "💡 Dica (" + restantes + ")";
-    btn.title = jogoModo === "ondestou"
-      ? "Revela UF, primeira letra e população do secreto — cada dica custa +1 palpite"
-      : "Pistas do maior alvo que falta — cada dica desconta 1 acerto do resultado";
+    if (jogoModo === "ondestou") {
+      // o rótulo diz o que a próxima dica revela: o jogador sabe o que compra
+      btn.textContent = restantes === 0
+        ? "💡 As 3 dicas já foram usadas"
+        : "💡 Dica " + (4 - restantes) + " de 3: revelar " + DICAS_ONDE[3 - restantes] + " · custa +1 palpite";
+      btn.title = "Cada dica conta como um palpite no resultado";
+    } else {
+      btn.textContent = restantes === 0
+        ? "💡 As 3 dicas já foram usadas"
+        : "💡 Dica (" + restantes + " restante" + (restantes === 1 ? "" : "s") + ") · desconta 1 acerto";
+      btn.title = "Pistas do maior alvo que falta — cada dica desconta 1 acerto do resultado";
+    }
     btn.disabled = restantes === 0 || !jogo || jogo.encerrado;
   }
 
@@ -1534,6 +1552,7 @@
     feedback("📍 " + r.mun.nome + ": o secreto está a " + direcao + " daqui.", "ok");
     $("input-palpite").value = "";
     atualizarPlacar();
+    atualizarMissao(); // a explicação inicial sai depois do primeiro palpite
   }
 
   // ---------------- modo Maratona ----------------
@@ -1945,7 +1964,19 @@
   // caixa de missão (mesmo elemento da pergunta do modo clique)
   function atualizarMissao() {
     var el = $("alvo-clique");
-    if (!jogo || !MODOS_COM_VIZINHOS[jogoModo]) return;
+    if (!jogo) return;
+    if (jogoModo === "ondestou") {
+      // explica o modo até o primeiro palpite; depois o feedback e a lista
+      // de palpites dizem tudo
+      if (jogo.palpites.length > 0 || jogo.encerrado) { el.hidden = true; return; }
+      el.innerHTML = "🧭 Um município secreto de <b>" + NOME_POOL[jogo.cfg.minPop] +
+        "</b> está escondido" + (jogo.cfg.uf ? " em " + NOMES_UF[jogo.cfg.uf] : " no Brasil") +
+        ". Chute <b>qualquer município</b>: cada palpite responde com a distância e a " +
+        "direção até ele. Travou? O botão 💡 revela pistas (cada uma custa +1 palpite).";
+      el.hidden = false;
+      return;
+    }
+    if (!MODOS_COM_VIZINHOS[jogoModo]) return;
     if (jogoModo === "caminho") {
       el.innerHTML = "🚗 De <b>" + nomeUF(jogo.origem) + "</b> a <b>" + nomeUF(jogo.destino) +
         "</b>, por divisas.<br>Você está em: <b>" + nomeUF(jogo.atual) + "</b>" +
@@ -2180,38 +2211,60 @@
   }
 
   // ---------------- dicas ----------------
+  // Escreve uma dica na caixa. No Onde estou? as dicas se acumulam (a UF
+  // continua valendo depois do porte); nos outros modos só a última fica.
+  function mostrarDica(rotulo, html, acumular) {
+    var caixa = $("dica-atual");
+    if (!acumular) caixa.innerHTML = "";
+    var item = document.createElement("div");
+    item.className = "dica-item";
+    item.innerHTML = "<span class='dica-num'>" + rotulo + "</span><span>" + html + "</span>";
+    caixa.appendChild(item);
+    caixa.hidden = false;
+  }
+  function textoDicaOnde(d) {
+    if (d.tipo === "uf") {
+      return "Fica em <b>" + NOMES_UF[d.valor] + " (" + d.valor + ")</b> — o mapa aproximou o estado.";
+    }
+    if (d.tipo === "porte") {
+      var s = "Tem <b>" + fmtPop(d.pop) + " hab.</b>: é o <b>" + d.rank + "º</b> mais populoso de " + d.uf;
+      if (d.capital) return s + " — e é a <b>capital</b>.";
+      if (d.capitalNome) {
+        return s + ", a <b>" + fmtInt(Math.round(d.distCapitalKm)) + " km</b> " +
+          setaDoRumo(d.rumoCapital) + " de <b>" + d.capitalNome + "</b>.";
+      }
+      return s + ".";
+    }
+    return "O nome tem " + (d.palavras === 1 ? "<b>1 palavra</b>" : "<b>" + d.palavras + " palavras</b>") +
+      " (" + d.letras + " letras): <span class='mascara'>" + d.mascara + "</span>";
+  }
   function pedirDica() {
     if (!jogo || jogo.encerrado) return;
-    var caixa = $("dica-atual");
     if (jogoModo === "ondestou") {
       var d = jogo.dica();
       if (!d) return;
       dicasUsadas = jogo.dicasDadas;
-      var texto = d.tipo === "uf" ? "o município secreto fica em <b>" + NOMES_UF[d.valor] + " (" + d.valor + ")</b>"
-        : d.tipo === "letra" ? "o nome começa com <b>«" + d.valor + "»</b>"
-        : "tem <b>" + fmtPop(d.valor) + " hab.</b>";
-      caixa.innerHTML = "💡 Dica " + d.etapa + "/3 (+1 palpite): " + texto + ".";
-      caixa.hidden = false;
+      // a dica do estado também aproxima o mapa: a busca fica visual
+      if (d.tipo === "uf" && d.municipios.length) enquadrarLista(d.municipios);
+      mostrarDica("💡 " + d.etapa + "/3", textoDicaOnde(d), true);
     } else if (jogoModo === "maratona") {
       var dm = jogo.dica();
       if (!dm) return;
-      caixa.innerHTML = "💡 O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
-        "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>";
-      caixa.hidden = false;
+      mostrarDica("💡", "O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
+        "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>");
     } else if (jogoModo === "caminho" || jogoModo === "ponte" || jogoModo === "mancha") {
       var dv = jogo.dica(); // caminho e ponte já contam o custo no motor
       if (!dv) return;
       dicasUsadas++;        // na mancha o desconto sai daqui no fim da partida
       var custo = jogoModo === "caminho" ? "+1 salto"
         : jogoModo === "ponte" ? "+1 município"
-        : "−1 município no resultado";
+        : "−1 município";
       var quem = jogoModo === "caminho" ? "O próximo passo de um caminho mínimo"
         : jogoModo === "ponte" ? "Um bom próximo elo"
         : "O maior vizinho da sua mancha";
-      caixa.innerHTML = "💡 (" + custo + ") " + quem + ": começa com <b>«" +
+      mostrarDica("💡 (" + custo + ")", quem + ": começa com <b>«" +
         dv.mun.nome.charAt(0) + "»</b>, fica em <b>" + dv.mun.uf + "</b> e tem <b>" +
-        fmtPop(dv.mun.pop) + " hab.</b>";
-      caixa.hidden = false;
+        fmtPop(dv.mun.pop) + " hab.</b>");
     } else {
       if (dicasUsadas >= 3) return;
       var df = jogo.dica();
@@ -2225,10 +2278,9 @@
       var medida = jogoModo === "topn" && jogo.cfg.metrica === "pib"
         ? "<b>" + fmtPib(df.mun.pib) + "</b> de PIB"
         : "<b>" + fmtPop(df.mun.pop) + " hab.</b>";
-      caixa.innerHTML = "💡 Dica " + dicasUsadas + "/3 (−1 acerto): o maior " +
+      mostrarDica("💡 " + dicasUsadas + "/3", "O maior " +
         (jogoModo === "cerco" ? "vizinho" : "alvo") + " que falta começa com <b>«" +
-        df.mun.nome.charAt(0) + "»</b>, tem " + medida + " e " + onde + ".";
-      caixa.hidden = false;
+        df.mun.nome.charAt(0) + "»</b>, tem " + medida + " e " + onde + ".");
     }
     atualizarBotaoDica();
     atualizarPlacar();

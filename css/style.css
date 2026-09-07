@@ -361,8 +361,12 @@ main {
 #alvo-clique b { font-size: 17px; }
 #alvo-clique small { color: var(--texto-suave); }
 
-/* última dica pedida (fica visível até a próxima) */
+/* dicas pedidas: no Onde estou?/Desafio do dia todas ficam à vista (cada
+   uma complementa a anterior); nos outros modos só a última */
 #dica-atual {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 9px 12px;
   border-radius: 10px;
   font-size: 12.5px;
@@ -370,7 +374,28 @@ main {
   background: rgba(245, 185, 66, .08);
   border: 1px solid rgba(245, 185, 66, .3);
 }
+#dica-atual[hidden] { display: none; }
 #dica-atual b { color: var(--ouro-claro); }
+.dica-item { display: flex; gap: 8px; align-items: baseline; }
+.dica-item .dica-num { flex-shrink: 0; font-weight: 700; color: var(--ouro-claro); white-space: nowrap; }
+.dica-item .mascara {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13.5px;
+  letter-spacing: .14em;
+  color: var(--ouro-claro);
+  /* quebra só nos espaços: "B____" não pode virar "B___" + "_" */
+  word-break: keep-all;
+}
+/* o botão de dica fica logo abaixo do campo de palpite, onde o jogador
+   procura ajuda — o rótulo diz o que a próxima dica revela e o que custa */
+#btn-dica {
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-color: rgba(245, 185, 66, .4);
+  color: var(--ouro-claro);
+}
+#btn-dica:hover:not(:disabled) { background: rgba(245, 185, 66, .12); border-color: rgba(245, 185, 66, .6); }
+#btn-dica:disabled { opacity: .55; cursor: default; }
 
 #linha-acoes { display: flex; gap: 7px; }
 #linha-acoes .botao-sec { flex: 1; font-size: 12.5px; padding: 9px 8px; }
@@ -885,6 +910,7 @@ main {
   body.jogo-ativo #linha-palpite { order: -3; }
   body.jogo-ativo #feedback { order: -2; }
   body.jogo-ativo #dica-atual { order: -1; }
+  body.jogo-ativo #btn-dica { order: -1; }
 }
 
 /* celular estreito: os atalhos do topo ficam só com o emoji, ao lado da marca */
