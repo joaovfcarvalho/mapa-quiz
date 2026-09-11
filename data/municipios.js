@@ -1,5 +1,7 @@
 // Gerado por tools/build_data.py — não editar à mão.
 // Campos: [codigo_ibge, nome, uf, lat, lng, populacao_censo_2022, capital, area_km2_2022, pib_2023_mil_reais]
+// Versão dos dados (entra nos recordes: resultados de bases diferentes não se comparam)
+var MUNICIPIOS_META = { versao: "censo2022-pib2023", municipios: 5571 };
 var MUNICIPIOS = [
 [3550308,"São Paulo","SP",-23.5329,-46.6395,11451999,1,1521.2,1066825105],
 [3304557,"Rio de Janeiro","RJ",-22.9129,-43.2003,6211223,1,1200.3,418462360],

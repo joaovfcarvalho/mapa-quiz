@@ -1,0 +1,12 @@
+{
+  "name": "mapa-quiz",
+  "private": true,
+  "description": "Quiz geográfico dos 5.571 municípios do Brasil — site estático, sem dependências.",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.cjs\" && node tools/test_bairros_metricas.cjs",
+    "check": "for f in js/*.js; do node --check \"$f\" || exit 1; done"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

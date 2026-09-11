@@ -217,6 +217,10 @@ def main():
     with open(out_mun, "w", encoding="utf-8") as f:
         f.write("// Gerado por tools/build_data.py — não editar à mão.\n")
         f.write("// Campos: [codigo_ibge, nome, uf, lat, lng, populacao_censo_2022, capital, area_km2_2022, pib_2023_mil_reais]\n")
+        # versão dos dados: muda quando a base (Censo/PIB) muda — os recordes
+        # guardam essa marca para não comparar resultados de bases diferentes
+        f.write("// Versão dos dados (entra nos recordes: resultados de bases diferentes não se comparam)\n")
+        f.write("var MUNICIPIOS_META = { versao: \"censo2022-pib2023\", municipios: %d };\n" % len(linhas))
         f.write("var MUNICIPIOS = [\n")
         for l in linhas:
             f.write(json.dumps(l, ensure_ascii=False, separators=(",", ":")) + ",\n")

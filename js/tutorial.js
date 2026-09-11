@@ -15,11 +15,19 @@ var TUTORIAL = (function () {
         "poucos palpites, mantenha a sequência e compartilhe o resultado em emojis.",
     },
     {
-      alvo: "#tela-modos .grupo-modos",
-      titulo: "Doze jeitos de jogar",
+      alvo: "#convite-estado",
+      titulo: "Comece sem digitar nada",
+      texto: "Escolha seu estado e jogue dez duelos: duas cidades, toque na maior. " +
+        "No fim, o jogo sugere o próximo passo. É a porta de entrada — e o " +
+        "<b>Maior ou menor?</b> também compara área, PIB e densidade.",
+    },
+    {
+      alvo: "#btn-explorar",
+      titulo: "Treze jeitos de jogar",
       texto: "Cubra o mapa com círculos, cite as maiores cidades, viaje por divisas " +
-        "municipais, ache o município secreto… Não conhece muitas cidades ainda? " +
-        "Comece pelo <b>Modo estudo</b>: o mapa abre todo revelado, sem relógio.",
+        "municipais, ache o município secreto… Cada modo abre com uma configuração " +
+        "recomendada e um botão ▶; <b>⚙ Personalizar</b> mostra as opções. Não conhece " +
+        "muitas cidades ainda? O <b>Modo estudo</b> abre o mapa todo revelado.",
     },
     {
       alvo: "#botoes-mapa",
@@ -49,9 +57,9 @@ var TUTORIAL = (function () {
       alvo: "#btn-recordes",
       titulo: "Seus recordes ficam com você",
       texto: "Cada configuração de jogo tem o próprio recorde, salvo neste navegador. " +
-        "Em 🏆 Recordes você exporta um backup para levar tudo a outro aparelho. " +
-        "📊 Pontos cegos mostra o mapa do que você nunca citou. E este tutorial volta " +
-        "pelo botão ❔ no topo.",
+        "Em 🏆 Recordes você <b>entra com Google</b> para sincronizar tudo entre celular e " +
+        "computador (ou exporta um backup). 📊 Pontos cegos mostra o mapa do que você " +
+        "nunca citou. E este tutorial volta pelo botão ❔ no topo.",
     },
   ];
 

@@ -234,28 +234,19 @@
   }
 
   // ------------------------------------------------------------------
-  // Contagem local de municípios já citados (alimenta a página de
-  // estatísticas "pontos cegos"): id do IBGE -> nº de partidas em que a
-  // cidade foi citada. Cada cidade conta no máximo uma vez por partida.
+  // O que o jogador sabe de cada município (js/conhecimento.js): "citou de
+  // memória" conta no máximo uma vez por partida — a partida é zerada em
+  // iniciar(). Alimenta a página de pontos cegos.
   // ------------------------------------------------------------------
-  var LS_CITADAS = "mapaquiz.citadas.v1";
-  var tallyCitadas = null;
-  var citadasPartida = new Set();
   function registrarCitadas(muns) {
-    if (tallyCitadas === null) {
-      try { tallyCitadas = JSON.parse(localStorage.getItem(LS_CITADAS)) || {}; }
-      catch (e) { tallyCitadas = {}; }
-    }
-    var mudou = false;
-    muns.forEach(function (m) {
-      if (citadasPartida.has(m.idx)) return;
-      citadasPartida.add(m.idx);
-      tallyCitadas[m.id] = (tallyCitadas[m.id] || 0) + 1;
-      mudou = true;
-    });
-    if (mudou) {
-      try { localStorage.setItem(LS_CITADAS, JSON.stringify(tallyCitadas)); } catch (e) {}
-    }
+    CONHECIMENTO.citou(muns);
+  }
+
+  // Aviso de "os dados locais mudaram" — a sincronização da conta escuta.
+  function avisarDados(origem) {
+    try {
+      document.dispatchEvent(new CustomEvent("mapaquiz:dados", { detail: { origem: origem } }));
+    } catch (e) {}
   }
 
   // ------------------------------------------------------------------
@@ -273,11 +264,13 @@
     var tudo = lerMaratonas();
     tudo[regiao] = dados;
     try { localStorage.setItem(LS_MARATONA, JSON.stringify(tudo)); } catch (e) {}
+    avisarDados("maratona");
   }
   function zerarMaratona(regiao) {
     var tudo = lerMaratonas();
     delete tudo[regiao];
     try { localStorage.setItem(LS_MARATONA, JSON.stringify(tudo)); } catch (e) {}
+    avisarDados("maratona");
   }
 
   // ------------------------------------------------------------------
@@ -407,6 +400,13 @@
   var cliqueInicio = null;  // posição do mousedown para distinguir clique de arrasto
   var diarioAtual = null;   // {n, chave} quando a partida é o Desafio do dia
   var ultimoResultado = null; // {texto, url} do fim da última partida (compartilhar)
+  // Sorteio da partida (modos que sorteiam: Onde estou?, Onde fica?, Cerco,
+  // Ponte, Maior ou menor?): a semente entra no link de desafio — quem abre
+  // o link joga exatamente a mesma partida — mas não na chave do recorde.
+  var sementePartida = null;  // semente da partida em andamento/terminada
+  var sementeDesafio = null;  // {modo, semente} vinda de um link (ou gerada ao copiar)
+  var MODOS_COM_SORTEIO = { ondestou: 1, clique: 1, cerco: 1, ponte: 1, maiormenor: 1 };
+  var seguinteSugerido = null; // {rotulo, acao} — "próximo passo" oferecido no fim da partida
 
   var DESCRICOES = {
     dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo da região antes de acabarem os palpites — ou o tempo.",
@@ -421,6 +421,7 @@
     cerco: "Nomeie todos os municípios que fazem divisa com o alvo. Trivial no litoral, brutal no interior.",
     mancha: "Comece por qualquer município e cresça um território contíguo: só vale citar quem faz divisa com a sua mancha.",
     ponte: "Dois municípios sorteados: construa uma corrente de divisas que os conecte. Cada palpite precisa encostar no que já está marcado.",
+    maiormenor: "Sem teclado: duas cidades na tela, toque na que tem mais habitantes (ou área, PIB, densidade…). Os pares vão ficando mais parecidos ao longo da partida. No formato Ordene, coloque cinco cidades em ordem.",
   };
 
   // ícone e nome de cada modo (cabeçalhos da tela de configuração e da partida)
@@ -437,6 +438,7 @@
     cerco: { icone: "🏰", nome: "Cerco" },
     mancha: { icone: "🌱", nome: "Mancha" },
     ponte: { icone: "🌉", nome: "Ponte" },
+    maiormenor: { icone: "⚖️", nome: "Maior ou menor?" },
     diario: { icone: "📅", nome: "Desafio do dia" },
   };
 
@@ -474,6 +476,7 @@
     });
     if (nome === "modos") {
       atualizarCardDiario();
+      atualizarConviteMaratona();
       // o bloco de anúncio do fim da lista só pode ser preenchido com a
       // tela à vista (numa visita por link de desafio ela começa oculta)
       SITE.mostrarAnuncios("modos");
@@ -496,17 +499,6 @@
     var meio = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
     return Math.floor((meio - DIARIO_EPOCA) / 86400000) + 1;
   }
-  // mulberry32: gerador determinístico a partir da semente inteira
-  function rngSemente(semente) {
-    var a = (semente * 2654435761) >>> 0;
-    return function () {
-      a = (a + 0x6D2B79F5) >>> 0;
-      var t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
   var poolDiario = null;
   function secretoDoDia(n) {
     if (!poolDiario) {
@@ -514,8 +506,9 @@
         .filter(function (m) { return m.pop >= DIARIO_MIN_POP; })
         .sort(function (a, b) { return a.id - b.id; }); // ordem estável, não a de população
     }
-    var r = rngSemente(n);
-    r(); r(); // descarta as primeiras saídas (sementes vizinhas parecidas)
+    // o gerador com semente (mulberry32) vive em js/modos.js — a mesma
+    // sequência de sempre, para o desafio #n continuar sendo o mesmo
+    var r = MODOS.rngSemente(n);
     return poolDiario[Math.floor(r() * poolDiario.length)];
   }
   function lerDiario() {
@@ -524,6 +517,7 @@
   }
   function salvarDiario(d) {
     try { localStorage.setItem(LS_DIARIO, JSON.stringify(d)); } catch (e) {}
+    avisarDados("diario");
   }
   // sequência: dias consecutivos (até hoje ou ontem) com o desafio vencido
   function sequenciaDiario(dados) {
@@ -658,6 +652,15 @@
     $("config-titulo").textContent = INFO_MODOS[modo].nome;
     $("descricao-modo").textContent = DESCRICOES[modo];
     $("btn-desafio").hidden = modo === "maratona" || modo === "estudo";
+    // uma semente de link só vale para o modo do link
+    if (sementeDesafio && sementeDesafio.modo !== modo) {
+      sementeDesafio = null;
+      $("desafio-banner").hidden = true;
+    }
+    // o formulário começa dobrado: a configuração recomendada já está nele
+    // (maratona e estudo só têm a região, que fica sempre à vista)
+    setPersonalizar(false);
+    $("btn-personalizar").hidden = modo === "maratona" || modo === "estudo";
     // já deixa o grafo de divisas baixando em segundo plano
     if (MODOS_COM_VIZINHOS[modo]) carregarVizinhos(null, true);
     atualizarRecordeUI();
@@ -675,10 +678,15 @@
     return v;
   }
 
-  // rótulos dos seletores de porte (ondestou, clique, cerco, ponte)
+  // rótulos dos seletores de porte (ondestou, clique, cerco, ponte, maior ou menor)
   var NOME_POOL = {
     500000: "500 mil+ hab.", 100000: "100 mil+ hab.", 50000: "50 mil+ hab.",
     20000: "20 mil+ hab.", 0: "qualquer porte",
+  };
+  // rótulos das métricas do Maior ou menor?
+  var NOME_METRICA = {
+    pop: "população", area: "área", pib: "PIB", densidade: "densidade",
+    pibpc: "PIB per capita", lat: "norte–sul", lng: "oeste–leste",
   };
 
   // Interpreta um campo de texto que deve conter exatamente um município
@@ -863,6 +871,21 @@
         rotulo: "Ponte: ligar dois municípios sorteados de " + NOME_POOL[poolPonte] + sufRotulo,
       };
     }
+    if (modoAtual === "maiormenor") {
+      var formato = $("cfg-mm-formato").value === "ordene" ? "ordene" : "duelo";
+      var metricaMM = $("cfg-mm-metrica").value;
+      if (!MODOS.METRICAS[metricaMM]) metricaMM = "pop";
+      var poolMM = parseInt($("cfg-mm-pool").value, 10) || 0;
+      var rodadasMM = num("cfg-mm-rodadas", 3, 50);
+      var nomeMetrica = NOME_METRICA[metricaMM];
+      return {
+        cfg: { formato: formato, metrica: metricaMM, rodadas: rodadasMM, minPop: poolMM, uf: uf || undefined },
+        chave: "maiormenor|formato=" + formato + "|metrica=" + metricaMM + "|rodadas=" + rodadasMM +
+          "|pool=" + poolMM + sufChave,
+        rotulo: (formato === "ordene" ? "Ordene 5 cidades" : "Maior ou menor? · duelo") +
+          " · " + nomeMetrica + " · " + rodadasMM + " rodadas · cidades de " + NOME_POOL[poolMM] + sufRotulo,
+      };
+    }
     if (modoAtual === "topn") {
       var cfgT = {
         n: num("cfg-topn-n", 5, 500),
@@ -916,8 +939,10 @@
     var lido = lerConfig();
     var el = $("recorde-atual");
     $("btn-iniciar").textContent = "▶ Iniciar jogo";
+    atualizarResumoConfig(lido);
     if (lido.erro) {
       el.innerHTML = "⚠️ " + lido.erro;
+      if ($("config-avancado").hidden) setPersonalizar(true); // o erro está num campo dobrado
       return;
     }
     if (modoAtual === "maratona") {
@@ -928,10 +953,19 @@
         : DADOS.total;
       var prog = carregarMaratona(regiao);
       var n = prog && prog.ids ? prog.ids.length : 0;
-      el.innerHTML = n === 0
+      // onde o progresso está guardado: só aqui, ou também na conta Google
+      var conta = window.CONTA ? CONTA.estado() : { disponivel: false };
+      var onde = !conta.disponivel ? ""
+        : conta.ligado
+        ? "<br>☁️ " + (conta.pendente ? "Sincronização pendente" : "Sincronizado com a conta Google" +
+            (conta.ultimaSync ? " " + CONTA.tempoDesde(conta.ultimaSync) : "")) + "."
+        : "<br>💾 Salvo <b>só neste aparelho</b> — <a href='#' id='link-conta-maratona'>entre com Google</a> para continuar no celular e no computador.";
+      el.innerHTML = (n === 0
         ? "🏃 Você ainda não começou a maratona desta região (" + fmtInt(total) + " municípios te esperam)."
         : "🏃 Progresso salvo: <b>" + fmtInt(n) + "</b> de " + fmtInt(total) +
-          " municípios (<b>" + fmtPct(n / total) + "</b>) em " + fmtTempo(prog.tempoSeg || 0) + ".";
+          " municípios (<b>" + fmtPct(n / total) + "</b>) em " + fmtTempo(prog.tempoSeg || 0) + ".") + onde;
+      var link = $("link-conta-maratona");
+      if (link) link.addEventListener("click", function (ev) { ev.preventDefault(); abrirRecordes(); });
       $("btn-iniciar").textContent = n === 0 ? "▶ Iniciar maratona" : "▶ Continuar maratona";
       return;
     }
@@ -947,8 +981,19 @@
       el.innerHTML = "🏅 Seu recorde nesta configuração: <b>" + fmtPct(rec.pct) + "</b>" +
         (rec.placar ? " (" + rec.placar + ")" : "") +
         " · tempo " + fmtTempo(rec.tempoSeg) +
-        " · " + rec.jogos + (rec.jogos === 1 ? " jogo" : " jogos");
+        " · " + rec.jogos + (rec.jogos === 1 ? " jogo" : " jogos") +
+        (RECORDES.ehAtual(rec) ? "" : " · 📐 versão antiga das regras/dados");
     }
+  }
+
+  // resumo da configuração atual (acima do formulário dobrado)
+  function atualizarResumoConfig(lido) {
+    var el = $("resumo-config");
+    if (!lido || lido.erro) { el.textContent = ""; return; }
+    var info = INFO_MODOS[modoAtual];
+    var sub = lido.rotulo;
+    if (info && sub.indexOf(info.nome) === 0) sub = sub.slice(info.nome.length).replace(/^\s*[:·]\s*/, "");
+    el.textContent = sub;
   }
 
   // ------------------------------------------------------------------
@@ -994,12 +1039,43 @@
       carregarVizinhos(iniciar);
       return;
     }
+    // com a conta ligada, a maratona busca antes o progresso feito em outro
+    // aparelho (com prazo curto: a rede não segura a partida) e volta aqui
+    if (modoAtual === "maratona" && window.CONTA && CONTA.estado().ligado && !iniciar._sincronizou) {
+      iniciar._sincronizou = true;
+      $("btn-iniciar").disabled = true;
+      $("btn-iniciar").textContent = "☁️ Buscando seu progresso…";
+      CONTA.sincronizarNoGesto("inicio", 6000, function () {
+        $("btn-iniciar").disabled = false;
+        atualizarRecordeUI();
+        iniciar();
+      });
+      return;
+    }
+    iniciar._sincronizou = false;
     limparCamadasDeJogo();
     jogoModo = modoAtual;
     jogoChave = lido.chave;
     jogoRotulo = lido.rotulo;
     var tempoPrevio = 0;
+    // semente do sorteio: a do link de desafio (uma vez só) ou uma nova
+    sementePartida = null;
+    if (MODOS_COM_SORTEIO[modoAtual] && !(modoAtual === "cerco" && lido.cfg.alvo)) {
+      if (sementeDesafio && sementeDesafio.modo === modoAtual) {
+        sementePartida = sementeDesafio.semente;
+        sementeDesafio = null;
+        $("desafio-banner").hidden = true;
+      } else {
+        sementePartida = MODOS.novaSemente();
+      }
+      lido.cfg.semente = sementePartida;
+    }
     if (modoAtual === "dist") jogo = new MODOS.JogoCirculosDistancia(lido.cfg);
+    else if (modoAtual === "maiormenor") {
+      jogo = lido.cfg.formato === "ordene"
+        ? new MODOS.JogoOrdene(lido.cfg)
+        : new MODOS.JogoMaiorMenor(lido.cfg);
+    }
     else if (modoAtual === "pop") jogo = new MODOS.JogoCirculosPopulacao(lido.cfg);
     else if (modoAtual === "topn") jogo = new MODOS.JogoTopN(lido.cfg);
     else if (modoAtual === "ondestou" || modoAtual === "diario") {
@@ -1030,9 +1106,14 @@
     aplicarRegiao(jogoModo === "cerco" ? null : jogo.cfg.uf || null);
     enquadrarUniverso(jogo);
 
-    citadasPartida = new Set();
+    CONHECIMENTO.novaPartida();
     dicasUsadas = 0;
     ultimoResultado = null;
+    $("btn-seguinte").hidden = true;
+    // a sugestão de "próximo passo" vale para a partida que começa agora
+    // (vinda de um preset); uma partida iniciada à mão não tem sugestão
+    if (seguinteSugerido && seguinteSugerido.paraProxima) seguinteSugerido.paraProxima = false;
+    else seguinteSugerido = null;
     document.querySelectorAll(".anuncio[data-slot='resultado']").forEach(function (a) { a.hidden = true; });
     var info = INFO_MODOS[diarioAtual ? "diario" : jogoModo];
     $("jogo-titulo").textContent = info.icone + " " + info.nome;
@@ -1066,10 +1147,12 @@
       : "Digite uma cidade… (ex.: Campinas ou Bom Jesus, RS)";
 
     // o modo de clique esconde o campo de texto (a resposta é no mapa) e
-    // todos os pontos de cidade — nada pode entregar as posições
-    $("linha-palpite").hidden = jogoModo === "clique";
+    // todos os pontos de cidade — nada pode entregar as posições; o Maior ou
+    // menor? também dispensa o teclado (a resposta é um toque nas cartas)
+    $("linha-palpite").hidden = jogoModo === "clique" || jogoModo === "maiormenor";
     svg.classList.toggle("modo-clique", jogoModo === "clique");
     $("alvo-clique").hidden = jogoModo !== "clique";
+    $("comparar").hidden = jogoModo !== "maiormenor";
 
     var TEM_DICA = { faixas: 1, topn: 1, ondestou: 1, maratona: 1, caminho: 1, cerco: 1, mancha: 1, ponte: 1 };
     $("btn-dica").hidden = !TEM_DICA[jogoModo];
@@ -1083,9 +1166,12 @@
       jogoModo === "ponte" ? "🏳️ Desistir / revelar uma ligação mínima" :
       jogoModo === "cerco" ? "🏳️ Encerrar / revelar os vizinhos" :
       jogoModo === "mancha" ? "🏁 Encerrar a mancha" :
+      jogoModo === "maiormenor" ? "🏳️ Encerrar a partida" :
       "🏳️ Encerrar / revelar respostas";
 
-    if (jogoModo === "faixas") {
+    if (jogoModo === "maiormenor") {
+      mostrarRodadaComparar();
+    } else if (jogoModo === "faixas") {
       desenharFaixas(jogo);
       montarListaFaixas(jogo);
     } else if (jogoModo === "topn") {
@@ -1130,7 +1216,7 @@
 
     clearInterval(timerInt);
     if (jogoModo !== "estudo") timerInt = setInterval(tique, 1000);
-    if (jogoModo !== "clique") $("input-palpite").focus();
+    if (jogoModo !== "clique" && jogoModo !== "maiormenor") $("input-palpite").focus();
   }
 
   // o que cada dica do Onde estou?/Desafio do dia revela, na ordem
@@ -1274,6 +1360,16 @@
       }
       barra = jogo.venceu ? 1 :
         Math.max(0, 1 - (restP === null ? 1 : restP / (jogo.minMeio + 1)));
+    } else if (jogoModo === "maiormenor") {
+      var feitas = jogo.resultados.length;
+      linhas.push("Rodada: <b>" + Math.min(feitas + 1, jogo.rodadas) + "</b> de " + jogo.rodadas);
+      if (jogo.cfg.formato === "ordene") {
+        if (feitas > 0) linhas.push("Pontuação: <b>" + fmtPct(jogo.somaScore / feitas) + "</b> das rodadas jogadas");
+      } else {
+        linhas.push("Acertos: <b>" + jogo.acertos + "</b>" +
+          (jogo.sequencia >= 2 ? " · 🔥 <b>" + jogo.sequencia + "</b> seguidos" : ""));
+      }
+      barra = jogo.rodadas === 0 ? 0 : feitas / jogo.rodadas;
     } else {
       linhas.push("Cidades achadas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
         " (<b>" + fmtPct(pct) + "</b>)");
@@ -1309,7 +1405,7 @@
     if (jogoModo === "cerco") return palpitarCerco(texto);
     if (jogoModo === "mancha") return palpitarMancha(texto);
     if (jogoModo === "ponte") return palpitarPonte(texto);
-    if (jogoModo === "clique") return; // a resposta é um clique no mapa
+    if (jogoModo === "clique" || jogoModo === "maiormenor") return; // a resposta é um toque
 
     var res = DADOS.buscar(texto);
     if (res.status === "vazio") return;
@@ -1801,12 +1897,20 @@
     var el = $("fim-jogo");
     el.hidden = false;
     el.className = completou ? "recorde" : "";
+    var conta = window.CONTA ? CONTA.estado() : { disponivel: false };
+    var ondeSalvo = !conta.disponivel ? ""
+      : conta.ligado ? " ☁️ Enviando para a sua conta Google."
+      : " 💾 Só neste aparelho — <a href='#' id='link-conta-pausa'>entre com Google</a> para continuar em outro.";
     el.innerHTML = completou
       ? "🏆 <b>MARATONA COMPLETA!</b> Você citou todos os " + fmtInt(jogo.alvosTotal) +
         " municípios da região em " + fmtTempo(tempoDecorrido()) + ". Lenda."
       : "⏸ <b>Sessão pausada.</b> Progresso salvo: <b>" + fmtInt(jogo.achados.size) +
         "</b> de " + fmtInt(jogo.alvosTotal) + " (<b>" + fmtPct(jogo.pct()) + "</b>)" +
-        " — <b>+" + fmtInt(jogo.achadosSessao) + "</b> nesta sessão. Volte quando quiser.";
+        " — <b>+" + fmtInt(jogo.achadosSessao) + "</b> nesta sessão. Volte quando quiser." + ondeSalvo;
+    var linkPausa = $("link-conta-pausa");
+    if (linkPausa) linkPausa.addEventListener("click", function (ev) { ev.preventDefault(); abrirRecordes(); });
+    // pausar é um clique: dá para renovar o token e enviar agora
+    if (conta.ligado) CONTA.sincronizarNoGesto("saida", 8000);
     atualizarRecordeUI();
   }
 
@@ -2182,6 +2286,7 @@
   function responderClique(lat, lng) {
     var r = jogo.responder(lat, lng);
     if (!r) return;
+    CONHECIMENTO.localizou(r.mun, r.score);
     // marca o clique (X), o lugar certo e a linha entre os dois
     var cx = proj.x(lng), cy = proj.y(lat);
     var vx = proj.x(r.mun.lng), vy = proj.y(r.mun.lat);
@@ -2209,6 +2314,171 @@
       mostrarAlvoClique();
     }
   }
+
+  // ---------------- modo Maior ou menor? (duelo e ordene) ----------------
+  // valor formatado de um município na métrica da partida
+  function fmtMetrica(m, metrica) {
+    var v = MODOS.METRICAS[metrica].valor(m);
+    if (metrica === "pop") return fmtPop(v) + " hab.";
+    if (metrica === "area") return fmtArea(v);
+    if (metrica === "pib") return fmtPib(v);
+    if (metrica === "densidade") return fmtInt(Math.round(v)) + " hab./km²";
+    if (metrica === "pibpc") return "R$ " + fmtInt(Math.round(v)) + " por hab.";
+    if (metrica === "lat") return Math.abs(v).toFixed(1).replace(".", ",") + "°" + (v >= 0 ? "N" : "S");
+    return Math.abs(v).toFixed(1).replace(".", ",") + "°O";
+  }
+  function fmtRazao(r) {
+    if (!isFinite(r) || r > 1000) return "muitas vezes maior";
+    if (r >= 10) return Math.round(r) + "× maior";
+    if (r >= 1.05) return r.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "× maior";
+    return "quase empate";
+  }
+  var ordemEscolhida = []; // idx dos municípios já tocados na rodada do Ordene
+
+  function mostrarRodadaComparar() {
+    var caixa = $("comparar");
+    caixa.hidden = false;
+    if (!jogo || jogo.encerrado || !jogo.atual) { caixa.hidden = true; return; }
+    var metrica = jogo.cfg.metrica;
+    var geo = metrica === "lat" || metrica === "lng";
+    if (jogo.cfg.formato === "ordene") {
+      ordemEscolhida = [];
+      var itens = jogo.atual.itens;
+      caixa.innerHTML = "<div class='comparar-pergunta'>" +
+        (metrica === "lat" ? "Toque na ordem, do <b>mais ao sul</b> ao <b>mais ao norte</b>:" :
+         metrica === "lng" ? "Toque na ordem, do <b>mais a oeste</b> ao <b>mais a leste</b>:" :
+         "Toque na ordem, da <b>menor</b> para a <b>maior</b> " + NOME_METRICA[metrica] + ":") + "</div>" +
+        "<div class='ordene-lista'>" + itens.map(function (p) {
+          return "<button type='button' class='carta-comp ordene-item' data-idx='" + p.m.idx + "'>" +
+            "<span class='ordene-num'></span><b>" + p.m.nome + "</b><small>" + p.m.uf +
+            (p.m.capital ? " · capital" : "") + "</small></button>";
+        }).join("") + "</div>" +
+        "<div class='comparar-acoes'><button type='button' class='botao-sec' id='btn-ordene-desfazer' disabled>↶ Desfazer</button>" +
+        "<button type='button' class='botao-pri' id='btn-ordene-confirmar' disabled>Confirmar ordem</button></div>";
+      $("btn-ordene-desfazer").addEventListener("click", function () {
+        ordemEscolhida.pop();
+        atualizarOrdene();
+      });
+      $("btn-ordene-confirmar").addEventListener("click", responderOrdene);
+      return;
+    }
+    var p = jogo.atual;
+    caixa.innerHTML = "<div class='comparar-pergunta'>" + jogo.pergunta + "</div>" +
+      "<div class='comparar-cartas'>" +
+      ["a", "b"].map(function (lado) {
+        var m = p[lado];
+        return "<button type='button' class='carta-comp' data-lado='" + lado + "'>" +
+          "<b>" + m.nome + "</b><small>" + NOMES_UF[m.uf] + " (" + m.uf + ")" +
+          (m.capital ? " · capital" : "") + "</small></button>";
+      }).join("") + "</div>" +
+      "<div class='comparar-nota'>" + (geo ? "Toque na cidade. " : "Toque na cidade. Tecla 1 ou 2 também vale. ") +
+      "Rodada " + (jogo.resultados.length + 1) + " de " + jogo.rodadas + "</div>";
+    // a sede das duas aparece no mapa (a posição é parte da intuição)
+    limparCamadasDeJogo();
+    aplicarRegiao(jogo.cfg.uf || null);
+  }
+
+  function atualizarOrdene() {
+    var itens = document.querySelectorAll("#comparar .ordene-item");
+    itens.forEach(function (el) {
+      var pos = ordemEscolhida.indexOf(+el.dataset.idx);
+      el.classList.toggle("escolhido", pos >= 0);
+      el.querySelector(".ordene-num").textContent = pos >= 0 ? (pos + 1) + "º" : "";
+    });
+    $("btn-ordene-desfazer").disabled = ordemEscolhida.length === 0;
+    $("btn-ordene-confirmar").disabled = ordemEscolhida.length !== jogo.atual.itens.length;
+  }
+
+  function responderOrdene() {
+    var r = jogo.responder(ordemEscolhida.slice());
+    if (!r) return;
+    var metrica = jogo.cfg.metrica;
+    CONHECIMENTO.comparou(r.itens.map(function (p) { return p.m; }), r.perfeita);
+    r.itens.forEach(function (p) { pintarPonto(p.m, "achada"); rotularMun(p.m); });
+    var linhas = r.itens.map(function (p, i) {
+      var posJogador = r.ordem.indexOf(p) + 1;
+      var certo = posJogador === i + 1;
+      return "<div class='ordene-rev" + (certo ? " certo" : " errado") + "'><span>" + (i + 1) + "º</span><b>" +
+        nomeUF(p.m) + "</b><small>" + fmtMetrica(p.m, metrica) + (certo ? "" : " · você pôs em " + posJogador + "º") + "</small></div>";
+    }).join("");
+    var caixa = $("comparar");
+    caixa.innerHTML = "<div class='comparar-pergunta'>" + (r.perfeita ? "🎯 Ordem perfeita!" :
+      "Rodada vale <b>" + fmtPct(r.score) + "</b> (pares na ordem certa)") + "</div>" +
+      "<div class='ordene-revelado'>" + linhas + "</div>" +
+      "<div class='comparar-acoes'><button type='button' class='botao-pri' id='btn-comparar-proxima'>" +
+      (jogo.encerrado ? "Ver resultado" : "Próxima rodada ›") + "</button></div>";
+    var item = document.createElement("div");
+    item.className = "item-jogada";
+    item.innerHTML = "<b>" + jogo.resultados.length + ". " + fmtPct(r.score) + "</b><br><small>" +
+      r.itens.map(function (p) { return p.m.nome; }).join(" &lt; ") + "</small>";
+    $("lista-jogo").prepend(item);
+    atualizarPlacar();
+    $("btn-comparar-proxima").addEventListener("click", proximaComparar);
+    $("btn-comparar-proxima").focus();
+  }
+
+  function responderComparar(lado) {
+    if (!jogo || jogo.encerrado || !jogo.atual || jogoModo !== "maiormenor") return;
+    var r = jogo.responder(lado);
+    if (!r) return;
+    var metrica = jogo.cfg.metrica;
+    CONHECIMENTO.comparou([r.a, r.b], r.acertou);
+    // revela os dois no mapa
+    [r.a, r.b].forEach(function (m) { pintarPonto(m, "achada"); rotularMun(m); });
+    var maior = r.maior === "a" ? r.a : r.b;
+    var caixa = $("comparar");
+    caixa.innerHTML = "<div class='comparar-pergunta'>" +
+      (r.acertou ? "✔ Isso! " : "✘ Não: ") + "<b>" + maior.nome + "</b> " +
+      (metrica === "lat" ? "fica mais ao norte" : metrica === "lng" ? "fica mais a leste" : "é " + fmtRazao(r.razao)) +
+      ".</div>" +
+      "<div class='comparar-cartas'>" +
+      ["a", "b"].map(function (l) {
+        var m = r[l];
+        var venceu = r.maior === l;
+        return "<div class='carta-comp revelada" + (venceu ? " maior" : " menor") +
+          (r.escolha === l ? " escolhida" : "") + "'><b>" + m.nome + "</b><small>" + m.uf +
+          "</small><span class='comp-valor'>" + fmtMetrica(m, metrica) + "</span></div>";
+      }).join("") + "</div>" +
+      "<div class='comparar-acoes'><button type='button' class='botao-pri' id='btn-comparar-proxima'>" +
+      (jogo.encerrado ? "Ver resultado" : "Próxima ›") + "</button></div>";
+    var item = document.createElement("div");
+    item.className = "item-jogada";
+    item.innerHTML = "<b>" + jogo.resultados.length + ". " + (r.acertou ? "✔ " : "✘ ") + maior.nome +
+      " &gt; " + (r.maior === "a" ? r.b : r.a).nome + "</b><br><small>" +
+      fmtMetrica(r.a, metrica) + " · " + fmtMetrica(r.b, metrica) + "</small>";
+    $("lista-jogo").prepend(item);
+    feedback("", "");
+    atualizarPlacar();
+    $("btn-comparar-proxima").addEventListener("click", proximaComparar);
+    $("btn-comparar-proxima").focus();
+  }
+
+  function proximaComparar() {
+    if (!jogo) return;
+    if (jogo.encerrado) { fimDeJogo(false); return; }
+    mostrarRodadaComparar();
+  }
+
+  // toque nas cartas (duelo) e nos itens (ordene)
+  $("comparar").addEventListener("click", function (ev) {
+    var carta = ev.target.closest(".carta-comp");
+    if (!carta || !jogo || jogo.encerrado) return;
+    if (carta.dataset.lado) { responderComparar(carta.dataset.lado); return; }
+    if (carta.dataset.idx !== undefined && jogo.cfg.formato === "ordene" && jogo.atual) {
+      var idx = +carta.dataset.idx;
+      if (ordemEscolhida.indexOf(idx) >= 0) return;
+      ordemEscolhida.push(idx);
+      atualizarOrdene();
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (jogoModo !== "maiormenor" || !jogo || jogo.encerrado || $("comparar").hidden) return;
+    if (ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return;
+    if (jogo.atual && jogo.cfg.formato !== "ordene") {
+      if (ev.key === "1" || ev.key === "ArrowLeft") { ev.preventDefault(); responderComparar("a"); }
+      if (ev.key === "2" || ev.key === "ArrowRight") { ev.preventDefault(); responderComparar("b"); }
+    }
+  });
 
   // ---------------- dicas ----------------
   // Escreve uma dica na caixa. No Onde estou? as dicas se acumulam (a UF
@@ -2244,17 +2514,20 @@
       var d = jogo.dica();
       if (!d) return;
       dicasUsadas = jogo.dicasDadas;
+      CONHECIMENTO.dica(jogo.secreto);
       // a dica do estado também aproxima o mapa: a busca fica visual
       if (d.tipo === "uf" && d.municipios.length) enquadrarLista(d.municipios);
       mostrarDica("💡 " + d.etapa + "/3", textoDicaOnde(d), true);
     } else if (jogoModo === "maratona") {
       var dm = jogo.dica();
       if (!dm) return;
+      CONHECIMENTO.dica(dm.mun);
       mostrarDica("💡", "O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
         "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>");
     } else if (jogoModo === "caminho" || jogoModo === "ponte" || jogoModo === "mancha") {
       var dv = jogo.dica(); // caminho e ponte já contam o custo no motor
       if (!dv) return;
+      CONHECIMENTO.dica(dv.mun);
       dicasUsadas++;        // na mancha o desconto sai daqui no fim da partida
       var custo = jogoModo === "caminho" ? "+1 salto"
         : jogoModo === "ponte" ? "+1 município"
@@ -2269,6 +2542,7 @@
       if (dicasUsadas >= 3) return;
       var df = jogo.dica();
       if (!df) return;
+      CONHECIMENTO.dica(df.mun);
       dicasUsadas++;
       var onde = df.rank !== undefined
         ? "é o <b>" + df.rank + "º</b> do ranking"
@@ -2294,11 +2568,17 @@
     var faltantes = null;
     if (jogoModo === "faixas" || jogoModo === "topn" || jogoModo === "cerco") {
       faltantes = jogo.encerrar();
+      // alvos que ficaram sem nome: entram no registro do que o jogador
+      // ainda não sabe (página de pontos cegos)
+      CONHECIMENTO.faltou(faltantes.map(function (par) { return par.mun; }));
       if (desistiu) {
         faltantes.forEach(function (par) {
           revelarAlvo(par.mun, par.faixa || null, true, par.rank);
         });
       }
+    } else if (jogoModo === "maiormenor") {
+      jogo.encerrado = true;
+      $("comparar").hidden = true;
     } else if (jogoModo === "caminho" || jogoModo === "ponte") {
       // revela um caminho mínimo: pontilhado azul quando venceu (compare com
       // o seu), vermelho com os municípios que faltaram quando desistiu
@@ -2318,6 +2598,7 @@
     } else if (jogoModo === "ondestou") {
       var secreto = jogo.encerrar();
       if (!jogo.venceu) {
+        CONHECIMENTO.faltou([secreto]);
         pontos[secreto.idx].setAttribute("class", "cidade faltante");
         pontos[secreto.idx].style.fill = "";
         sincronizarForma(secreto);
@@ -2374,6 +2655,12 @@
     } else if (jogoModo === "clique") {
       placar = "erro médio " + fmtInt(Math.round(jogo.erroMedioKm())) + " km em " +
         jogo.resultados.length + " rodadas";
+    } else if (jogoModo === "maiormenor") {
+      placar = jogo.cfg.formato === "ordene"
+        ? jogo.resultados.filter(function (r) { return r.perfeita; }).length + " de " +
+          jogo.rodadas + " rodadas perfeitas"
+        : jogo.acertos + " de " + jogo.rodadas + " acertos" +
+          (jogo.melhorSequencia >= 3 ? " · melhor sequência " + jogo.melhorSequencia : "");
     } else if (jogoModo === "dist" && jogo.cfg.metrica === "cidades") {
       placar = fmtInt(jogo.cobertos.size) + " cidades";
     } else if (jogoModo === "dist" && jogo.cfg.metrica === "area") {
@@ -2424,26 +2711,61 @@
       el.innerHTML = "<div class='resultado-topo'><span class='resultado-pct'>" + fmtPct(pct) +
         "</span><span class='resultado-titulo'>" + (porTempo ? "⏰ Tempo esgotado" : "Fim de jogo") + "</span></div>" +
         placar + " em " + fmtTempo(tempoSeg) + ".<br>" +
-        (res.melhor
+        (res.incomparavel
+          ? "📐 Seu recorde anterior era de uma versão antiga das regras ou dos dados — este resultado passa a valer como marca."
+          : res.melhor
           ? "🎉 <b>Novo recorde pessoal nesta configuração!</b>"
           : "Seu recorde nesta configuração segue " + fmtPct(res.recorde.pct) +
             " (" + res.recorde.placar + ", " + fmtTempo(res.recorde.tempoSeg) + ").") +
         relatorioFinal(faltantes);
+      // no modo com sorteio o link leva a semente: quem abrir joga a mesma
+      // partida — o mesmo secreto, as mesmas cidades, o mesmo par da ponte
       ultimoResultado = {
         texto: "🗺️ Mapa Quiz · " + jogoRotulo + "\n" +
-          "Fiz " + fmtPct(pct) + " (" + placar + ") em " + fmtTempo(tempoSeg) + ". Consegue bater?",
-        url: urlDesafio(jogoChave, pct),
+          "Fiz " + fmtPct(pct) + " (" + placar + ") em " + fmtTempo(tempoSeg) + ". Consegue bater?" +
+          (sementePartida !== null ? " (mesma partida, pelo link)" : ""),
+        url: urlDesafio(jogoChave, pct, sementePartida),
       };
       $("btn-compartilhar").hidden = false;
       $("btn-compartilhar").textContent = "📣 Desafiar";
       atualizarRecordeUI();
     }
+    mostrarSeguinte();
     SITE.mostrarAnuncios("resultado");
+  }
+
+  // "Próximo passo" no fim da partida: a sugestão vem do preset que trouxe
+  // o jogador até aqui (ex.: depois do duelo do seu estado, cite as 10
+  // maiores dele).
+  function mostrarSeguinte() {
+    var btn = $("btn-seguinte");
+    if (!seguinteSugerido) { btn.hidden = true; return; }
+    btn.hidden = false;
+    btn.textContent = seguinteSugerido.rotulo;
   }
 
   // Relatório pós-partida: o que de maior ficou de fora.
   function relatorioFinal(faltantes) {
     var itens;
+    if (jogoModo === "maiormenor") {
+      if (jogo.resultados.length === 0) return "";
+      if (jogo.cfg.formato === "ordene") {
+        var piorO = jogo.resultados.slice().sort(function (a, b) { return a.score - b.score; })[0];
+        if (piorO.perfeita) return "<div class='relatorio'>🏆 Todas as rodadas em ordem perfeita!</div>";
+        return "<div class='relatorio'>A rodada mais difícil (" + fmtPct(piorO.score) + " dos pares certos) — ordem certa: " +
+          piorO.itens.map(function (p) { return nomeUF(p.m); }).join(" &lt; ") + ".</div>";
+      }
+      var erros = jogo.resultados.filter(function (r) { return !r.acertou; });
+      if (erros.length === 0) return "<div class='relatorio'>🏆 Nenhum erro — intuição afiada!</div>";
+      // o erro mais "grosso": a maior razão entre os dois valores
+      erros.sort(function (a, b) { return b.razao - a.razao; });
+      itens = erros.slice(0, 3).map(function (r) {
+        var maior = r.maior === "a" ? r.a : r.b;
+        var menor = r.maior === "a" ? r.b : r.a;
+        return nomeUF(maior) + " &gt; " + nomeUF(menor) + " (" + fmtRazao(r.razao) + ")";
+      });
+      return "<div class='relatorio'>Para guardar: " + itens.join(" · ") + ".</div>";
+    }
     if (jogoModo === "ondestou") {
       var s = jogo.secreto;
       return "<div class='relatorio'>" +
@@ -2705,7 +3027,9 @@
   // ------------------------------------------------------------------
   // Recordes (modal)
   // ------------------------------------------------------------------
-  function abrirRecordes() {
+  function abrirRecordes(soAtualizar) {
+    if (!soAtualizar) $("nota-import").hidden = true;
+    if (window.CONTA) atualizarConta();
     var lista = RECORDES.listar();
     var alvo = $("lista-recordes");
     if (lista.length === 0) {
@@ -2717,10 +3041,15 @@
         var item = document.createElement("div");
         item.className = "item-recorde";
         var data = r.data ? new Date(r.data).toLocaleDateString("pt-BR") : "—";
+        // recorde de regras/dados de outra versão: fica marcado (o próximo
+        // resultado nessa configuração o substitui, sem comparar)
+        var antigo = !RECORDES.ehAtual(r);
         item.innerHTML = "<div class='info'><b>" + fmtPct(r.pct) + "</b> — " + (r.placar || "") +
           " em " + fmtTempo(r.tempoSeg) +
           "<small>" + (r.rotulo || par.chave) + "</small>" +
-          "<small>" + data + " · " + r.jogos + (r.jogos === 1 ? " jogo" : " jogos") + "</small></div>";
+          "<small>" + data + " · " + r.jogos + (r.jogos === 1 ? " jogo" : " jogos") +
+          (antigo ? " · <span class='recorde-antigo' title='Feito com outra versão das regras ou dos dados: o próximo resultado substitui esta marca'>📐 versão antiga</span>" : "") +
+          "</small></div>";
         var btn = document.createElement("button");
         btn.className = "botao-sec";
         btn.textContent = "Apagar";
@@ -2741,10 +3070,11 @@
   // configuração, então o link carrega a chave (e o recorde de quem enviou
   // como marca a bater).
   // ------------------------------------------------------------------
-  function urlDesafio(chave, pct) {
+  function urlDesafio(chave, pct, semente) {
     var base = /^https?:/.test(location.protocol) ? location.href.split("#")[0] : SITE.dominio;
     var url = base + "#d=" + encodeURIComponent(chave);
     if (typeof pct === "number") url += "&rec=" + (Math.round(pct * 1000) / 10);
+    if (semente !== null && semente !== undefined) url += "&seed=" + semente;
     return url;
   }
   function copiarDesafio() {
@@ -2754,7 +3084,20 @@
       return;
     }
     var rec = RECORDES.obter(lido.chave);
-    var url = urlDesafio(lido.chave, rec ? rec.pct : undefined);
+    // modo com sorteio: o link fixa a semente — e quem copia joga a mesma
+    // partida na próxima vez que iniciar (senão o desafio seria só a config)
+    var semente = null;
+    if (MODOS_COM_SORTEIO[modoAtual] && !(modoAtual === "cerco" && lido.cfg.alvo)) {
+      if (!sementeDesafio || sementeDesafio.modo !== modoAtual) {
+        sementeDesafio = { modo: modoAtual, semente: MODOS.novaSemente() };
+      }
+      semente = sementeDesafio.semente;
+      var banner = $("desafio-banner");
+      banner.hidden = false;
+      banner.innerHTML = "🎲 <b>Sorteio fixado no link:</b> quem abrir joga exatamente a mesma partida que você — " +
+        "sua próxima partida neste modo usa esse sorteio.";
+    }
+    var url = urlDesafio(lido.chave, rec ? rec.pct : undefined, semente);
     SITE.rastrear("desafio_copiado", { modo: modoAtual });
     var btn = $("btn-desafio");
     function avisar() {
@@ -2773,12 +3116,16 @@
     var partes = location.hash.slice(3).split("&");
     var chave = decodeURIComponent(partes[0]);
     var recAlvo = null;
+    var sementeURL = null;
     partes.slice(1).forEach(function (p) {
       if (p.indexOf("rec=") === 0) recAlvo = parseFloat(p.slice(4));
+      if (p.indexOf("seed=") === 0) sementeURL = parseInt(p.slice(5), 10);
     });
     var tokens = chave.split("|");
     var modo = tokens[0];
     if (!DESCRICOES[modo]) return;
+    sementeDesafio = sementeURL !== null && !isNaN(sementeURL) && MODOS_COM_SORTEIO[modo]
+      ? { modo: modo, semente: sementeURL } : null;
     var p = {};
     tokens.slice(1).forEach(function (t) {
       var i = t.indexOf("=");
@@ -2825,6 +3172,11 @@
       setVal("cfg-mancha-tempo", p.tempo);
     } else if (modo === "ponte") {
       setVal("cfg-ponte-pool", p.pool);
+    } else if (modo === "maiormenor") {
+      if (p.formato) $("cfg-mm-formato").value = p.formato;
+      if (p.metrica && MODOS.METRICAS[p.metrica]) $("cfg-mm-metrica").value = p.metrica;
+      setVal("cfg-mm-rodadas", p.rodadas);
+      setVal("cfg-mm-pool", p.pool);
     } else if (modo === "faixas") {
       if (p.tipo) $("cfg-faixas-tipo").value = p.tipo;
       $("rotulo-centro").hidden = $("cfg-faixas-tipo").value !== "aneis";
@@ -2849,7 +3201,9 @@
       (recAlvo !== null && !isNaN(recAlvo)
         ? "Marca a bater: <b>" +
           recAlvo.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%</b> — "
-        : "") + "aperte ▶ Iniciar jogo e boa sorte!";
+        : "") +
+      (sementeDesafio ? "o sorteio é o mesmo de quem enviou — " : "") +
+      "aperte ▶ Iniciar jogo e boa sorte!";
   }
 
   // ------------------------------------------------------------------
@@ -3059,9 +3413,211 @@
     atualizarRecordeUI();
     mostrarTela("config");
   }
-  $("btn-config-jogo").addEventListener("click", voltarParaConfig);
+  $("btn-config-jogo").addEventListener("click", function () {
+    // sair da maratona é o momento de mandar o progresso para a conta (é um
+    // clique: dá para renovar o token se ele venceu)
+    var eraMaratona = jogoModo === "maratona" && jogo && !jogo.encerrado;
+    voltarParaConfig();
+    if (eraMaratona && window.CONTA && CONTA.estado().ligado) CONTA.sincronizarNoGesto("saida", 8000);
+  });
   $("btn-mudar-config").addEventListener("click", voltarParaConfig);
   $("btn-jogar-novo").addEventListener("click", iniciar);
+  $("btn-seguinte").addEventListener("click", function () {
+    if (!seguinteSugerido || !seguinteSugerido.acao) return;
+    var acao = seguinteSugerido.acao;
+    seguinteSugerido = null;
+    acao();
+  });
+
+  // ------------------------------------------------------------------
+  // Presets: um clique e a partida começa com uma configuração recomendada
+  // (a personalização fica dobrada embaixo). Usado pelos convites da tela
+  // inicial e pelo "próximo passo" do fim da partida.
+  // ------------------------------------------------------------------
+  // campos do formulário por modo (id do campo -> nome no objeto de valores)
+  var CAMPOS_PRESET = {
+    dist: { raio: "cfg-dist-raio", limite: "cfg-dist-limite", palpites: "cfg-dist-palpites", tempo: "cfg-dist-tempo", metrica: "cfg-dist-metrica" },
+    pop: { metrica: "cfg-pop-metrica", alvo: "cfg-pop-alvo", limite: "cfg-pop-limite", palpites: "cfg-pop-palpites" },
+    topn: { n: "cfg-topn-n", metrica: "cfg-topn-metrica", limite: "cfg-topn-limite", tempo: "cfg-topn-tempo" },
+    faixas: { tipo: "cfg-faixas-tipo", largura: "cfg-faixas-largura", top: "cfg-faixas-topn", limite: "cfg-faixas-limite" },
+    ondestou: { pool: "cfg-onde-pool" },
+    clique: { pool: "cfg-clique-pool", rodadas: "cfg-clique-rodadas" },
+    cerco: { pool: "cfg-cerco-pool" },
+    ponte: { pool: "cfg-ponte-pool" },
+    mancha: { limite: "cfg-mancha-limite", tempo: "cfg-mancha-tempo" },
+    maiormenor: { formato: "cfg-mm-formato", metrica: "cfg-mm-metrica", rodadas: "cfg-mm-rodadas", pool: "cfg-mm-pool" },
+    maratona: {}, estudo: {}, caminho: {},
+  };
+  function iniciarPreset(modo, valores, seguinte) {
+    valores = valores || {};
+    $("cfg-regiao").value = valores.uf && NOMES_UF[valores.uf] ? valores.uf : "BR";
+    var campos = CAMPOS_PRESET[modo] || {};
+    Object.keys(campos).forEach(function (nome) {
+      if (valores[nome] !== undefined) $(campos[nome]).value = valores[nome];
+    });
+    atualizarCamposLimite();
+    selecionarModo(modo);
+    seguinteSugerido = seguinte ? { rotulo: seguinte.rotulo, acao: seguinte.acao, paraProxima: true } : null;
+    iniciar();
+  }
+
+  // ---------------- convites da tela inicial ----------------
+  var LS_UF_CASA = "mapaquiz.uf";
+  var LS_CATALOGO = "mapaquiz.catalogo";
+  var selUF = $("convite-uf");
+  Object.keys(NOMES_UF).sort(function (a, b) {
+    return NOMES_UF[a].localeCompare(NOMES_UF[b]);
+  }).forEach(function (uf) {
+    var op = document.createElement("option");
+    op.value = uf;
+    op.textContent = NOMES_UF[uf] + " (" + uf + ")";
+    selUF.appendChild(op);
+  });
+  // sem escolha guardada, começa pelo estado mais populoso (a lista é
+  // alfabética, e "Acre" por padrão não convida ninguém)
+  var ufCasa = null;
+  try { ufCasa = localStorage.getItem(LS_UF_CASA); } catch (e) {}
+  selUF.value = ufCasa && NOMES_UF[ufCasa] ? ufCasa : "SP";
+  selUF.addEventListener("change", function () {
+    try { localStorage.setItem(LS_UF_CASA, selUF.value); } catch (e) {}
+  });
+  // Duelo de cidades do estado (sem teclado); estados pequenos precisam de
+  // um porte menor para haver pares suficientes. No fim, o próximo passo:
+  // citar as 10 maiores do estado.
+  $("btn-convite-estado").addEventListener("click", function () {
+    var uf = selUF.value;
+    try { localStorage.setItem(LS_UF_CASA, uf); } catch (e) {}
+    var comPop = function (min) {
+      return DADOS.municipios.filter(function (m) { return m.uf === uf && m.pop >= min; }).length;
+    };
+    var pool = comPop(50000) >= 24 ? 50000 : comPop(20000) >= 24 ? 20000 : 0;
+    SITE.rastrear("convite_estado", { uf: uf });
+    iniciarPreset("maiormenor", { uf: uf, formato: "duelo", metrica: "pop", rodadas: 10, pool: pool }, {
+      rotulo: "▶ Agora cite as 10 maiores de " + uf,
+      acao: function () {
+        iniciarPreset("topn", { uf: uf, n: 10, metrica: "pop", limite: "livre" });
+      },
+    });
+  });
+  // maratona em andamento: o convite do meio vira "continuar"
+  function atualizarConviteMaratona() {
+    var todas = lerMaratonas();
+    var melhor = null;
+    Object.keys(todas).forEach(function (reg) {
+      var p = todas[reg];
+      if (!p || !p.ids || p.ids.length === 0) return;
+      if (!melhor || p.ids.length > melhor.n) melhor = { reg: reg, n: p.ids.length };
+    });
+    var card = $("convite-maratona");
+    if (!melhor) { card.hidden = true; return; }
+    var total = melhor.reg === "BR" ? DADOS.total
+      : DADOS.municipios.filter(function (m) { return m.uf === melhor.reg; }).length;
+    card.hidden = false;
+    card.dataset.regiao = melhor.reg;
+    $("convite-maratona-texto").innerHTML = "<b>Continuar sua maratona</b><small>" +
+      (melhor.reg === "BR" ? "Brasil inteiro" : NOMES_UF[melhor.reg]) + ": <b>" + fmtInt(melhor.n) +
+      "</b> de " + fmtInt(total) + " municípios (" + fmtPct(melhor.n / total) + ")</small>";
+  }
+  $("convite-maratona").addEventListener("click", function () {
+    var reg = $("convite-maratona").dataset.regiao || "BR";
+    iniciarPreset("maratona", { uf: reg === "BR" ? null : reg });
+  });
+  // catálogo dobrável (aberto no desktop, fechado no celular — lembrado)
+  function setCatalogo(aberto) {
+    $("catalogo").hidden = !aberto;
+    $("btn-explorar").setAttribute("aria-expanded", aberto ? "true" : "false");
+    $("btn-explorar").classList.toggle("aberto", aberto);
+    try { localStorage.setItem(LS_CATALOGO, aberto ? "1" : "0"); } catch (e) {}
+  }
+  $("btn-explorar").addEventListener("click", function () {
+    var abrir = $("catalogo").hidden;
+    setCatalogo(abrir);
+    if (abrir) $("catalogo").scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+  (function () {
+    var salvo = null;
+    try { salvo = localStorage.getItem(LS_CATALOGO); } catch (e) {}
+    var largo = !(window.matchMedia && matchMedia("(max-width: 900px)").matches);
+    setCatalogo(salvo === null ? largo : salvo === "1");
+  })();
+
+  // ---------------- configuração dobrada ("Personalizar") ----------------
+  function setPersonalizar(aberto) {
+    $("config-avancado").hidden = !aberto;
+    $("btn-personalizar").textContent = aberto ? "⚙ Ocultar opções" : "⚙ Personalizar";
+    $("btn-personalizar").setAttribute("aria-expanded", aberto ? "true" : "false");
+  }
+  $("btn-personalizar").addEventListener("click", function () {
+    setPersonalizar($("config-avancado").hidden);
+  });
+
+  // ------------------------------------------------------------------
+  // Conta Google: bloco no modal de recordes + atalho no topo
+  // ------------------------------------------------------------------
+  function atualizarConta(s) {
+    s = s || CONTA.estado();
+    var bloco = $("bloco-conta");
+    var topo = $("btn-conta");
+    if (!s.disponivel) { bloco.hidden = true; topo.hidden = true; return; }
+    bloco.hidden = false;
+    topo.hidden = false;
+    topo.classList.toggle("ligado", s.ligado);
+    topo.title = s.ligado ? "Conta Google: " + (s.email || "conectada") : "Entrar com Google para sincronizar o progresso";
+    $("rotulo-conta").textContent = s.ligado ? (s.pendente ? " Sincronizar" : " Conta") : " Entrar";
+    var texto;
+    if (!s.ligado) {
+      texto = "<b>☁️ Leve seu progresso para todos os seus aparelhos.</b><br>" +
+        "Entre com a conta Google: recordes, maratona, pontos cegos e Desafio do dia passam a ser " +
+        "sincronizados. O arquivo fica na pasta de dados de aplicativo do <b>seu</b> Google Drive " +
+        "(invisível para você e para outros apps) — nada passa por servidor do jogo.";
+    } else {
+      var quando = CONTA.tempoDesde(s.ultimaSync);
+      texto = "<b>☁️ Conectado" + (s.email ? " como " + s.email : "") + ".</b><br>" +
+        (s.ocupado ? "Sincronizando…"
+          : s.erro ? "⚠️ " + s.erro
+          : s.pendente && !s.tokenValido ? "⚠️ Há mudanças para enviar — toque em Sincronizar agora (a sessão do Google venceu)."
+          : s.pendente ? "Mudanças a enviar em instantes…"
+          : quando ? "Sincronizado " + quando + "." : "Ainda não sincronizado.");
+    }
+    $("conta-texto").innerHTML = texto;
+    $("btn-conta-entrar").hidden = s.ligado;
+    $("btn-conta-sync").hidden = !s.ligado;
+    $("btn-conta-sync").disabled = s.ocupado;
+    $("btn-conta-sair").hidden = !s.ligado;
+  }
+  $("btn-conta-entrar").addEventListener("click", function () {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = "Abrindo o Google…";
+    CONTA.entrar(function () {
+      btn.disabled = false;
+      btn.textContent = "Entrar com Google";
+      atualizarRecordeUI();
+      abrirRecordes(true);
+    });
+  });
+  $("btn-conta-sync").addEventListener("click", function () {
+    CONTA.sincronizarNoGesto("manual", 0, function () {
+      atualizarRecordeUI();
+      abrirRecordes(true);
+    });
+  });
+  $("btn-conta-sair").addEventListener("click", function () {
+    if (!confirm("Desconectar a conta Google neste aparelho? O progresso continua salvo aqui e no seu Drive.")) return;
+    CONTA.sair();
+  });
+  $("btn-conta").addEventListener("click", function () { abrirRecordes(); });
+  CONTA.ouvir(atualizarConta);
+  CONTA.init({
+    exportar: exportarBackup,
+    importar: importarBackup,
+    aoImportar: function () {
+      atualizarRecordeUI();
+      atualizarConviteMaratona();
+      if (!$("modal-recordes").hidden) abrirRecordes(true);
+    },
+  });
+  atualizarConta();
 
   $("cfg-faixas-tipo").addEventListener("change", function () {
     $("rotulo-centro").hidden = $("cfg-faixas-tipo").value !== "aneis";
@@ -3152,23 +3708,23 @@
 
   // Backup completo: recordes, maratona, municípios citados, desafio do dia
   // e preferências — tudo que o jogo guarda neste navegador, num JSON só.
-  function lerLS(chave) {
-    try { return JSON.parse(localStorage.getItem(chave)); } catch (e) { return null; }
-  }
   function exportarBackup() {
     return JSON.stringify({
       formato: "mapaquiz-backup",
-      versao: 2,
+      versao: 3,
       exportadoEm: new Date().toISOString(),
       recordes: JSON.parse(RECORDES.exportarJson()).recordes,
       maratona: lerMaratonas(),
-      citadas: lerLS(LS_CITADAS) || {},
+      conhecimento: CONHECIMENTO.tudo(),
+      citadas: CONHECIMENTO.comoCitadas(), // versões antigas do jogo só leem isto
       diario: lerDiario(),
     }, null, 2);
   }
   // Mescla um backup: recordes pelo critério de melhor; maratona por união
-  // dos municípios (e o maior tempo); citadas pelo maior contador; diário
-  // por união dos dias. Nunca apaga nada do que já está aqui.
+  // dos municípios (e o maior tempo); conhecimento (pontos cegos) pelo maior
+  // contador de cada dimensão; diário por união dos dias. Nunca apaga nada
+  // do que já está aqui. Vale para o arquivo importado à mão e para o que
+  // vem do Drive na sincronização da conta.
   function importarBackup(texto) {
     var obj;
     try { obj = JSON.parse(texto); } catch (e) { return { ok: false, msg: "Arquivo inválido: não é um JSON." }; }
@@ -3176,6 +3732,7 @@
     var r = RECORDES.importarJson(JSON.stringify({ recordes: obj.recordes || {} }));
     if (!r.ok) return r;
     var partes = [r.msg.replace(/\.$/, "")];
+    var novosPorRegiao = {};
     if (obj.maratona && typeof obj.maratona === "object") {
       var minhas = lerMaratonas();
       var novosMar = 0;
@@ -3184,20 +3741,24 @@
         if (!deles || !Array.isArray(deles.ids)) return;
         var minha = minhas[reg] || { ids: [], tempoSeg: 0 };
         var ids = new Set(minha.ids);
-        deles.ids.forEach(function (id) { if (!ids.has(id)) { ids.add(id); novosMar++; } });
+        var novosReg = [];
+        deles.ids.forEach(function (id) { if (!ids.has(id)) { ids.add(id); novosReg.push(id); } });
+        novosMar += novosReg.length;
+        if (novosReg.length) novosPorRegiao[reg] = novosReg;
         minhas[reg] = { ids: Array.from(ids), tempoSeg: Math.max(minha.tempoSeg || 0, deles.tempoSeg || 0) };
       });
       try { localStorage.setItem(LS_MARATONA, JSON.stringify(minhas)); } catch (e) {}
       if (novosMar) partes.push(novosMar + " município(s) a mais na maratona");
+      // maratona em andamento nesta região: os achados do outro aparelho
+      // entram na partida agora, sem reiniciar
+      if (jogo && jogoModo === "maratona" && !jogo.encerrado) {
+        var regAtual = jogo.cfg.uf || "BR";
+        if (novosPorRegiao[regAtual]) absorverMaratona(novosPorRegiao[regAtual]);
+      }
     }
-    if (obj.citadas && typeof obj.citadas === "object") {
-      var tally = lerLS(LS_CITADAS) || {};
-      Object.keys(obj.citadas).forEach(function (id) {
-        tally[id] = Math.max(tally[id] || 0, obj.citadas[id] || 0);
-      });
-      try { localStorage.setItem(LS_CITADAS, JSON.stringify(tally)); } catch (e) {}
-      tallyCitadas = null; // relê na próxima partida
-      partes.push("pontos cegos mesclados");
+    if ((obj.conhecimento && typeof obj.conhecimento === "object") ||
+        (obj.citadas && typeof obj.citadas === "object")) {
+      if (CONHECIMENTO.mesclar(obj.conhecimento, obj.citadas)) partes.push("pontos cegos mesclados");
     }
     if (obj.diario && obj.diario.dias) {
       var meu = lerDiario();
@@ -3205,11 +3766,25 @@
       Object.keys(obj.diario.dias).forEach(function (k) {
         if (!meu.dias[k]) { meu.dias[k] = obj.diario.dias[k]; novosDias++; }
       });
-      salvarDiario(meu);
-      if (novosDias) partes.push(novosDias + " dia(s) de desafio");
+      if (novosDias) {
+        salvarDiario(meu);
+        partes.push(novosDias + " dia(s) de desafio");
+      }
       atualizarCardDiario();
     }
-    return { ok: true, msg: "Backup importado: " + partes.join(", ") + "." };
+    return { ok: true, msg: "Backup importado: " + partes.join(", ") + ".", novosMaratona: novosPorRegiao };
+  }
+  // Achados da maratona vindos de outro aparelho, no meio da sessão.
+  function absorverMaratona(ids) {
+    var novos = jogo.absorver(ids);
+    if (novos.length === 0) return;
+    novos.forEach(function (m) {
+      pintarPonto(m, "achada");
+      atualizarContadorMaratona(m);
+    });
+    feedback("☁️ " + fmtInt(novos.length) + " município(s) que você citou em outro aparelho entraram aqui.", "ok");
+    atualizarPlacar();
+    if (jogo.encerrado) fimSessaoMaratona(true);
   }
   $("btn-exportar-recordes").addEventListener("click", function () {
     var blob = new Blob([exportarBackup()], { type: "application/json" });

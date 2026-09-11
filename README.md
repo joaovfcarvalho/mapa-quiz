@@ -5,7 +5,26 @@
 Jogo de quiz geográfico no estilo dos quizzes de mapa do HugeQuiz, cobrindo os
 5.571 municípios do Brasil. Roda 100% offline no navegador — basta abrir o
 `index.html` (duplo clique) — e guarda seus recordes pessoais por configuração
-no `localStorage` do navegador.
+no `localStorage` do navegador. Quem quiser continuar a maratona no celular e
+no computador pode **entrar com a conta Google**: o progresso é sincronizado
+pela pasta de dados de aplicativo do próprio Google Drive, sem servidor do
+jogo no meio (ver [Conta Google](#conta-google-sincronização-entre-aparelhos)).
+
+## Tela inicial: três portas de entrada
+
+Antes do catálogo completo, a tela inicial oferece três convites:
+
+1. **Desafio do dia** — entra direto na partida do dia.
+2. **Conhece bem o seu estado?** — escolha a UF e jogue dez duelos de
+   "Maior ou menor?" só com cidades dela, sem digitar nada. No fim, o jogo
+   sugere o próximo passo: citar as 10 maiores do estado. Quem tem uma
+   maratona em andamento vê, no lugar, **Continuar sua maratona**.
+3. **Explorar todos os jogos** — abre o catálogo (aberto por padrão no
+   desktop, dobrado no celular; a escolha fica lembrada).
+
+Cada modo abre com uma **configuração recomendada** e o botão ▶ em cima; as
+opções ficam dobradas em **⚙ Personalizar** (a região do jogo fica sempre à
+vista). A configuração recomendada é a que os campos já trazem por padrão.
 
 ## Desafio do dia
 
@@ -103,6 +122,20 @@ faz divisa (os vizinhos são links para a ficha deles). A lista lateral traz o
 ranking da região ordenável por população, PIB ou área, e o placar mostra os
 totais da região. Funciona com o Brasil inteiro ou com uma UF só.
 
+**13. Maior ou menor?** — reconhecimento, não evocação: a rampa de entrada
+para quem ainda não tem nomes na ponta da língua. Duas cidades na tela, toque
+na que tem mais habitantes — ou mais área, mais PIB, mais densidade, maior PIB
+per capita (surpresa garantida: cidades de royalties e mineração ganham de
+capitais), ou a que fica mais ao norte/a leste. Sem teclado (teclas 1 e 2
+também valem). Os pares vão ficando mais parecidos ao longo da partida: a
+distância entre os dois no ranking encolhe de ~40% do universo na primeira
+rodada a ~2% na última. Depois de cada resposta os valores dos dois aparecem,
+com a razão entre eles, e as duas cidades acendem no mapa. O formato
+**Ordene** troca o duelo por cinco cidades: toque na ordem, da menor para a
+maior; a rodada vale a fração de pares na ordem certa (errar uma posição não
+zera a rodada). Porte das cidades, métrica e número de rodadas configuráveis;
+recorde por configuração.
+
 **Região do jogo** — qualquer modo pode ser jogado com o Brasil inteiro ou só
 com uma UF (o mapa aproxima o estado e municípios de fora somem). Raio de
 30 km em Minas é outro jogo. No Cerco a região vale só para o sorteio do
@@ -129,7 +162,14 @@ para o recorde daquela configuração.
 
 **Desafio por link** — o botão 🔗 Desafiar copia um link com a configuração
 atual (e seu recorde como marca a bater). Quem abrir o link joga exatamente o
-mesmo desafio.
+mesmo desafio: nos modos com sorteio (Onde estou?, Onde fica?, Cerco sorteado,
+Ponte, Maior ou menor?) o link leva também a **semente** do sorteio
+(`&seed=…`), então o município secreto, a sequência de cidades ou o par da
+ponte são os mesmos para quem enviou e para quem recebe. Ao copiar o link da
+tela de configuração, sua próxima partida naquele modo usa a mesma semente; o
+botão 📣 Desafiar do fim da partida leva a semente da partida que acabou de
+ser jogada. A semente não entra na chave do recorde — o recorde continua
+sendo por configuração.
 
 **Relatório pós-partida** — ao final, o jogo mostra o que de maior ficou de
 fora: população na mesa e as maiores cidades esquecidas.
@@ -137,7 +177,7 @@ fora: população na mesa e as maiores cidades esquecidas.
 ## Tutorial
 
 Na primeira visita um tutorial guiado (holofote sobre cada parte da tela)
-apresenta o Desafio do dia, os modos, os três botões do mapa (🛰️ Satélite,
+apresenta o Desafio do dia, o convite do seu estado, o catálogo de modos, os três botões do mapa (🛰️ Satélite,
 ● Pontos, ⬡ Formas), o zoom, a digitação e os recordes. Ele volta pelo botão
 ❔ Como jogar, no topo.
 ## Outros modos: bairros e rios
@@ -210,12 +250,24 @@ modos.
 
 ## Seus pontos cegos
 
-A página `estatisticas.html` (botão 📊 Pontos cegos no topo) guarda, só no
-seu navegador, cada município que você já citou em qualquer partida — e
-desenha o mapa do que falta: as regiões que nunca aparecem nos seus palpites,
-as maiores cidades que você nunca citou e a cobertura por UF. Cada cidade
-conta no máximo uma vez por partida, então a cor mostra em quantas partidas
-diferentes ela apareceu.
+A página `estatisticas.html` (botão 📊 Pontos cegos no topo) guarda, no seu
+navegador (ou em todos os seus aparelhos, com a conta Google ligada), o que o
+jogo aprendeu sobre o que você sabe de cada município — por **dimensão**, não
+só "já citou" (`js/conhecimento.js`, chave `mapaquiz.conhecimento.v1`):
+
+| Dimensão | O que registra |
+|---|---|
+| citou (`c`) | digitou o nome de memória — no máximo uma vez por partida |
+| localizou (`l`, `lp`) | rodadas do "Onde fica?" em que foi o alvo e a soma das pontuações (a média diz se você acerta o lugar) |
+| faltou (`f`) | era alvo (faixas, Top N, cerco, secreto do Onde estou?) e ficou sem nome até o fim |
+| dica (`d`) | o jogo revelou pistas sobre ela a pedido |
+| comparou (`k`, `ka`) | apareceu num duelo/ordenação do Maior ou menor?, e quantas vezes você acertou |
+
+A página desenha o mapa do que falta (as regiões que nunca aparecem nos seus
+palpites, as maiores cidades que você nunca citou, a cobertura por UF) e as
+listas por dimensão: os alvos que você mais deixou passar e as cidades cujo
+nome você sabe mas põe longe do lugar. A contagem antiga (`mapaquiz.citadas.v1`)
+é migrada sozinha na primeira leitura, e backups antigos continuam entrando.
 
 ## Mapa de densidade de municípios
 
@@ -253,16 +305,75 @@ recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
 Cada combinação exata de modo + parâmetros tem seu próprio recorde (maior %;
 em caso de empate, menor tempo), salvo no navegador. O botão 🏆 Recordes lista
 todos, com opção de apagar individualmente ou tudo — e de exportar/importar um
-**backup completo** em JSON: recordes, progresso da maratona, municípios já
-citados (pontos cegos) e histórico do Desafio do dia. A importação só mescla
+**backup completo** em JSON: recordes, progresso da maratona, o registro dos
+pontos cegos e histórico do Desafio do dia. A importação só mescla
 (melhor recorde de cada configuração, união dos municípios da maratona, maior
-contador dos pontos cegos, união dos dias), nunca apaga nada. É o jeito de
-levar o progresso de um navegador ou aparelho para outro. Backups antigos
-(só recordes) continuam válidos.
+contador de cada dimensão dos pontos cegos, união dos dias), nunca apaga nada.
+Backups antigos (só recordes, ou com a contagem antiga de citadas) continuam
+válidos.
+
+Cada recorde guarda também a **versão das regras** de pontuação
+(`RECORDES.VERSAO_REGRAS`, em `js/recordes.js`) e a **versão dos dados**
+(`MUNICIPIOS_META.versao`, no cabeçalho de `data/municipios.js`). Quando uma
+fórmula de pontuação mudar, suba a versão das regras; quando a base do IBGE
+for regenerada, o `build_data.py` grava a nova versão. Recordes de outra
+versão ficam marcados (📐 versão antiga) na lista e o próximo resultado
+naquela configuração os substitui em vez de ser comparado com eles.
+
+## Conta Google: sincronização entre aparelhos
+
+Quem joga a maratona no celular e no computador pode **entrar com Google**
+(botão ☁️ no topo, ou em 🏆 Recordes). O que acontece (`js/conta.js`):
+
+- O jogo usa o Google Identity Services (fluxo de token no navegador) e pede
+  só o e-mail e o escopo `drive.appdata` — a **pasta de dados de aplicativo**
+  do Google Drive do próprio jogador, que nenhum outro app enxerga e que não
+  aparece na lista de arquivos dele.
+- O backup completo (o mesmo JSON do botão Exportar) fica lá, num arquivo só
+  (`mapaquiz-backup.json`). Não existe servidor do Mapa Quiz no meio: o
+  navegador fala direto com o Drive.
+- Ciclo de sincronização: se o arquivo mudou desde a última leitura deste
+  aparelho, baixa e **mescla** no local (a mesma mesclagem do importar
+  backup); se o local difere do último enviado, envia. Dois aparelhos podem
+  escrever em qualquer ordem — o resultado converge.
+- Quando sincroniza: ao entrar; ao recarregar a página com o token ainda
+  válido; 5 s depois de qualquer mudança (recorde, acerto na maratona,
+  ponto cego, Desafio do dia); ao fechar a aba (`pagehide`, com `keepalive`);
+  e, dentro de um clique, ao **iniciar/continuar a maratona** (baixa antes de
+  abrir a partida, com prazo de 6 s) e ao **pausar/sair** dela. Se a maratona
+  já está aberta quando chega progresso de outro aparelho, os municípios
+  entram na partida na hora, sem reiniciar.
+- O token do Google dura ~1 h e só pode ser renovado dentro de um gesto do
+  usuário (senão o navegador bloqueia a janela). Expirado, a sincronização
+  fica "pendente" e é concluída no próximo clique que importa (iniciar,
+  pausar, o botão Sincronizar agora); quem já autorizou não vê tela nenhuma.
+- **Sair** revoga o acesso e esquece a conta neste aparelho; o progresso
+  continua aqui e no Drive.
+
+Para ligar, crie um **ID do cliente OAuth 2.0** (tipo *Aplicativo da Web*) no
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials):
+ative a *Google Drive API* no projeto, configure a tela de consentimento
+(o escopo `drive.appdata` não é sensível, então não exige verificação),
+acrescente `https://mapaquiz.com.br` (e `http://localhost:8000`, para
+testar) em *Origens JavaScript autorizadas* e cole o ID em
+`google.clientId` no `js/config.js`. Sem o ID, o botão não aparece; em
+`file://` o login também fica desligado (o Google exige origem `http(s)`).
 
 O botão 📣 no fim de cada partida compartilha o resultado (menu nativo no
 celular; copia o texto no desktop) com o link de desafio da mesma
 configuração.
+
+## Testes
+
+Sem dependências: `npm test` roda os testes de `tests/` com o `node:test`
+(Node 18+) e o teste das métricas dos bairros. Cobrem a geometria
+(`geo.js`), a busca e a normalização de nomes, as invariantes dos dados de que
+os motores dependem em silêncio (5.571 municípios, ids únicos, ordenados por
+população, um único registro zerado), os motores com semente (mesma semente,
+mesma partida), as fórmulas de pontuação, o Maior ou menor?/Ordene, os
+recordes com versão e a mesclagem do registro de pontos cegos. `npm run check`
+confere a sintaxe de todos os scripts. A GitHub Action em
+`.github/workflows/ci.yml` roda os dois a cada push.
 
 ## Dados
 
@@ -322,7 +433,7 @@ os outros 5.568 municípios formam um único bloco conexo.
 ```
 mapa-quiz/
 ├── index.html          # página única do jogo
-├── privacidade.html    # política de privacidade (LGPD, Analytics, AdSense)
+├── privacidade.html    # política de privacidade (LGPD, Analytics, AdSense, conta Google)
 ├── rios.html           # quiz dos rios do Brasil
 ├── estatisticas.html   # mapa dos seus pontos cegos
 ├── densidade.html      # mapa de densidade de municípios (fora da navegação)
@@ -335,14 +446,18 @@ mapa-quiz/
 │   ├── site.js         # aviso de privacidade, analytics, anúncios, apoio, compartilhar
 │   ├── geo.js          # haversine, rumo, círculos geodésicos, projeção
 │   ├── dados.js        # índice de municípios + busca/normalização de nomes
-│   ├── modos.js        # motores dos 11 modos de jogo + grafo de divisas
-│   ├── recordes.js     # recordes no localStorage
+│   ├── modos.js        # motores dos 13 modos de jogo + grafo de divisas + sorteio com semente
+│   ├── recordes.js     # recordes no localStorage (com versão das regras/dados)
+│   ├── conhecimento.js # o que o jogador sabe de cada município, por dimensão
+│   ├── conta.js        # entrar com Google + sincronização pelo Drive (appdata)
 │   ├── rios.js         # quiz dos rios: busca, placar e mapa próprio
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
 │   ├── estatisticas.js # mapa e listas dos pontos cegos
 │   ├── tutorial.js     # tutorial guiado
 │   └── app.js          # interface, mapa SVG, zoom/pan, Desafio do dia, backup
 ├── data/               # dados embutidos (gerados)
+├── tests/              # testes node:test (npm test)
+├── .github/workflows/  # CI: sintaxe + testes
 └── tools/              # build_data.py, build_satelite.py, build_rios.py, build_marca.py, og.html
 ```
 
@@ -397,6 +512,9 @@ carrega nada de terceiros e nem mostra o aviso de privacidade:
 - **`pix`** — chave, nome e cidade do recebedor. Liga o botão ☕ Apoiar, que
   copia a chave ou o código "Pix copia e cola" (BR Code gerado no navegador,
   com CRC). `apoioLinks` acrescenta links (apoia.se, Ko-fi…).
+- **`google.clientId`** — ID do cliente OAuth do login com Google (ver
+  [Conta Google](#conta-google-sincronização-entre-aparelhos)). Vazio = sem
+  botão de conta.
 - **`contatoEmail`** — aparece na política de privacidade.
 
 A imagem de compartilhamento (`img/og.png`, 1200×630) e os ícones são

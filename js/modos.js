@@ -23,6 +23,41 @@ var MODOS = (function () {
     return muns.filter(function (m) { return m.uf === uf; });
   }
 
+  // mulberry32: gerador determinístico a partir de uma semente inteira. Com
+  // a mesma semente, o mesmo sorteio — é o que faz um link de desafio (ou o
+  // Desafio do dia) dar a mesma partida para todo mundo.
+  function rngSemente(semente) {
+    var a = (Math.floor(semente) * 2654435761) >>> 0;
+    var r = function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      var t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    r(); r(); // descarta as primeiras saídas (sementes vizinhas parecidas)
+    return r;
+  }
+  // Sorteio da partida: cfg.semente fixa o gerador; sem semente é aleatório.
+  function sorteioDe(cfg) {
+    return cfg.semente !== undefined && cfg.semente !== null
+      ? rngSemente(cfg.semente)
+      : Math.random;
+  }
+  // semente nova (inteiro de 31 bits) para uma partida comum
+  function novaSemente() {
+    return Math.floor(Math.random() * 2147483647);
+  }
+  // Embaralha (Fisher–Yates) uma cópia da lista com o gerador dado.
+  function embaralhar(lista, rnd) {
+    var copia = lista.slice();
+    for (var i = copia.length - 1; i > 0; i--) {
+      var j = Math.floor(rnd() * (i + 1));
+      var tmp = copia[i]; copia[i] = copia[j]; copia[j] = tmp;
+    }
+    return copia;
+  }
+
   function extentCidades(lista) {
     var latMin = 90, latMax = -90, lngMin = 180, lngMax = -180;
     lista.forEach(function (m) {
@@ -474,15 +509,17 @@ var MODOS = (function () {
   // ---------------------------------------------------------------
   // Modo 5 — Onde estou?: o jogo sorteia um município secreto (com população
   // mínima cfg.minPop) e cada palpite responde com distância e direção.
-  // cfg: {minPop, uf?, secreto?}
+  // cfg: {minPop, uf?, secreto?, semente?}
   // ---------------------------------------------------------------
   function JogoOndeEstou(cfg) {
     this.cfg = cfg;
     var u = universoDe(cfg);
     this.universo = u.lista;
     this.pool = this.universo.filter(function (m) { return m.pop >= cfg.minPop; });
-    // cfg.secreto (Desafio do dia) fixa o município; senão é sorteio
-    this.secreto = cfg.secreto || this.pool[Math.floor(Math.random() * this.pool.length)];
+    // cfg.secreto (Desafio do dia) fixa o município; senão é sorteio (com a
+    // semente da partida, para o link de desafio repetir o mesmo secreto)
+    var rnd = sorteioDe(cfg);
+    this.secreto = cfg.secreto || this.pool[Math.floor(rnd() * this.pool.length)];
     this.palpites = [];          // {mun, distKm, rumo}
     this.usados = new Set();
     this.dicasDadas = 0;         // cada dica custa +1 palpite no placar
@@ -570,19 +607,15 @@ var MODOS = (function () {
   // ---------------------------------------------------------------
   // Modo 6 — Onde fica?: o jogo mostra um nome e o jogador clica no mapa;
   // a rodada vale mais pontos quanto menor o erro em km.
-  // cfg: {minPop, rodadas, uf?}
+  // cfg: {minPop, rodadas, uf?, semente?}
   // ---------------------------------------------------------------
   function JogoClique(cfg) {
     this.cfg = cfg;
     var u = universoDe(cfg);
     this.universo = u.lista;
     var pool = this.universo.filter(function (m) { return m.pop >= cfg.minPop; });
-    // sorteio sem reposição (Fisher–Yates parcial)
-    var copia = pool.slice();
-    for (var i = copia.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var tmp = copia[i]; copia[i] = copia[j]; copia[j] = tmp;
-    }
+    // sorteio sem reposição, com a semente da partida
+    var copia = embaralhar(pool, sorteioDe(cfg));
     this.alvos = copia.slice(0, Math.min(cfg.rodadas, copia.length));
     this.resultados = [];        // {mun, lat, lng, distKm, score}
     this.encerrado = false;
@@ -671,6 +704,22 @@ var MODOS = (function () {
       if (!this.achados.has(m.idx)) return { mun: m };
     }
     return null;
+  };
+  // Absorve ids achados em outro aparelho (sincronização no meio da sessão):
+  // devolve os municípios que ainda não estavam marcados aqui.
+  JogoMaratona.prototype.absorver = function (ids) {
+    var conjunto = new Set(ids);
+    var novos = [];
+    var self = this;
+    this.universo.forEach(function (m) {
+      if (!conjunto.has(m.id) || self.achados.has(m.idx)) return;
+      self.achados.add(m.idx);
+      self.popAchada += m.pop;
+      self.pibAchado += m.pib;
+      novos.push(m);
+    });
+    if (this.achados.size >= this.alvosTotal) this.encerrado = true;
+    return novos;
   };
   JogoMaratona.prototype.idsAchados = function () {
     var achados = this.achados;
@@ -883,7 +932,7 @@ var MODOS = (function () {
   // Modo 9 — Cerco: nomear todos os municípios que fazem divisa com o alvo.
   // A região (uf) filtra só o sorteio do alvo — os vizinhos valem mesmo
   // quando ficam do outro lado da divisa estadual.
-  // cfg: {alvo? (município escolhido), minPop? (porte do sorteio), uf?}
+  // cfg: {alvo? (município escolhido), minPop? (porte do sorteio), uf?, semente?}
   // ---------------------------------------------------------------
   function JogoCerco(cfg) {
     this.cfg = cfg;
@@ -899,7 +948,7 @@ var MODOS = (function () {
         this.erroInicial = "A região não tem municípios desse porte para o sorteio — escolha um porte menor.";
         return;
       }
-      alvo = pool[Math.floor(Math.random() * pool.length)];
+      alvo = pool[Math.floor(sorteioDe(cfg)() * pool.length)];
     }
     this.alvo = alvo;
     this.alvos = adj[alvo.idx]; // já ordenados por população (desc)
@@ -1045,7 +1094,7 @@ var MODOS = (function () {
   // Modo 11 — Ponte: dois municípios sorteados; construa uma corrente de
   // divisas que os conecte. Cada palpite precisa fazer divisa com algo já
   // marcado (os dois extremos contam), então dá para crescer dos dois lados.
-  // cfg: {minPop, uf?}
+  // cfg: {minPop, uf?, semente?}
   // ---------------------------------------------------------------
   function JogoPonte(cfg) {
     this.cfg = cfg;
@@ -1054,10 +1103,11 @@ var MODOS = (function () {
     this.permitido = cfg.uf ? conjuntoIdx(this.universo) : null;
     var pool = this.universo.filter(function (m) { return m.pop >= cfg.minPop; });
     var achou = null;
+    var rnd = sorteioDe(cfg);
     // sorteia até achar um par conectado e não trivial (3+ saltos de distância)
     for (var t = 0; t < 400 && !achou; t++) {
-      var a = pool[Math.floor(Math.random() * pool.length)];
-      var b = pool[Math.floor(Math.random() * pool.length)];
+      var a = pool[Math.floor(rnd() * pool.length)];
+      var b = pool[Math.floor(rnd() * pool.length)];
       if (!a || !b || a.idx === b.idx) continue;
       var caminho = menorCaminho(a, b, this.permitido);
       if (caminho && caminho.length - 1 >= 3) achou = { a: a, b: b, caminho: caminho };
@@ -1210,7 +1260,200 @@ var MODOS = (function () {
     return Math.min(1, this.minMeio / (this.usados + this.dicasDadas));
   };
 
+  // ---------------------------------------------------------------
+  // Modo 13 — Maior ou menor?: reconhecimento, não evocação. Duas cidades
+  // na tela, toque na que tem mais habitantes (ou área, PIB, densidade, PIB
+  // per capita). Sem teclado: a rampa de entrada para quem ainda não tem
+  // nomes na ponta da língua. A dificuldade sobe ao longo da partida — os
+  // pares vão ficando mais parecidos (distância no ranking cada vez menor).
+  // cfg: {metrica: 'pop'|'area'|'pib'|'densidade'|'pibpc', rodadas, minPop,
+  //       uf?, semente?}
+  // ---------------------------------------------------------------
+  var METRICAS = {
+    pop: { valor: function (m) { return m.pop; }, pergunta: "Qual tem mais habitantes?" },
+    area: { valor: function (m) { return m.area; }, pergunta: "Qual tem o território maior?" },
+    pib: { valor: function (m) { return m.pib; }, pergunta: "Qual tem o PIB maior?" },
+    densidade: { valor: function (m) { return m.area > 0 ? m.pop / m.area : 0; }, pergunta: "Qual é mais densa (hab./km²)?" },
+    pibpc: { valor: function (m) { return m.pop > 0 ? m.pib * 1000 / m.pop : 0; }, pergunta: "Qual tem o PIB per capita maior?" },
+    lat: { valor: function (m) { return m.lat; }, pergunta: "Qual fica mais ao norte?" },
+    lng: { valor: function (m) { return m.lng; }, pergunta: "Qual fica mais a leste?" },
+  };
+  // pool ordenado pela métrica (crescente), sem valores zerados/empatados
+  // demais para comparar
+  function poolOrdenado(cfg) {
+    var u = universoDe(cfg);
+    var valor = METRICAS[cfg.metrica].valor;
+    var minPop = cfg.minPop || 0;
+    return u.lista
+      .filter(function (m) { return m.pop >= minPop && m.area > 0 && m.pop > 0; })
+      .map(function (m) { return { m: m, v: valor(m) }; })
+      .sort(function (a, b) { return a.v - b.v; });
+  }
+
+  function JogoMaiorMenor(cfg) {
+    this.cfg = cfg;
+    this.metrica = METRICAS[cfg.metrica] || METRICAS.pop;
+    this.pergunta = this.metrica.pergunta;
+    this.universo = universoDe(cfg).lista; // a interface enquadra o mapa por ele
+    this.pool = poolOrdenado(cfg);
+    if (this.pool.length < 4) {
+      this.erroInicial = "A região não tem municípios suficientes desse porte para comparar — escolha um porte menor.";
+      return;
+    }
+    this.rodadas = Math.max(1, cfg.rodadas || 10);
+    this.rnd = sorteioDe(cfg);
+    this.resultados = [];   // {a, b, va, vb, escolha, acertou}
+    this.acertos = 0;
+    this.sequencia = 0;     // acertos seguidos
+    this.melhorSequencia = 0;
+    this.usados = new Set();
+    this.encerrado = false;
+    this.atual = null;
+    this.proximoPar();
+  }
+  // Sorteia o par da rodada: um índice ao acaso e outro a uma distância no
+  // ranking que encolhe conforme a partida avança (do 40% do pool na
+  // primeira rodada a ~2% na última) — pares cada vez mais apertados.
+  JogoMaiorMenor.prototype.proximoPar = function () {
+    var n = this.pool.length;
+    var r = this.resultados.length;
+    var frac = this.rodadas <= 1 ? 0.1 : 0.4 - 0.38 * (r / (this.rodadas - 1));
+    var dist = Math.max(1, Math.round(n * frac));
+    var self = this;
+    for (var tent = 0; tent < 200; tent++) {
+      var i = Math.floor(self.rnd() * n);
+      var d = 1 + Math.floor(self.rnd() * dist);
+      var j = self.rnd() < 0.5 ? i - d : i + d;
+      if (j < 0 || j >= n) j = i - d >= 0 ? i - d : i + d;
+      if (j < 0 || j >= n || j === i) continue;
+      var a = self.pool[i], b = self.pool[j];
+      if (a.v === b.v) continue;
+      if (self.usados.has(a.m.idx) || self.usados.has(b.m.idx)) continue;
+      // a esquerda/direita também é sorteada: a posição não entrega a resposta
+      if (self.rnd() < 0.5) { var t = a; a = b; b = t; }
+      self.usados.add(a.m.idx);
+      self.usados.add(b.m.idx);
+      self.atual = { a: a.m, b: b.m, va: a.v, vb: b.v };
+      return self.atual;
+    }
+    // pool pequeno: libera os já usados e tenta de novo
+    if (this.usados.size > 0) { this.usados = new Set(); return this.proximoPar(); }
+    this.encerrado = true;
+    return null;
+  };
+  // escolha: 'a' ou 'b'
+  JogoMaiorMenor.prototype.responder = function (escolha) {
+    if (this.encerrado || !this.atual) return null;
+    var p = this.atual;
+    var maior = p.va > p.vb ? "a" : "b";
+    var acertou = escolha === maior;
+    if (acertou) {
+      this.acertos++;
+      this.sequencia++;
+      if (this.sequencia > this.melhorSequencia) this.melhorSequencia = this.sequencia;
+    } else {
+      this.sequencia = 0;
+    }
+    var r = { a: p.a, b: p.b, va: p.va, vb: p.vb, escolha: escolha, maior: maior, acertou: acertou,
+      razao: Math.max(p.va, p.vb) / Math.max(1e-9, Math.min(p.va, p.vb)) };
+    this.resultados.push(r);
+    this.atual = null;
+    if (this.resultados.length >= this.rodadas) this.encerrado = true;
+    else this.proximoPar();
+    return r;
+  };
+  JogoMaiorMenor.prototype.pct = function () {
+    return this.rodadas === 0 ? 0 : this.acertos / this.rodadas;
+  };
+
+  // ---------------------------------------------------------------
+  // Modo 14 — Ordene: cinco cidades, coloque do menor para o maior (ou de
+  // sul a norte / oeste a leste). Pontua pela fração de pares na ordem certa
+  // — errar uma posição não zera a rodada.
+  // cfg: {metrica, rodadas, minPop, uf?, semente?, tamanho? (5)}
+  // ---------------------------------------------------------------
+  function JogoOrdene(cfg) {
+    this.cfg = cfg;
+    this.metrica = METRICAS[cfg.metrica] || METRICAS.pop;
+    this.tamanho = cfg.tamanho || 5;
+    this.universo = universoDe(cfg).lista;
+    this.pool = poolOrdenado(cfg);
+    if (this.pool.length < this.tamanho + 2) {
+      this.erroInicial = "A região não tem municípios suficientes desse porte para ordenar — escolha um porte menor.";
+      return;
+    }
+    this.rodadas = Math.max(1, cfg.rodadas || 5);
+    this.rnd = sorteioDe(cfg);
+    this.resultados = [];   // {itens (na ordem certa), ordem (do jogador), score}
+    this.somaScore = 0;
+    this.usados = new Set();
+    this.encerrado = false;
+    this.atual = null;      // {itens: [{m, v}] embaralhados}
+    this.proximaRodada();
+  }
+  // Sorteia N cidades de uma janela do ranking que encolhe com o avanço da
+  // partida (mesma ideia do duelo): no começo espalhadas, no fim vizinhas.
+  JogoOrdene.prototype.proximaRodada = function () {
+    var n = this.pool.length;
+    var r = this.resultados.length;
+    var frac = this.rodadas <= 1 ? 0.3 : 0.6 - 0.5 * (r / (this.rodadas - 1));
+    var janela = Math.max(this.tamanho * 2, Math.round(n * frac));
+    var self = this;
+    for (var tent = 0; tent < 100; tent++) {
+      var ini = Math.floor(self.rnd() * Math.max(1, n - janela));
+      var cand = self.pool.slice(ini, ini + janela).filter(function (p) { return !self.usados.has(p.m.idx); });
+      if (cand.length < self.tamanho) continue;
+      var escolhidos = embaralhar(cand, self.rnd).slice(0, self.tamanho);
+      // valores empatados não têm ordem certa: descarta a tentativa
+      var vals = escolhidos.map(function (p) { return p.v; }).sort(function (a, b) { return a - b; });
+      var empate = false;
+      for (var k = 1; k < vals.length; k++) if (vals[k] === vals[k - 1]) empate = true;
+      if (empate) continue;
+      escolhidos.forEach(function (p) { self.usados.add(p.m.idx); });
+      self.atual = { itens: embaralhar(escolhidos, self.rnd) };
+      return self.atual;
+    }
+    if (this.usados.size > 0) { this.usados = new Set(); return this.proximaRodada(); }
+    this.encerrado = true;
+    return null;
+  };
+  // ordem: lista de idx dos municípios, do menor para o maior segundo o jogador
+  JogoOrdene.prototype.responder = function (ordem) {
+    if (this.encerrado || !this.atual) return null;
+    var itens = this.atual.itens;
+    var porIdx = new Map();
+    itens.forEach(function (p) { porIdx.set(p.m.idx, p); });
+    if (ordem.length !== itens.length) return null;
+    for (var i = 0; i < ordem.length; i++) if (!porIdx.has(ordem[i])) return null;
+    // fração de pares (i<j) em que o jogador pôs o menor antes do maior
+    var certos = 0, pares = 0;
+    for (var a = 0; a < ordem.length; a++) {
+      for (var b = a + 1; b < ordem.length; b++) {
+        pares++;
+        if (porIdx.get(ordem[a]).v < porIdx.get(ordem[b]).v) certos++;
+      }
+    }
+    var score = pares === 0 ? 0 : certos / pares;
+    var certa = itens.slice().sort(function (x, y) { return x.v - y.v; });
+    var r = { itens: certa, ordem: ordem.map(function (idx) { return porIdx.get(idx); }),
+      score: score, perfeita: certos === pares };
+    this.resultados.push(r);
+    this.somaScore += score;
+    this.atual = null;
+    if (this.resultados.length >= this.rodadas) this.encerrado = true;
+    else this.proximaRodada();
+    return r;
+  };
+  JogoOrdene.prototype.pct = function () {
+    return this.rodadas === 0 ? 0 : this.somaScore / this.rodadas;
+  };
+
   return {
+    rngSemente: rngSemente,
+    novaSemente: novaSemente,
+    METRICAS: METRICAS,
+    JogoMaiorMenor: JogoMaiorMenor,
+    JogoOrdene: JogoOrdene,
     JogoCirculosDistancia: JogoCirculosDistancia,
     JogoCirculosPopulacao: JogoCirculosPopulacao,
     JogoFaixas: JogoFaixas,

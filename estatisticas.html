@@ -48,6 +48,12 @@
   #lista-nunca li { margin-bottom: 2px; }
   #lista-nunca .pop { color: var(--texto-suave); font-size: 12px; }
 
+  .dim-linha { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; margin-bottom: 3px; }
+  .dim-linha b { font-variant-numeric: tabular-nums; color: var(--ouro-claro); }
+  .dim-linha small { color: var(--texto-suave); font-weight: 400; }
+  #lista-faltou ol, #lista-local ol { margin: 6px 0 0; padding-left: 20px; }
+  #lista-faltou li, #lista-local li { margin-bottom: 2px; }
+  #lista-faltou .pop, #lista-local .pop { color: var(--texto-suave); font-size: 12px; }
   .legenda-linha { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 4px; }
   .ponto-ex { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 </style>
@@ -69,9 +75,11 @@
 <main>
   <aside id="painel">
     <p id="descricao-modo">Toda cidade que você cita nas partidas fica marcada
-    aqui (só neste navegador). O mapa mostra o que você já cobriu — e as
-    regiões que nunca aparecem nos seus palpites. Passe o mouse sobre um ponto
-    para ver a cidade.</p>
+    aqui (neste navegador — ou em todos os seus aparelhos, com a conta Google
+    ligada). O mapa mostra o que você já cobriu e as regiões que nunca aparecem
+    nos seus palpites; as listas separam o que você <b>lembra</b>, o que
+    <b>localiza</b>, o que <b>deixou passar</b> e o que só viu por <b>dica</b>.
+    Passe o mouse sobre um ponto para ver a cidade.</p>
 
     <div class="bloco" id="resumo"></div>
 
@@ -82,7 +90,13 @@
       <div class="legenda-linha"><span class="ponto-ex" style="background:#0a4a20"></span> citada em 5+ partidas</div>
     </div>
 
+    <div class="bloco" id="dimensoes"></div>
+
     <div class="bloco" id="lista-nunca"></div>
+
+    <div class="bloco" id="lista-faltou" hidden></div>
+
+    <div class="bloco" id="lista-local" hidden></div>
 
     <div class="bloco" id="lista-ufs"><h3>Cobertura por UF</h3><div id="barras-uf"></div></div>
 
@@ -103,6 +117,7 @@
 <script src="data/brasil_uf.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/dados.js"></script>
+<script src="js/conhecimento.js"></script>
 <script src="js/estatisticas.js"></script>
 </body>
 </html>

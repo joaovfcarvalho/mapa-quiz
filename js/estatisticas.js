@@ -3,13 +3,8 @@
 // citou) nas partidas, a partir da contagem local gravada pelo jogo.
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var LS_CITADAS = "mapaquiz.citadas.v1";
-
-  function carregarTally() {
-    try { return JSON.parse(localStorage.getItem(LS_CITADAS)) || {}; }
-    catch (e) { return {}; }
-  }
-  var tally = carregarTally();
+  // o registro por dimensão (citou, localizou, faltou, dica, comparou) vem
+  // de js/conhecimento.js — que migra sozinho a contagem antiga
   var muns = DADOS.municipios;
 
   function fmtInt(n) { return n.toLocaleString("pt-BR"); }
@@ -21,7 +16,8 @@
     if (n >= 1e3) return Math.round(n / 1e3).toLocaleString("pt-BR") + " mil";
     return fmtInt(n);
   }
-  function vezes(m) { return tally[m.id] || 0; }
+  function vezes(m) { return CONHECIMENTO.vezesCitou(m); }
+  function saber(m) { return CONHECIMENTO.de(m); }
 
   // ---------------- projeção e desenho ----------------
   var bounds = { latMin: 90, latMax: -90, lngMin: 180, lngMax: -180 };
@@ -109,6 +105,52 @@
         vezes(maisCitada) + (vezes(maisCitada) === 1 ? " partida." : " partidas.");
     }
 
+    // as dimensões do que você sabe: quantos municípios em cada uma
+    var dim = { c: 0, l: 0, lBem: 0, f: 0, d: 0, k: 0, kBem: 0 };
+    muns.forEach(function (m) {
+      var s = saber(m);
+      if (s.c) dim.c++;
+      if (s.l) { dim.l++; if (s.lp / s.l >= 0.6) dim.lBem++; }
+      if (s.f) dim.f++;
+      if (s.d) dim.d++;
+      if (s.k) { dim.k++; if ((s.ka || 0) / s.k >= 0.5) dim.kBem++; }
+    });
+    $("dimensoes").innerHTML = "<h3>O que você sabe, por dimensão</h3>" +
+      "<div class='dim-linha'><span>🧠 Lembra o nome</span><b>" + fmtInt(dim.c) + "</b></div>" +
+      "<div class='dim-linha'><span>📍 Localiza no mapa</span><b>" + fmtInt(dim.lBem) +
+        "<small> de " + fmtInt(dim.l) + " perguntadas</small></b></div>" +
+      "<div class='dim-linha'><span>⚖️ Acerta o porte</span><b>" + fmtInt(dim.kBem) +
+        "<small> de " + fmtInt(dim.k) + " comparadas</small></b></div>" +
+      "<div class='dim-linha'><span>🕳️ Deixou passar</span><b>" + fmtInt(dim.f) + "</b></div>" +
+      "<div class='dim-linha'><span>💡 Só viu por dica</span><b>" + fmtInt(dim.d) + "</b></div>";
+
+    // alvos que ficaram sem nome (o que treinar primeiro)
+    var faltou = muns.filter(function (m) { return saber(m).f > 0; })
+      .sort(function (a, b) { return (saber(b).f - saber(a).f) || (b.pop - a.pop); }).slice(0, 10);
+    var elF = $("lista-faltou");
+    elF.hidden = faltou.length === 0;
+    if (faltou.length) {
+      elF.innerHTML = "<h3>Alvos que você mais deixou passar</h3><ol>" +
+        faltou.map(function (m) {
+          var s = saber(m);
+          return "<li>" + m.nome + " (" + m.uf + ") <span class='pop'>· " + fmtPop(m.pop) + " hab. · " +
+            s.f + (s.f === 1 ? " vez" : " vezes") + (s.c ? "" : " · nunca citou") + "</span></li>";
+        }).join("") + "</ol>";
+    }
+    // cidades que você sabe o nome mas coloca longe do lugar
+    var mal = muns.filter(function (m) { var s = saber(m); return s.l >= 1 && s.lp / s.l < 0.5; })
+      .sort(function (a, b) { return (saber(a).lp / saber(a).l) - (saber(b).lp / saber(b).l) || (b.pop - a.pop); }).slice(0, 10);
+    var elL = $("lista-local");
+    elL.hidden = mal.length === 0;
+    if (mal.length) {
+      elL.innerHTML = "<h3>Sabe o nome, erra o lugar</h3><ol>" +
+        mal.map(function (m) {
+          var s = saber(m);
+          return "<li>" + m.nome + " (" + m.uf + ") <span class='pop'>· acerto médio " +
+            Math.round(100 * s.lp / s.l) + "% em " + s.l + (s.l === 1 ? " rodada" : " rodadas") + "</span></li>";
+        }).join("") + "</ol>";
+    }
+
     // as maiores cidades que nunca apareceram num palpite seu
     var nunca = muns.filter(function (m) { return vezes(m) === 0; }).slice(0, 12);
     var alvo = $("lista-nunca");
@@ -161,9 +203,15 @@
     });
     if (!melhor) { tooltip.hidden = true; return; }
     var n = vezes(melhor);
+    var s = saber(melhor);
+    var extras = [];
+    if (s.l) extras.push("localizou " + Math.round(100 * s.lp / s.l) + "%");
+    if (s.f) extras.push("deixou passar " + s.f + "×");
+    if (s.d) extras.push("viu por dica");
     tooltip.innerHTML = "<b>" + melhor.nome + " (" + melhor.uf + ")</b> · " +
       fmtPop(melhor.pop) + " hab. · " +
-      (n === 0 ? "nunca citada" : "citada em " + n + (n === 1 ? " partida" : " partidas"));
+      (n === 0 ? "nunca citada" : "citada em " + n + (n === 1 ? " partida" : " partidas")) +
+      (extras.length ? " · " + extras.join(" · ") : "");
     tooltip.hidden = false;
     var wrap = $("mapa-wrap").getBoundingClientRect();
     tooltip.style.left = ev.clientX - wrap.left + 14 + "px";
@@ -172,9 +220,8 @@
   canvas.addEventListener("mouseleave", function () { tooltip.hidden = true; });
 
   $("btn-zerar").addEventListener("click", function () {
-    if (!confirm("Apagar a contagem de todas as cidades já citadas? Os recordes não são afetados.")) return;
-    try { localStorage.removeItem(LS_CITADAS); } catch (e) {}
-    tally = {};
+    if (!confirm("Apagar tudo que o jogo registrou sobre o que você sabe (citou, localizou, deixou passar)? Os recordes não são afetados.")) return;
+    CONHECIMENTO.zerar();
     desenhar();
     montarPainel();
   });

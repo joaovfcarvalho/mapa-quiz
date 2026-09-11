@@ -1,7 +1,7 @@
 {
   "name": "Mapa Quiz — municípios do Brasil",
   "short_name": "Mapa Quiz",
-  "description": "Doze modos de jogo sobre o mapa do Brasil e um Desafio do dia.",
+  "description": "Treze modos de jogo sobre o mapa do Brasil e um Desafio do dia.",
   "lang": "pt-BR",
   "start_url": "./index.html?fonte=pwa",
   "display": "standalone",

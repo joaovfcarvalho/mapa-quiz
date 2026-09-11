@@ -31,6 +31,17 @@ window.MAPAQUIZ_CONFIG = {
   // links extras de apoio, ex.: [{ rotulo: "apoia.se", url: "https://apoia.se/..." }]
   apoioLinks: [],
 
+  // Entrar com Google + sincronização do progresso (recordes, maratona,
+  // pontos cegos, Desafio do dia) entre aparelhos. O backup vai para a pasta
+  // de dados de aplicativo do Google Drive do próprio jogador (invisível
+  // para ele, inacessível a outros apps) — nada passa por servidor nosso.
+  // Crie um "ID do cliente OAuth 2.0" (tipo Aplicativo da Web) no Google
+  // Cloud Console, com https://mapaquiz.com.br nas origens autorizadas, e
+  // cole aqui. Vazio = o botão não aparece.
+  google: {
+    clientId: "",
+  },
+
   // e-mail de contato exibido na política de privacidade
   contatoEmail: "",
 };
