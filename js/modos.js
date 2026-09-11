@@ -650,7 +650,10 @@ var MODOS = (function () {
   // ---------------------------------------------------------------
   // Modo 7 — Maratona: citar todos os municípios da região, com progresso
   // persistente entre sessões (a interface injeta/salva os ids achados).
-  // cfg: {uf?, idsIniciais?: array de ids do IBGE já achados}
+  // cfg: {uf?, palavra?, idsIniciais?: array de ids do IBGE já achados}
+  // Com palavra=true um palpite vale por todos os municípios da região que
+  // têm aquela palavra (ou sequência de palavras) inteira no nome: "são"
+  // acende São Paulo e São Luís, mas não Mansão.
   // ---------------------------------------------------------------
   function JogoMaratona(cfg) {
     this.cfg = cfg;
@@ -659,8 +662,10 @@ var MODOS = (function () {
     this.alvosTotal = this.universo.length;
     this.uniPop = u.pop;
     this.uniPib = u.pib;
+    this.uniArea = u.area;
     this.popAchada = 0;
     this.pibAchado = 0;
+    this.areaAchada = 0;
     this.achados = new Set();
     this.achadosSessao = 0;
     this.encerrado = false;
@@ -669,20 +674,65 @@ var MODOS = (function () {
       var achados = this.achados;
       var pop = 0;
       var pib = 0;
+      var area = 0;
       this.universo.forEach(function (m) {
-        if (ids.has(m.id)) { achados.add(m.idx); pop += m.pop; pib += m.pib; }
+        if (ids.has(m.id)) { achados.add(m.idx); pop += m.pop; pib += m.pib; area += m.area; }
       });
       this.popAchada = pop;
       this.pibAchado = pib;
+      this.areaAchada = area;
     }
   }
+  // Palavras que sozinhas não identificam ninguém ("do" acenderia metade do
+  // mapa) — só valem acompanhadas de outra.
+  var PALAVRAS_VAZIAS = { de: 1, do: 1, da: 1, dos: 1, das: 1, e: 1, d: 1 };
+  var siglasUF = null;
+  // Municípios da região cujo nome contém, como palavras inteiras e em
+  // sequência, o que foi digitado. Aceita "nome uf" para restringir à UF.
+  JogoMaratona.prototype.buscarPorPalavra = function (texto) {
+    var t = DADOS.normalizar(texto);
+    if (!t) return { status: "vazio" };
+    var partes = t.split(" ");
+    if (!siglasUF) {
+      siglasUF = new Set(municipios.map(function (m) { return m.uf.toLowerCase(); }));
+    }
+    var uf = null;
+    if (partes.length >= 2 && siglasUF.has(partes[partes.length - 1])) {
+      uf = partes.pop().toUpperCase();
+    }
+    if (partes.every(function (p) { return PALAVRAS_VAZIAS[p]; })) {
+      return { status: "generico", termo: t };
+    }
+    var n = partes.length;
+    var lista = this.universo.filter(function (m) {
+      if (uf && m.uf !== uf) return false;
+      var nome = m.chave.split(" ");
+      for (var i = 0; i + n <= nome.length; i++) {
+        var j = 0;
+        while (j < n && nome[i + j] === partes[j]) j++;
+        if (j === n) return true;
+      }
+      return false;
+    });
+    return { status: lista.length ? "ok" : "nao_encontrado", municipios: lista, termo: partes.join(" ") };
+  };
   JogoMaratona.prototype.palpitar = function (texto) {
     if (this.encerrado) return { tipo: "encerrado" };
-    var res = DADOS.buscar(texto);
-    if (res.status === "vazio") return { tipo: "vazio" };
-    if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
-    var cand = dentroDaRegiao(this.cfg, res.municipios);
-    if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
+    var cand, termo;
+    if (this.cfg.palavra) {
+      var busca = this.buscarPorPalavra(texto);
+      if (busca.status === "vazio") return { tipo: "vazio" };
+      if (busca.status === "generico") return { tipo: "generico", termo: busca.termo };
+      if (busca.status === "nao_encontrado") return { tipo: "nao_encontrado" };
+      cand = busca.municipios;
+      termo = busca.termo;
+    } else {
+      var res = DADOS.buscar(texto);
+      if (res.status === "vazio") return { tipo: "vazio" };
+      if (res.status === "nao_encontrado") return { tipo: "nao_encontrado", ufErrada: res.ufErrada };
+      cand = dentroDaRegiao(this.cfg, res.municipios);
+      if (cand.length === 0) return { tipo: "fora_regiao", municipios: res.municipios };
+    }
     var revelados = [];
     var self = this;
     cand.forEach(function (m) {
@@ -691,11 +741,12 @@ var MODOS = (function () {
       self.achadosSessao++;
       self.popAchada += m.pop;
       self.pibAchado += m.pib;
+      self.areaAchada += m.area;
       revelados.push({ mun: m });
     });
-    if (revelados.length === 0) return { tipo: "repetido", mun: cand[0] };
+    if (revelados.length === 0) return { tipo: "repetido", mun: cand[0], total: cand.length, termo: termo };
     if (this.achados.size >= this.alvosTotal) this.encerrado = true;
-    return { tipo: "ok", revelados: revelados, completo: this.encerrado };
+    return { tipo: "ok", revelados: revelados, completo: this.encerrado, termo: termo, total: cand.length };
   };
   // Dica (grátis na maratona): o maior município que ainda falta.
   JogoMaratona.prototype.dica = function () {

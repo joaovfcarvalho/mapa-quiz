@@ -589,6 +589,8 @@ main {
 }
 #botoes-mapa button:hover { background: #fff; }
 #botoes-mapa button.ativo { background: #14528a; border-color: #14528a; color: #fff; }
+/* opção subordinada (✦ Alta definição só aparece com ⬡ Formas ligado) */
+#botoes-mapa button.sub { font-size: 11.5px; padding: 4px 10px; font-weight: 600; }
 
 #botoes-zoom {
   position: absolute;
@@ -652,6 +654,29 @@ main {
   border-radius: 6px;
   pointer-events: none;
 }
+
+/* últimos palpites da maratona: canto inferior direito, acima da dica de
+   navegação; o mais novo em cima */
+#recentes-maratona {
+  position: absolute;
+  right: 10px;
+  bottom: 30px;
+  z-index: 4;
+  min-width: 150px;
+  max-width: 230px;
+  font-size: 11.5px;
+  color: #22303c;
+  background: rgba(255, 255, 255, .84);
+  border-radius: 8px;
+  padding: 5px 8px 4px;
+  box-shadow: 0 1px 6px rgba(20, 40, 60, .14);
+}
+#recentes-maratona .titulo { font-weight: 700; font-size: 10.5px; color: #3d566d; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+#recentes-maratona ol { list-style: none; margin: 0; padding: 0; }
+#recentes-maratona li { padding: 1.5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+#recentes-maratona li:hover { color: var(--azul-escuro); }
+#recentes-maratona li:first-child { font-weight: 700; color: #a30d54; }
+#recentes-maratona li.vazio { color: #7a8a99; font-style: italic; cursor: default; }
 
 #tooltip {
   position: absolute;
@@ -881,6 +906,9 @@ main {
   /* a dica de navegação do canto atropelaria a legenda na tela estreita —
      e pinça/arrasto dispensam manual */
   #dica-zoom { display: none; }
+  /* na tela pequena o painel de últimos palpites encolhe: 4 itens, colado no fundo */
+  #recentes-maratona { bottom: 8px; max-width: 46%; font-size: 11px; }
+  #recentes-maratona li:nth-child(n+5) { display: none; }
 
   /* iOS amplia a página inteira ao focar um campo com fonte menor que 16px */
   #config input, #config select, #input-palpite { font-size: 16px; }
