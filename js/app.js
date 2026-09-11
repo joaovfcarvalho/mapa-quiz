@@ -130,16 +130,27 @@
 
   // ------------------------------------------------------------------
   // Forma dos municípios (botão ⬡ Formas): cada município marcado ganha,
-  // além do ponto da sede, o polígono do território. A malha (~2,4 MB) só é
-  // carregada na primeira vez que o botão for ligado — quem não usa não paga.
+  // além do ponto da sede, o polígono do território. Há duas malhas, ambas
+  // carregadas só na primeira vez que forem pedidas — quem não usa não paga:
+  // a padrão (IBGE qualidade mínima, ~2,4 MB) e a de alta definição (botão
+  // ✦, IBGE qualidade intermediária, ~9,5 MB), para quem dá zoom.
   var LS_FORMAS = "mapaquiz.formas";
+  var LS_FORMAS_HD = "mapaquiz.formas.hd";
   var formasLigadas = false;
-  var malhaPedida = false;
+  var formasHD = false;
+  var ARQUIVO_MALHA = { padrao: "data/malha_municipios.js", hd: "data/malha_municipios_hd.js" };
+  var malhas = { padrao: null, hd: null }; // qualidade -> {codigo IBGE: anéis}
+  var malhaPedida = { padrao: false, hd: false };
   var formas = []; // idx -> <path>, criado na primeira vez que o município é marcado
   var MARCA_FORMA = /\b(coberta|centro-palpite|achada|faltante)\b/;
 
+  function malhaAtiva() {
+    return malhas[formasHD ? "hd" : "padrao"];
+  }
+
   function dMunicipio(id) {
-    var aneis = window.MALHA_MUNICIPIOS && MALHA_MUNICIPIOS[id];
+    var malha = malhaAtiva();
+    var aneis = malha && malha[id];
     if (!aneis) return null; // sem forma na malha (ex.: município criado depois de 2022)
     return aneis.map(function (anel) {
       return anel.map(function (p, i) {
@@ -151,7 +162,7 @@
   // Espelha no polígono o estado atual do ponto: mesmas classes de marcação e
   // mesma cor inline (população ou distância) — uma única fonte de verdade.
   function sincronizarForma(mun) {
-    if (!formasLigadas || !window.MALHA_MUNICIPIOS) return;
+    if (!formasLigadas || !malhaAtiva()) return;
     var p = pontos[mun.idx];
     var classe = p.getAttribute("class");
     var f = formas[mun.idx];
@@ -168,29 +179,54 @@
     f.style.fill = p.style.fill;
   }
   function sincronizarFormas() {
-    if (!formasLigadas || !window.MALHA_MUNICIPIOS) return;
+    if (!formasLigadas || !malhaAtiva()) return;
     DADOS.municipios.forEach(sincronizarForma);
+  }
+
+  // Carrega a malha pedida (uma vez) e, quando ela estiver disponível, redesenha
+  // as formas — se ainda for essa a qualidade escolhida; a outra fica em cache.
+  function carregarMalha(qualidade) {
+    if (malhas[qualidade]) { sincronizarFormas(); return; }
+    if (malhaPedida[qualidade]) return;
+    malhaPedida[qualidade] = true;
+    var s = document.createElement("script");
+    s.src = ARQUIVO_MALHA[qualidade];
+    s.onload = function () {
+      malhas[qualidade] = qualidade === "hd" ? window.MALHA_MUNICIPIOS_HD : window.MALHA_MUNICIPIOS;
+      sincronizarFormas();
+    };
+    s.onerror = function () {
+      s.remove();
+      malhaPedida[qualidade] = false;
+      if (qualidade === "hd") {
+        setFormasHD(false);
+        alert("Não deu para carregar a malha em alta definição (~9,5 MB) — é preciso internet na primeira vez. Ficam as formas normais.");
+      } else {
+        setFormas(false);
+        alert("Não deu para carregar a forma dos municípios (~2,4 MB) — é preciso internet na primeira vez.");
+      }
+    };
+    document.head.appendChild(s);
   }
 
   function setFormas(ligado) {
     formasLigadas = ligado;
     gMalha.setAttribute("visibility", ligado ? "visible" : "hidden");
     $("btn-formas").classList.toggle("ativo", ligado);
+    $("btn-formas-hd").hidden = !ligado;
     try { localStorage.setItem(LS_FORMAS, ligado ? "1" : "0"); } catch (e) {}
-    if (!ligado) return;
-    if (window.MALHA_MUNICIPIOS) { sincronizarFormas(); return; }
-    if (malhaPedida) return;
-    malhaPedida = true;
-    var s = document.createElement("script");
-    s.src = "data/malha_municipios.js";
-    s.onload = sincronizarFormas;
-    s.onerror = function () {
-      s.remove();
-      malhaPedida = false;
-      setFormas(false);
-      alert("Não deu para carregar a forma dos municípios (~2,4 MB) — é preciso internet na primeira vez.");
-    };
-    document.head.appendChild(s);
+    if (ligado) carregarMalha(formasHD ? "hd" : "padrao");
+  }
+
+  // Trocar a qualidade descarta os <path> já desenhados (vieram da outra
+  // malha); sincronizarFormas os recria a partir das classes dos pontos.
+  function setFormasHD(hd) {
+    formasHD = hd;
+    $("btn-formas-hd").classList.toggle("ativo", hd);
+    try { localStorage.setItem(LS_FORMAS_HD, hd ? "1" : "0"); } catch (e) {}
+    formas.forEach(function (f) { f.remove(); });
+    formas = [];
+    if (formasLigadas) carregarMalha(hd ? "hd" : "padrao");
   }
 
   function caminhoGeodesico(lat, lng, raioKm) {
@@ -3138,6 +3174,9 @@
   $("btn-formas").addEventListener("click", function () {
     setFormas(!formasLigadas);
   });
+  $("btn-formas-hd").addEventListener("click", function () {
+    setFormasHD(!formasHD);
+  });
 
   $("btn-desafio").addEventListener("click", copiarDesafio);
   $("btn-compartilhar").addEventListener("click", function () {
@@ -3266,6 +3305,8 @@
   window.addEventListener("hashchange", aplicarDesafioDaURL);
   try {
     if (localStorage.getItem(LS_SATELITE) === "1") setSatelite(true);
+    // a qualidade antes de ligar as formas, para pedir a malha certa de cara
+    if (localStorage.getItem(LS_FORMAS_HD) === "1") setFormasHD(true);
     if (localStorage.getItem(LS_FORMAS) === "1") setFormas(true);
     setPontosOcultos(localStorage.getItem(LS_PONTOS) === "1");
   } catch (e) {

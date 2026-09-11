@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Gera os arquivos de dados embutidos do quiz (data/municipios.js,
-data/brasil_uf.js, data/malha_municipios.js e data/vizinhos.js — o grafo de
-"quem faz divisa com quem", derivado da própria malha municipal).
+data/brasil_uf.js, data/malha_municipios.js, data/malha_municipios_hd.js e
+data/vizinhos.js — o grafo de "quem faz divisa com quem", derivado da própria
+malha municipal).
 
 Fontes:
   - Coordenadas dos municípios: https://github.com/kelvins/municipios-brasileiros (csv/municipios.csv, csv/estados.csv)
@@ -14,14 +15,16 @@ Fontes:
     https://servicodados.ibge.gov.br/api/v3/agregados/5938/periodos/2023/variaveis/37?localidades=N6[all]
   - Contorno das UFs: IBGE malhas
     https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json
-  - Forma dos municípios: IBGE malhas (qualidade mínima, senão o arquivo
-    passa de 9 MB — na escala do mapa a diferença não aparece)
+  - Forma dos municípios: IBGE malhas, qualidade mínima (padrão, ~2,4 MB) e
+    intermediária (opção "alta definição" do botão ⬡ Formas, ~9,5 MB)
     https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/vnd.geo+json
+    https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=intermediaria&formato=application/vnd.geo+json
 
 Uso:
   python3 build_data.py --municipios municipios.csv --estados estados.csv \
       --pop pop2022.json --area area2022.json --pib pib2023.json \
-      --malha br_uf.geojson --malha-municipios br_mun.geojson --out ../data
+      --malha br_uf.geojson --malha-municipios br_mun.geojson \
+      --malha-municipios-hd br_mun_inter.geojson --out ../data
 Sem argumentos, baixa as fontes da internet.
 """
 import argparse
@@ -40,6 +43,7 @@ URL_AREA = "https://servicodados.ibge.gov.br/api/v3/agregados/4714/periodos/2022
 URL_PIB = "https://servicodados.ibge.gov.br/api/v3/agregados/5938/periodos/2023/variaveis/37?localidades=N6[all]"
 URL_MALHA = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json"
 URL_MALHA_MUN = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/vnd.geo+json"
+URL_MALHA_MUN_HD = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=intermediaria&formato=application/vnd.geo+json"
 
 # Sedes que o CSV de origem coloca fora do próprio município (em geral pegou
 # um povoado homônimo em outro lugar — "Alto Paraíso" e "Cerro Azul" do CSV
@@ -80,26 +84,69 @@ def compactar_aneis(geom):
     return aneis
 
 
-def gerar_malha_municipios(malha_mun, codigos_jogo, out_dir):
-    formas = {}
-    for feat in malha_mun["features"]:
-        formas[feat["properties"]["codarea"]] = compactar_aneis(feat["geometry"])
-    sem_forma = sorted(codigos_jogo - set(formas))
-    if sem_forma:
-        print(f"AVISO: {len(sem_forma)} municípios sem forma na malha "
-              f"(ficam só com o ponto): {sem_forma}", file=sys.stderr)
-    out_formas = os.path.join(out_dir, "malha_municipios.js")
-    with open(out_formas, "w", encoding="utf-8") as f:
+def formas_da_malha(malha_mun):
+    return {feat["properties"]["codarea"]: compactar_aneis(feat["geometry"])
+            for feat in malha_mun["features"]}
+
+
+def escrever_malha(formas, out_dir, arquivo, variavel, descricao):
+    out = os.path.join(out_dir, arquivo)
+    with open(out, "w", encoding="utf-8") as f:
         f.write("// Gerado por tools/build_data.py — não editar à mão.\n")
-        f.write("// Forma dos municípios (IBGE, qualidade mínima), por código IBGE:\n")
+        f.write(f"// {descricao}, por código IBGE:\n")
         f.write("// lista de anéis [[lng,lat],...]; anéis internos são buracos "
                 "(desenhar com fill-rule evenodd).\n")
-        f.write("var MALHA_MUNICIPIOS = {\n")
+        f.write(f"var {variavel} = {{\n")
         for cod in sorted(formas):
             f.write('"%s":%s,\n' % (cod, json.dumps(formas[cod], separators=(",", ":"))))
         f.write("};\n")
-    print(f"{out_formas}: {len(formas)} municípios, {os.path.getsize(out_formas) // 1024} KB")
-    return formas
+    print(f"{out}: {len(formas)} municípios, {os.path.getsize(out) // 1024} KB")
+
+
+def area_aneis(aneis):
+    total = 0.0
+    for anel in aneis:
+        s = 0.0
+        for i in range(len(anel)):
+            s += anel[i - 1][0] * anel[i][1] - anel[i][0] * anel[i - 1][1]
+        total += abs(s) / 2
+    return total
+
+
+# Duas malhas: a mínima (~2,4 MB) é a padrão do botão ⬡ Formas; a intermediária
+# (~9,5 MB) fica em arquivo separado para quem ligar "alta definição". Na mínima
+# o IBGE reduz alguns municípios pequenos a um triângulo (Taboão da Serra,
+# Cabedelo) ou a uma fração da área real (Fernando de Noronha): esses poucos
+# polígonos são trocados pelos da intermediária — custa uns 4 KB e some a
+# lasca no lugar do território. A troca é feita depois do grafo de divisas,
+# que depende de os vértices coincidirem entre vizinhos da mesma malha.
+def gerar_malhas_municipios(malha_min, malha_inter, codigos_jogo, out_dir):
+    formas_min = formas_da_malha(malha_min)
+    formas_inter = formas_da_malha(malha_inter)
+    sem_forma = sorted(codigos_jogo - set(formas_min))
+    if sem_forma:
+        print(f"AVISO: {len(sem_forma)} municípios sem forma na malha "
+              f"(ficam só com o ponto): {sem_forma}", file=sys.stderr)
+    gerar_vizinhos(formas_min, out_dir)
+
+    padrao = dict(formas_min)
+    trocados = []
+    for cod, aneis in formas_min.items():
+        melhor = formas_inter.get(cod)
+        if not melhor:
+            continue
+        degenerado = max(len(anel) for anel in aneis) < 4
+        if degenerado or area_aneis(aneis) < 0.5 * area_aneis(melhor):
+            padrao[cod] = melhor
+            trocados.append(cod)
+    print(f"malha padrão: {len(trocados)} polígonos da qualidade mínima trocados "
+          f"pelos da intermediária: {trocados}")
+    escrever_malha(padrao, out_dir, "malha_municipios.js", "MALHA_MUNICIPIOS",
+                   "Forma dos municípios (IBGE, qualidade mínima; alguns polígonos "
+                   "degenerados vêm da intermediária)")
+    escrever_malha(formas_inter, out_dir, "malha_municipios_hd.js", "MALHA_MUNICIPIOS_HD",
+                   "Forma dos municípios em alta definição (IBGE, qualidade intermediária)")
+    return padrao
 
 
 # Sede fora do próprio território: sinal de coordenada errada na fonte (foi
@@ -208,6 +255,7 @@ def main():
     ap.add_argument("--pib")
     ap.add_argument("--malha")
     ap.add_argument("--malha-municipios")
+    ap.add_argument("--malha-municipios-hd")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "data"))
     args = ap.parse_args()
 
@@ -306,10 +354,10 @@ def main():
         f.write(";\n")
     print(f"{out_malha}: {len(poligonos)} anéis, {os.path.getsize(out_malha) // 1024} KB")
 
-    malha_mun = json.loads(read_source(args.malha_municipios, URL_MALHA_MUN))
-    formas = gerar_malha_municipios(malha_mun, {str(l[0]) for l in linhas}, args.out)
+    malha_min = json.loads(read_source(args.malha_municipios, URL_MALHA_MUN))
+    malha_inter = json.loads(read_source(args.malha_municipios_hd, URL_MALHA_MUN_HD))
+    formas = gerar_malhas_municipios(malha_min, malha_inter, {str(l[0]) for l in linhas}, args.out)
     checar_sedes(linhas, formas)
-    gerar_vizinhos(formas, args.out)
 
 
 if __name__ == "__main__":

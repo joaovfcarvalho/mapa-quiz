@@ -243,7 +243,10 @@ recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
 - O botão ⬡ Formas pinta também o território dos municípios marcados, não só
   o ponto da sede — acertou Rio de Janeiro, acende o polígono inteiro do
   município. A malha dos 5.570 municípios (~2,4 MB) só é carregada na
-  primeira vez que o botão é ligado; quem não usa não paga nada.
+  primeira vez que o botão é ligado; quem não usa não paga nada. Com ele
+  ligado aparece o botão ✦ Alta definição, que troca pela malha intermediária
+  do IBGE (~9,5 MB, 2,5 MB comprimidos): contornos bem mais detalhados para
+  quem dá zoom — no mapa inteiro a diferença não aparece.
 - Passe o mouse sobre uma cidade já revelada/coberta para ver nome, população,
   área e PIB. Com o botão ⬡ Formas ligado, o território inteiro do município
   responde ao mouse — não é preciso acertar o pontinho da sede.
@@ -271,9 +274,9 @@ configuração.
 | População por município | IBGE, Censo Demográfico 2022 (agregado 4709, variável 93) |
 | Área territorial por município | IBGE, Censo Demográfico 2022 (agregado 4714, variável 6318) |
 | PIB por município (a preços correntes) | IBGE, PIB dos Municípios 2023 (agregado 5938, variável 37) |
-| Coordenadas (sede municipal) | [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros) |
+| Coordenadas (sede municipal) | [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros), com seis sedes corrigidas pelo Wikidata/OSM (`CORRECOES_COORD` no `build_data.py`) |
 | Contorno das UFs | IBGE, API de malhas (qualidade máxima) |
-| Forma dos municípios (botão ⬡) | IBGE, API de malhas (qualidade mínima) |
+| Forma dos municípios (botão ⬡) | IBGE, API de malhas — qualidade mínima (padrão) e intermediária (✦ Alta definição) |
 | Grafo de divisas (modos Caminho/Cerco/Mancha/Ponte) | derivado da malha municipal pelo `build_data.py` |
 | Fundo de satélite (botão 🛰️) | NASA Blue Marble Next Generation, 500 m/pixel (domínio público) |
 | Traçado e nome dos rios (quiz dos rios) | ANA/SNIRH, base hidrográfica ottocodificada, camadas "Hidrografia nível 1 e 2" |
@@ -285,10 +288,17 @@ vértices da malha (um só seria apenas um toque de canto). O resultado —
 15.958 divisas entre 5.568 municípios, grau médio 5,7, máximo 21 (São Paulo)
 — fica em `data/vizinhos.js` (~320 KB).
 
+Na malha de qualidade mínima o IBGE reduz alguns municípios pequenos a um
+triângulo (Taboão da Serra, Cabedelo) ou a metade da área real (Fernando de
+Noronha); o `build_data.py` troca esses poucos polígonos pelos da malha
+intermediária, e avisa se alguma sede cair a mais de 5 km do próprio
+município — foi assim que apareceram as coordenadas erradas da fonte.
+
 Os dados ficam embutidos em `data/municipios.js`, `data/brasil_uf.js`,
-`data/malha_municipios.js` e `data/vizinhos.js` para o jogo funcionar offline
-(inclusive aberto via `file://`) — a malha só é carregada se o botão ⬡
-Formas for ligado, e o grafo de divisas só ao entrar num dos modos que o
+`data/malha_municipios.js`, `data/malha_municipios_hd.js` e
+`data/vizinhos.js` para o jogo funcionar offline (inclusive aberto via
+`file://`) — as malhas só são carregadas se o botão ⬡ Formas (e ✦ Alta
+definição) for ligado, e o grafo de divisas só ao entrar num dos modos que o
 usam. Para regenerar a partir das fontes:
 
 ```bash

@@ -589,6 +589,8 @@ main {
 }
 #botoes-mapa button:hover { background: #fff; }
 #botoes-mapa button.ativo { background: #14528a; border-color: #14528a; color: #fff; }
+/* opção subordinada (✦ Alta definição só aparece com ⬡ Formas ligado) */
+#botoes-mapa button.sub { font-size: 11.5px; padding: 4px 10px; font-weight: 600; }
 
 #botoes-zoom {
   position: absolute;

@@ -27,7 +27,8 @@ var TUTORIAL = (function () {
       texto: "<b>🛰️ Satélite</b> troca o fundo de papel pela imagem real da NASA. " +
         "<b>● Pontos</b> esconde os municípios que você ainda não descobriu (mais difícil). " +
         "<b>⬡ Formas</b> pinta o <i>território inteiro</i> de cada acerto, não só a sede — " +
-        "fica lindo na Mancha e no Caminho. Todos ficam ligados entre partidas.",
+        "fica lindo na Mancha e no Caminho (e libera o <b>✦ Alta definição</b>, para quem dá zoom). " +
+        "Todos ficam ligados entre partidas.",
     },
     {
       alvo: "#botoes-zoom",
