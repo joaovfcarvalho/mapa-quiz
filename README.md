@@ -251,6 +251,17 @@ recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
   área e PIB. Com o botão ⬡ Formas ligado, o território inteiro do município
   responde ao mouse — não é preciso acertar o pontinho da sede.
 
+### Maratona por palavra
+
+Na configuração da Maratona há a opção **Por palavra**: cada palpite acende
+todos os municípios da região que têm aquela palavra inteira no nome —
+"são" acende São Paulo, São Luís e as outras dezenas, mas não Mansão; "são
+josé" acende só os São José; "rita sp" restringe à UF. Palavrinhas como "do"
+e "da" só valem acompanhadas. O progresso dessa variante fica salvo à parte
+do da maratona clássica. Nos dois casos o placar mostra município, população,
+PIB e área já cobertos, e o canto do mapa lista os últimos palpites certos
+(clicar num deles acende de novo o que ele revelou).
+
 ## Recordes e backup
 
 Cada combinação exata de modo + parâmetros tem seu próprio recorde (maior %;

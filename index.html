@@ -340,6 +340,10 @@
           <p class="nota-config">Cite <b>todos</b> os municípios da região
           escolhida acima, no seu ritmo. O progresso (e o tempo) fica salvo
           neste navegador — pause e continue quando quiser.</p>
+          <label class="check" title="Variante mais leve, com progresso salvo à parte: a palavra precisa ser inteira no nome (“são” não acende Mansão) e pode vir em sequência (“são josé”). Palavrinhas como “do” e “da” só valem acompanhadas.">
+            <input type="checkbox" id="cfg-maratona-palavra">
+            Por palavra: “são” acende São Paulo, São Luís e todos os outros
+          </label>
         </div>
 
         <div class="config-modo" data-modo="estudo" hidden>
@@ -482,6 +486,10 @@
       <span>longe</span>
       <div class="grad" title="Cor dos palpites: distância até o município secreto"></div>
       <span>perto</span>
+    </div>
+    <div id="recentes-maratona" hidden>
+      <div class="titulo">Últimos palpites</div>
+      <ol></ol>
     </div>
     <div id="dica-zoom">botões ou roda do mouse: zoom · arrastar: mover · duplo clique: restaurar</div>
     <div id="tooltip" hidden></div>

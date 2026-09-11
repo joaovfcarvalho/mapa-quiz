@@ -315,6 +315,11 @@
     delete tudo[regiao];
     try { localStorage.setItem(LS_MARATONA, JSON.stringify(tudo)); } catch (e) {}
   }
+  // A maratona por palavra é bem mais fácil: guarda o progresso à parte
+  // ("SP:palavra"), sem misturar com a maratona clássica da mesma região.
+  function chaveMaratona(uf, palavra) {
+    return (uf || "BR") + (palavra ? ":palavra" : "");
+  }
 
   // ------------------------------------------------------------------
   // Formatação
@@ -508,6 +513,7 @@
     Object.keys(TELAS).forEach(function (t) {
       $(TELAS[t]).hidden = t !== nome;
     });
+    if (nome !== "jogo") $("recentes-maratona").hidden = true;
     if (nome === "modos") {
       atualizarCardDiario();
       // o bloco de anúncio do fim da lista só pode ser preenchido com a
@@ -828,10 +834,12 @@
       };
     }
     if (modoAtual === "maratona") {
+      var palavra = $("cfg-maratona-palavra").checked;
       return {
-        cfg: { uf: uf || undefined },
-        chave: "maratona" + sufChave,
-        rotulo: "Maratona: todos os municípios" + (uf ? " de " + NOMES_UF[uf] : " do Brasil"),
+        cfg: { uf: uf || undefined, palavra: palavra || undefined },
+        chave: "maratona" + (palavra ? "|palavra" : "") + sufChave,
+        rotulo: (palavra ? "Maratona por palavra: todos os municípios" : "Maratona: todos os municípios") +
+          (uf ? " de " + NOMES_UF[uf] : " do Brasil"),
       };
     }
     if (modoAtual === "estudo") {
@@ -962,11 +970,12 @@
       var total = ufDoJogo()
         ? DADOS.municipios.filter(function (m) { return m.uf === regiao; }).length
         : DADOS.total;
-      var prog = carregarMaratona(regiao);
+      var prog = carregarMaratona(chaveMaratona(ufDoJogo(), lido.cfg.palavra));
       var n = prog && prog.ids ? prog.ids.length : 0;
+      var qual = lido.cfg.palavra ? "maratona por palavra" : "maratona";
       el.innerHTML = n === 0
-        ? "🏃 Você ainda não começou a maratona desta região (" + fmtInt(total) + " municípios te esperam)."
-        : "🏃 Progresso salvo: <b>" + fmtInt(n) + "</b> de " + fmtInt(total) +
+        ? "🏃 Você ainda não começou a " + qual + " desta região (" + fmtInt(total) + " municípios te esperam)."
+        : "🏃 Progresso salvo na " + qual + ": <b>" + fmtInt(n) + "</b> de " + fmtInt(total) +
           " municípios (<b>" + fmtPct(n / total) + "</b>) em " + fmtTempo(prog.tempoSeg || 0) + ".";
       $("btn-iniciar").textContent = n === 0 ? "▶ Iniciar maratona" : "▶ Continuar maratona";
       return;
@@ -1049,9 +1058,10 @@
     else if (modoAtual === "ponte") jogo = new MODOS.JogoPonte(lido.cfg);
     else if (modoAtual === "estudo") jogo = new MODOS.JogoEstudo(lido.cfg);
     else if (modoAtual === "maratona") {
-      var prog = carregarMaratona(lido.cfg.uf || "BR");
+      var prog = carregarMaratona(chaveMaratona(lido.cfg.uf, lido.cfg.palavra));
       lido.cfg.idsIniciais = prog && prog.ids ? prog.ids : [];
       tempoPrevio = prog && prog.tempoSeg ? prog.tempoSeg : 0;
+      maratonaUltimos = prog && Array.isArray(prog.ultimos) ? prog.ultimos : [];
       jogo = new MODOS.JogoMaratona(lido.cfg);
     } else jogo = new MODOS.JogoFaixas(lido.cfg);
     if (jogo.erroInicial) {
@@ -1111,6 +1121,8 @@
     $("btn-dica").hidden = !TEM_DICA[jogoModo];
     atualizarBotaoDica();
     $("btn-zerar-maratona").hidden = jogoModo !== "maratona";
+    $("recentes-maratona").hidden = jogoModo !== "maratona";
+    if (jogoModo === "maratona") renderUltimosMaratona();
     $("btn-encerrar").textContent =
       jogoModo === "maratona" ? "⏸ Pausar (o progresso fica salvo)" :
       jogoModo === "ondestou" ? "🏳️ Desistir / revelar o município" :
@@ -1274,6 +1286,9 @@
       linhas.push("PIB: <b>" + fmtPib(jogo.pibAchado) + "</b> de " +
         fmtPib(jogo.uniPib) +
         " (<b>" + fmtPct(jogo.uniPib ? jogo.pibAchado / jogo.uniPib : 0) + "</b>)");
+      linhas.push("Área: <b>" + fmtArea(jogo.areaAchada) + "</b> de " +
+        fmtArea(jogo.uniArea) +
+        " (<b>" + fmtPct(jogo.uniArea ? jogo.areaAchada / jogo.uniArea : 0) + "</b>)");
       linhas.push("Nesta sessão: <b>+" + fmtInt(jogo.achadosSessao) + "</b>");
     } else if (jogoModo === "estudo") {
       // no estudo o "placar" é a carteira de identidade da região
@@ -1595,9 +1610,15 @@
   function palpitarMaratona(texto) {
     var r = jogo.palpitar(texto);
     if (r.tipo === "vazio") return;
+    if (r.tipo === "generico") {
+      feedback("“" + r.termo + "” sozinho não vale — junte com outra palavra do nome.", "erro");
+      return;
+    }
     if (r.tipo === "nao_encontrado") {
       feedback(r.ufErrada
         ? "Esse município existe, mas não nessa UF."
+        : jogo.cfg.palavra
+        ? "Nenhum município da região tem essa palavra no nome."
         : "Não encontrei nenhum município com esse nome.", "erro");
       return;
     }
@@ -1608,23 +1629,39 @@
       return;
     }
     if (r.tipo === "repetido") {
-      registrarCitadas([r.mun]);
-      feedback("Você já citou " + nomeUF(r.mun) + ".", "erro");
+      if (!jogo.cfg.palavra) registrarCitadas([r.mun]);
+      feedback(jogo.cfg.palavra && r.total > 1
+        ? "Você já acendeu todos os " + fmtInt(r.total) + " municípios com “" + r.termo + "”."
+        : "Você já citou " + nomeUF(r.mun) + ".", "erro");
       $("input-palpite").select();
       return;
     }
     if (r.tipo !== "ok") return;
 
-    registrarCitadas(r.revelados.map(function (par) { return par.mun; }));
+    var muns = r.revelados.map(function (par) { return par.mun; });
+    // nos pontos cegos só conta o que foi citado pelo nome inteiro: uma
+    // palavra que acende 80 cidades não é "lembrar" de cada uma
+    registrarCitadas(jogo.cfg.palavra
+      ? muns.filter(function (m) { return m.chave === r.termo; })
+      : muns);
     r.revelados.forEach(function (par) {
       pintarPonto(par.mun, "achada");
       atualizarContadorMaratona(par.mun);
     });
-    destacarRecentes(r.revelados.map(function (par) { return par.mun; }));
-    var nomes = r.revelados.map(function (par) {
-      return nomeUF(par.mun) + " · " + fmtPop(par.mun.pop) + " hab. · " + fmtPib(par.mun.pib);
+    destacarRecentes(muns);
+    var nomes = muns.slice(0, 3).map(function (m) {
+      return nomeUF(m) + (muns.length === 1 ? " · " + fmtPop(m.pop) + " hab. · " + fmtPib(m.pib) : "");
     });
-    feedback("✔ " + nomes.join(" · "), "ok");
+    if (muns.length > 3) nomes.push("+" + fmtInt(muns.length - 3));
+    feedback((jogo.cfg.palavra && muns.length > 1
+      ? "✔ “" + r.termo + "”: " + fmtInt(muns.length) + " municípios · "
+      : "✔ ") + nomes.join(" · "), "ok");
+    // painel do canto: um item por palpite (uma palavra vale por vários)
+    maratonaUltimos.unshift(jogo.cfg.palavra && muns.length > 1
+      ? { t: "“" + r.termo + "” → " + fmtInt(muns.length) + " municípios", ids: muns.slice(0, 400).map(function (m) { return m.id; }) }
+      : { t: nomeUF(muns[0]), ids: [muns[0].id] });
+    if (maratonaUltimos.length > MAX_ULTIMOS) maratonaUltimos.length = MAX_ULTIMOS;
+    renderUltimosMaratona();
     $("input-palpite").value = "";
     salvarProgressoMaratona();
     atualizarPlacar();
@@ -1643,10 +1680,13 @@
     rotulosRecentes.forEach(function (el) { el.remove(); });
     recentes = [];
     rotulosRecentes = [];
-    muns.forEach(function (m) {
+    muns.forEach(function (m, i) {
       recentes.push(m.idx);
       pontos[m.idx].classList.add("recente");
       if (formas[m.idx]) formas[m.idx].classList.add("recente");
+      // uma palavra pode acender dezenas de cidades: rótulo só nas maiores
+      // (a lista vem em ordem de população), senão o mapa vira um borrão
+      if (i >= 12) return;
       var rot = elSvg("text", {
         x: proj.x(m.lng).toFixed(1),
         y: proj.y(m.lat).toFixed(1),
@@ -1659,11 +1699,45 @@
 
   function salvarProgressoMaratona() {
     if (jogoModo !== "maratona" || !jogo) return;
-    salvarMaratona(jogo.cfg.uf || "BR", {
+    salvarMaratona(chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra), {
       ids: jogo.idsAchados(),
       tempoSeg: tempoDecorrido(),
+      ultimos: maratonaUltimos,
     });
   }
+
+  // Painel no canto do mapa com os últimos palpites certos (persistido com
+  // o progresso). Clicar num item acende de novo no mapa o que ele revelou.
+  var MAX_ULTIMOS = 8;
+  var maratonaUltimos = []; // [{t: rótulo, ids: [códigos IBGE]}], mais novo primeiro
+  var porId = null;         // código IBGE -> município
+  function renderUltimosMaratona() {
+    var ol = $("recentes-maratona").querySelector("ol");
+    ol.innerHTML = "";
+    if (maratonaUltimos.length === 0) {
+      ol.innerHTML = "<li class='vazio'>nenhum ainda</li>";
+      return;
+    }
+    maratonaUltimos.forEach(function (u, i) {
+      var li = document.createElement("li");
+      li.textContent = u.t;
+      li.dataset.i = i;
+      li.title = "Clique: mostra no mapa";
+      ol.appendChild(li);
+    });
+  }
+  $("recentes-maratona").addEventListener("click", function (ev) {
+    var li = ev.target.closest("li[data-i]");
+    if (!li || !jogo || jogoModo !== "maratona") return;
+    var u = maratonaUltimos[+li.dataset.i];
+    if (!u || !u.ids) return;
+    if (!porId) {
+      porId = {};
+      DADOS.municipios.forEach(function (m) { porId[m.id] = m; });
+    }
+    var muns = u.ids.map(function (id) { return porId[id]; }).filter(Boolean);
+    if (muns.length) destacarRecentes(muns);
+  });
 
   // Lista lateral da maratona: contadores por porte (sempre) e por UF (no
   // Brasil inteiro). Cada UF mostra também quantas das 10 maiores cidades já
@@ -3151,9 +3225,11 @@
   });
   $("btn-zerar-maratona").addEventListener("click", function () {
     var regiao = ufDoJogo() || "BR";
+    var palavra = jogo && jogoModo === "maratona" ? !!jogo.cfg.palavra : $("cfg-maratona-palavra").checked;
     var nome = regiao === "BR" ? "do Brasil inteiro" : "de " + NOMES_UF[regiao];
-    if (!confirm("Apagar TODO o progresso da maratona " + nome + "? Isso não tem volta.")) return;
-    zerarMaratona(regiao);
+    if (!confirm("Apagar TODO o progresso da maratona" + (palavra ? " por palavra " : " ") + nome + "? Isso não tem volta.")) return;
+    zerarMaratona(chaveMaratona(ufDoJogo(), palavra));
+    maratonaUltimos = [];
     if (jogo && jogoModo === "maratona") {
       jogo.encerrado = true; // não deixa abandonarJogo() salvar de volta o progresso
       voltarParaConfig();
@@ -3224,7 +3300,10 @@
         var minha = minhas[reg] || { ids: [], tempoSeg: 0 };
         var ids = new Set(minha.ids);
         deles.ids.forEach(function (id) { if (!ids.has(id)) { ids.add(id); novosMar++; } });
-        minhas[reg] = { ids: Array.from(ids), tempoSeg: Math.max(minha.tempoSeg || 0, deles.tempoSeg || 0) };
+        minha.ids = Array.from(ids);
+        minha.tempoSeg = Math.max(minha.tempoSeg || 0, deles.tempoSeg || 0);
+        if (!minha.ultimos && Array.isArray(deles.ultimos)) minha.ultimos = deles.ultimos;
+        minhas[reg] = minha;
       });
       try { localStorage.setItem(LS_MARATONA, JSON.stringify(minhas)); } catch (e) {}
       if (novosMar) partes.push(novosMar + " município(s) a mais na maratona");
