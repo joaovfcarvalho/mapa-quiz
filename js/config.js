@@ -39,7 +39,7 @@ window.MAPAQUIZ_CONFIG = {
   // Cloud Console, com https://mapaquiz.com.br nas origens autorizadas, e
   // cole aqui. Vazio = o botão não aparece.
   google: {
-    clientId: "",
+    clientId: "441868142960-jpr3heiuq4hjbh3kh061ls76ljftmg1h.apps.googleusercontent.com",
   },
 
   // e-mail de contato exibido na política de privacidade
