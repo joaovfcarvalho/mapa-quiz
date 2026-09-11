@@ -28,6 +28,7 @@ import argparse
 import csv
 import io
 import json
+import math
 import os
 import sys
 import urllib.request
@@ -39,6 +40,19 @@ URL_AREA = "https://servicodados.ibge.gov.br/api/v3/agregados/4714/periodos/2022
 URL_PIB = "https://servicodados.ibge.gov.br/api/v3/agregados/5938/periodos/2023/variaveis/37?localidades=N6[all]"
 URL_MALHA = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=maxima&formato=application/vnd.geo+json"
 URL_MALHA_MUN = "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/vnd.geo+json"
+
+# Sedes que o CSV de origem coloca fora do próprio município (em geral pegou
+# um povoado homônimo em outro lugar — "Alto Paraíso" e "Cerro Azul" do CSV
+# são bairros rurais de Bom Sucesso do Sul). Coordenadas da sede conferidas no
+# Wikidata (P625) e no OpenStreetMap; o build avisa se surgir outro caso.
+CORRECOES_COORD = {
+    "1505551": (-7.8328, -50.0439),   # Pau d'Arco (PA) — CSV apontava para o nordeste do estado
+    "4105201": (-24.8239, -49.2608),  # Cerro Azul (PR) — CSV apontava para Bom Sucesso do Sul
+    "4128625": (-23.5078, -53.7278),  # Alto Paraíso (PR) — CSV apontava para Bom Sucesso do Sul
+    "3164431": (-21.0719, -42.6358),  # São Sebastião da Vargem Alegre (MG) — CSV apontava perto de BH
+    "2403756": (-5.7611, -36.3919),   # Fernando Pedroza (RN) — CSV apontava perto de Angicos
+    "2613107": (-8.3258, -36.1428),   # São Caetano (PE) — CSV apontava no município vizinho
+}
 
 
 def read_source(path, url, binary=False):
@@ -86,6 +100,55 @@ def gerar_malha_municipios(malha_mun, codigos_jogo, out_dir):
         f.write("};\n")
     print(f"{out_formas}: {len(formas)} municípios, {os.path.getsize(out_formas) // 1024} KB")
     return formas
+
+
+# Sede fora do próprio território: sinal de coordenada errada na fonte (foi
+# assim que apareceram os casos de CORRECOES_COORD). Tolerância de alguns km
+# porque a malha é de qualidade mínima e sedes litorâneas ou coladas na divisa
+# caem fora do polígono simplificado sem estarem erradas.
+def ponto_no_anel(lng, lat, anel):
+    dentro = False
+    j = len(anel) - 1
+    for i in range(len(anel)):
+        xi, yi = anel[i]
+        xj, yj = anel[j]
+        if (yi > lat) != (yj > lat) and lng < (xj - xi) * (lat - yi) / (yj - yi) + xi:
+            dentro = not dentro
+        j = i
+    return dentro
+
+
+def dist_segmento(px, py, ax, ay, bx, by):
+    dx, dy = bx - ax, by - ay
+    t = 0.0 if dx == 0 and dy == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def checar_sedes(linhas, formas, tolerancia_km=5.0):
+    suspeitos = []
+    for l in linhas:
+        aneis = formas.get(str(l[0]))
+        # sem forma, ou forma reduzida a um triângulo pela qualidade mínima
+        # (Taboão da Serra, Cabedelo): não dá para julgar a sede por ela
+        if not aneis or max(len(anel) for anel in aneis) < 4:
+            continue
+        lat, lng = l[3], l[4]
+        if any(ponto_no_anel(lng, lat, anel) for anel in aneis):
+            continue
+        # distância (km) até a borda mais próxima, em plano local
+        k = math.cos(math.radians(lat))
+        dist = min(
+            dist_segmento(lng * k, lat, anel[i - 1][0] * k, anel[i - 1][1], anel[i][0] * k, anel[i][1])
+            for anel in aneis for i in range(len(anel))
+        ) * 111.2
+        if dist > tolerancia_km:
+            suspeitos.append(f"{l[1]} ({l[2]}, {l[0]}) a {dist:.0f} km do território")
+    if suspeitos:
+        print(f"AVISO: {len(suspeitos)} sedes fora do próprio município — conferir a "
+              f"coordenada e, se estiver errada, acrescentar a CORRECOES_COORD:",
+              file=sys.stderr)
+        for s in suspeitos:
+            print("  " + s, file=sys.stderr)
 
 
 # Grafo de "quem faz divisa com quem", derivado da própria malha: os polígonos
@@ -193,12 +256,13 @@ def main():
         if pib is None:
             sem_pib.append(f"{row['nome']} ({ibge})")
             pib = 0
+        lat, lng = CORRECOES_COORD.get(ibge, (float(row["latitude"]), float(row["longitude"])))
         linhas.append([
             int(ibge),
             row["nome"],
             uf_por_codigo[row["codigo_uf"]],
-            round(float(row["latitude"]), 4),
-            round(float(row["longitude"]), 4),
+            round(lat, 4),
+            round(lng, 4),
             pop,
             int(row["capital"]),
             area,
@@ -244,6 +308,7 @@ def main():
 
     malha_mun = json.loads(read_source(args.malha_municipios, URL_MALHA_MUN))
     formas = gerar_malha_municipios(malha_mun, {str(l[0]) for l in linhas}, args.out)
+    checar_sedes(linhas, formas)
     gerar_vizinhos(formas, args.out)
 
 
