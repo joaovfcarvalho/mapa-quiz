@@ -156,6 +156,24 @@ test("Maior ou menor?: os pares apertam ao longo da partida", () => {
   assert.ok(med(razoes.slice(5)) <= med(razoes.slice(0, 5)), razoes.join(","));
 });
 
+test("Maior ou menor?: a razão cai aos poucos e nunca vira cara ou coroa", () => {
+  for (let semente = 1; semente <= 30; semente++) {
+    [["pop", 50000, undefined], ["pop", 20000, "RJ"], ["pibpc", 50000, undefined]].forEach(([metrica, minPop, uf]) => {
+      const j = new MODOS.JogoMaiorMenor({ metrica, rodadas: 10, minPop, uf, semente });
+      const razoes = [];
+      while (!j.encerrado) {
+        const p = j.atual;
+        razoes.push(Math.max(p.va, p.vb) / Math.min(p.va, p.vb));
+        j.responder("a");
+      }
+      const rot = metrica + "/" + (uf || "BR") + "/" + semente + ": " + razoes.map((r) => r.toFixed(2)).join(" ");
+      assert.ok(razoes[0] >= 2 && razoes[0] <= 6, "primeira rodada folgada — " + rot);
+      assert.ok(razoes[9] >= 1.08 && razoes[9] <= 1.8, "última rodada apertada, não empate — " + rot);
+      razoes.forEach((r) => assert.ok(r >= 1.08, "nunca abaixo de 8% — " + rot));
+    });
+  }
+});
+
 test("Maior ou menor?: métricas derivadas e região", () => {
   ["area", "pib", "densidade", "pibpc", "lat", "lng"].forEach((metrica) => {
     const j = new MODOS.JogoMaiorMenor({ metrica, rodadas: 3, minPop: 20000, uf: "BA", semente: 1 });

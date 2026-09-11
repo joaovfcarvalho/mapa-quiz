@@ -2553,9 +2553,10 @@
       (jogo.encerrado ? "Ver resultado" : "Próxima ›") + "</button></div>";
     var item = document.createElement("div");
     item.className = "item-jogada";
+    var menor = r.maior === "a" ? r.b : r.a;
     item.innerHTML = "<b>" + jogo.resultados.length + ". " + (r.acertou ? "✔ " : "✘ ") + maior.nome +
-      " &gt; " + (r.maior === "a" ? r.b : r.a).nome + "</b><br><small>" +
-      fmtMetrica(r.a, metrica) + " · " + fmtMetrica(r.b, metrica) + "</small>";
+      " &gt; " + menor.nome + "</b><br><small>" +
+      fmtMetrica(maior, metrica) + " · " + fmtMetrica(menor, metrica) + "</small>";
     $("lista-jogo").prepend(item);
     feedback("", "");
     atualizarPlacar();

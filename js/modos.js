@@ -1362,24 +1362,54 @@ var MODOS = (function () {
     this.atual = null;
     this.proximoPar();
   }
-  // Sorteia o par da rodada: um índice ao acaso e outro a uma distância no
-  // ranking que encolhe conforme a partida avança (do 40% do pool na
-  // primeira rodada a ~2% na última) — pares cada vez mais apertados.
+  // A dificuldade é a razão entre os dois valores, não a distância no
+  // ranking (seis posições entre cidades de 50 mil habitantes são 2% de
+  // diferença — um cara ou coroa). A razão-alvo cai em escala log ao longo
+  // da partida: ~4× na primeira rodada, ~1,25× na última, com uma folga em
+  // volta; nunca abaixo de 8% de diferença. Para norte–sul/oeste–leste a
+  // "razão" é a diferença em graus (de ~6° a ~0,7°).
+  JogoMaiorMenor.prototype.alvoDificuldade = function () {
+    var r = this.resultados.length;
+    var p = this.rodadas <= 1 ? 0.5 : r / (this.rodadas - 1);
+    if (this.cfg.metrica === "lat" || this.cfg.metrica === "lng") {
+      var graus = 6 * Math.pow(0.7 / 6, p);
+      return { min: Math.max(0.25, graus / 1.5), max: graus * 1.5, geo: true };
+    }
+    var razao = Math.exp(Math.log(4) * (1 - p) + Math.log(1.25) * p);
+    return { min: Math.max(1.08, razao / 1.35), max: razao * 1.35, geo: false };
+  };
+  // primeiro índice do pool com valor >= v (o pool está em ordem crescente)
+  function limiteInferior(pool, v) {
+    var lo = 0, hi = pool.length;
+    while (lo < hi) {
+      var meio = (lo + hi) >> 1;
+      if (pool[meio].v < v) lo = meio + 1; else hi = meio;
+    }
+    return lo;
+  }
   JogoMaiorMenor.prototype.proximoPar = function () {
     var n = this.pool.length;
-    var r = this.resultados.length;
-    var frac = this.rodadas <= 1 ? 0.1 : 0.4 - 0.38 * (r / (this.rodadas - 1));
-    var dist = Math.max(1, Math.round(n * frac));
     var self = this;
-    for (var tent = 0; tent < 200; tent++) {
+    var alvo = this.alvoDificuldade();
+    for (var tent = 0; tent < 300; tent++) {
+      // depois de muitas tentativas a faixa abre (pool pequeno, extremos)
+      var folga = 1 + Math.floor(tent / 60) * 0.5;
       var i = Math.floor(self.rnd() * n);
-      var d = 1 + Math.floor(self.rnd() * dist);
-      var j = self.rnd() < 0.5 ? i - d : i + d;
-      if (j < 0 || j >= n) j = i - d >= 0 ? i - d : i + d;
-      if (j < 0 || j >= n || j === i) continue;
-      var a = self.pool[i], b = self.pool[j];
-      if (a.v === b.v) continue;
-      if (self.usados.has(a.m.idx) || self.usados.has(b.m.idx)) continue;
+      var a = self.pool[i];
+      if (self.usados.has(a.m.idx)) continue;
+      // candidatos: valores acima (v·min..v·max) ou abaixo (v/max..v/min)
+      var faixas = alvo.geo
+        ? [[a.v + alvo.min / folga, a.v + alvo.max * folga], [a.v - alvo.max * folga, a.v - alvo.min / folga]]
+        : [[a.v * (1 + (alvo.min - 1) / folga), a.v * alvo.max * folga],
+           [a.v / (alvo.max * folga), a.v / (1 + (alvo.min - 1) / folga)]];
+      var f = faixas[self.rnd() < 0.5 ? 0 : 1];
+      var ini = limiteInferior(self.pool, f[0]);
+      var fim = limiteInferior(self.pool, f[1] + 1e-12); // exclusivo
+      if (fim <= ini) { f = faixas[f === faixas[0] ? 1 : 0]; ini = limiteInferior(self.pool, f[0]); fim = limiteInferior(self.pool, f[1] + 1e-12); }
+      if (fim <= ini) continue;
+      var j = ini + Math.floor(self.rnd() * (fim - ini));
+      var b = self.pool[j];
+      if (j === i || a.v === b.v || self.usados.has(b.m.idx)) continue;
       // a esquerda/direita também é sorteada: a posição não entrega a resposta
       if (self.rnd() < 0.5) { var t = a; a = b; b = t; }
       self.usados.add(a.m.idx);
@@ -1447,8 +1477,9 @@ var MODOS = (function () {
   JogoOrdene.prototype.proximaRodada = function () {
     var n = this.pool.length;
     var r = this.resultados.length;
-    var frac = this.rodadas <= 1 ? 0.3 : 0.6 - 0.5 * (r / (this.rodadas - 1));
+    var frac = this.rodadas <= 1 ? 0.3 : 0.6 - 0.4 * (r / (this.rodadas - 1));
     var janela = Math.max(this.tamanho * 2, Math.round(n * frac));
+    var geo = this.cfg.metrica === "lat" || this.cfg.metrica === "lng";
     var self = this;
     for (var tent = 0; tent < 100; tent++) {
       var ini = Math.floor(self.rnd() * Math.max(1, n - janela));
@@ -1460,6 +1491,9 @@ var MODOS = (function () {
       var empate = false;
       for (var k = 1; k < vals.length; k++) if (vals[k] === vals[k - 1]) empate = true;
       if (empate) continue;
+      // cinco cidades quase iguais não são um jogo de ordenar: o maior
+      // precisa ser pelo menos 1,5× o menor (ou 1° de distância no mapa)
+      if (geo ? vals[vals.length - 1] - vals[0] < 1 : vals[vals.length - 1] / Math.max(1e-9, vals[0]) < 1.5) continue;
       escolhidos.forEach(function (p) { self.usados.add(p.m.idx); });
       self.atual = { itens: embaralhar(escolhidos, self.rnd) };
       return self.atual;
