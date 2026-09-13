@@ -650,10 +650,12 @@ var MODOS = (function () {
   // ---------------------------------------------------------------
   // Modo 7 — Maratona: citar todos os municípios da região, com progresso
   // persistente entre sessões (a interface injeta/salva os ids achados).
-  // cfg: {uf?, palavra?, idsIniciais?: array de ids do IBGE já achados}
+  // cfg: {uf?, palavra?, prefixo?, idsIniciais?: array de ids do IBGE já achados}
   // Com palavra=true um palpite vale por todos os municípios da região que
   // têm aquela palavra (ou sequência de palavras) inteira no nome: "são"
   // acende São Paulo e São Luís, mas não Mansão.
+  // Com prefixo=true basta o início do nome (ao menos três letras): "ita"
+  // acende Itaúna, Itabira e Itatinga. Prefixos maiores restringem a busca.
   // ---------------------------------------------------------------
   function JogoMaratona(cfg) {
     this.cfg = cfg;
@@ -687,12 +689,10 @@ var MODOS = (function () {
   // mapa) — só valem acompanhadas de outra.
   var PALAVRAS_VAZIAS = { de: 1, do: 1, da: 1, dos: 1, das: 1, e: 1, d: 1 };
   var siglasUF = null;
-  // Municípios da região cujo nome contém, como palavras inteiras e em
-  // sequência, o que foi digitado. Aceita "nome uf" para restringir à UF.
-  JogoMaratona.prototype.buscarPorPalavra = function (texto) {
+  // As duas variantes aceitam um sufixo de UF e a mesma normalização.
+  function termoMaratona(texto) {
     var t = DADOS.normalizar(texto);
-    if (!t) return { status: "vazio" };
-    var partes = t.split(" ");
+    var partes = t ? t.split(" ") : [];
     if (!siglasUF) {
       siglasUF = new Set(municipios.map(function (m) { return m.uf.toLowerCase(); }));
     }
@@ -700,6 +700,16 @@ var MODOS = (function () {
     if (partes.length >= 2 && siglasUF.has(partes[partes.length - 1])) {
       uf = partes.pop().toUpperCase();
     }
+    return { texto: t, partes: partes, termo: partes.join(" "), uf: uf };
+  }
+  // Municípios da região cujo nome contém, como palavras inteiras e em
+  // sequência, o que foi digitado. Aceita "nome uf" para restringir à UF.
+  JogoMaratona.prototype.buscarPorPalavra = function (texto) {
+    var entrada = termoMaratona(texto);
+    var t = entrada.texto;
+    if (!t) return { status: "vazio" };
+    var partes = entrada.partes;
+    var uf = entrada.uf;
     if (partes.every(function (p) { return PALAVRAS_VAZIAS[p]; })) {
       return { status: "generico", termo: t };
     }
@@ -716,12 +726,27 @@ var MODOS = (function () {
     });
     return { status: lista.length ? "ok" : "nao_encontrado", municipios: lista, termo: partes.join(" ") };
   };
+  JogoMaratona.prototype.buscarPorPrefixo = function (texto) {
+    var entrada = termoMaratona(texto);
+    if (!entrada.texto) return { status: "vazio" };
+    var termo = entrada.termo;
+    if (termo.replace(/[^a-z]/g, "").length < 3) {
+      return { status: "prefixo_curto", termo: termo };
+    }
+    // Espaços e hífens não contam como letras: "jip" encontra Ji-Paraná.
+    var inicio = termo.replace(/ /g, "");
+    var lista = this.universo.filter(function (m) {
+      return (!entrada.uf || m.uf === entrada.uf) && m.chave.replace(/ /g, "").indexOf(inicio) === 0;
+    });
+    return { status: lista.length ? "ok" : "nao_encontrado", municipios: lista, termo: termo };
+  };
   JogoMaratona.prototype.palpitar = function (texto) {
     if (this.encerrado) return { tipo: "encerrado" };
     var cand, termo;
-    if (this.cfg.palavra) {
-      var busca = this.buscarPorPalavra(texto);
+    if (this.cfg.palavra || this.cfg.prefixo) {
+      var busca = this.cfg.prefixo ? this.buscarPorPrefixo(texto) : this.buscarPorPalavra(texto);
       if (busca.status === "vazio") return { tipo: "vazio" };
+      if (busca.status === "prefixo_curto") return { tipo: "prefixo_curto", termo: busca.termo };
       if (busca.status === "generico") return { tipo: "generico", termo: busca.termo };
       if (busca.status === "nao_encontrado") return { tipo: "nao_encontrado" };
       cand = busca.municipios;

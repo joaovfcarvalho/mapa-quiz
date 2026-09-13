@@ -427,10 +427,20 @@
           <p class="nota-config">Cite <b>todos</b> os municípios da região
           escolhida acima, no seu ritmo. O progresso (e o tempo) fica salvo
           neste navegador — pause e continue quando quiser.</p>
-          <label class="check" title="Variante mais leve, com progresso salvo à parte: a palavra precisa ser inteira no nome (“são” não acende Mansão) e pode vir em sequência (“são josé”). Palavrinhas como “do” e “da” só valem acompanhadas.">
-            <input type="checkbox" id="cfg-maratona-palavra">
-            Por palavra: “são” acende São Paulo, São Luís e todos os outros
+          <label>Como completar os municípios
+            <select id="cfg-maratona-variante" aria-describedby="maratona-variantes-nota">
+              <option value="completa">Nome completo</option>
+              <option value="palavra">Por palavra</option>
+              <option value="prefixo">Por 3 letras</option>
+            </select>
           </label>
+          <p class="nota-config" id="maratona-variantes-nota"><b>Por palavra:</b>
+          “são” acende São Paulo, São Luís e todos os nomes com essa palavra
+          inteira. “do” e “da” só valem acompanhados.<br>
+          <b>Por 3 letras:</b> digite ao menos as três primeiras letras do nome:
+          “ita” acende Itaúna, Itabira, Itatinga e todos os outros que começam
+          assim. Acentos não importam; “ita mg” restringe a Minas Gerais.
+          Cada variante tem seu próprio progresso salvo.</p>
         </div>
 
         <div class="config-modo" data-modo="estudo" hidden>

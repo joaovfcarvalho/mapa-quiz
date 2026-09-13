@@ -308,10 +308,10 @@
     try { localStorage.setItem(LS_MARATONA, JSON.stringify(tudo)); } catch (e) {}
     avisarDados("maratona");
   }
-  // A maratona por palavra é bem mais fácil: guarda o progresso à parte
-  // ("SP:palavra"), sem misturar com a maratona clássica da mesma região.
-  function chaveMaratona(uf, palavra) {
-    return (uf || "BR") + (palavra ? ":palavra" : "");
+  // Cada variante guarda o progresso à parte. Preserva as chaves antigas
+  // ("BR", "SP:palavra") e acrescenta ":prefixo" para a variante por 3 letras.
+  function chaveMaratona(uf, palavra, prefixo) {
+    return (uf || "BR") + (prefixo ? ":prefixo" : palavra ? ":palavra" : "");
   }
 
   // ------------------------------------------------------------------
@@ -842,11 +842,13 @@
       };
     }
     if (modoAtual === "maratona") {
-      var palavra = $("cfg-maratona-palavra").checked;
+      var variante = $("cfg-maratona-variante").value;
+      var palavra = variante === "palavra";
+      var prefixo = variante === "prefixo";
       return {
-        cfg: { uf: uf || undefined, palavra: palavra || undefined },
-        chave: "maratona" + (palavra ? "|palavra" : "") + sufChave,
-        rotulo: (palavra ? "Maratona por palavra: todos os municípios" : "Maratona: todos os municípios") +
+        cfg: { uf: uf || undefined, palavra: palavra || undefined, prefixo: prefixo || undefined },
+        chave: "maratona" + (prefixo ? "|prefixo" : palavra ? "|palavra" : "") + sufChave,
+        rotulo: (prefixo ? "Maratona por 3 letras: todos os municípios" : palavra ? "Maratona por palavra: todos os municípios" : "Maratona: todos os municípios") +
           (uf ? " de " + NOMES_UF[uf] : " do Brasil"),
       };
     }
@@ -995,9 +997,9 @@
       var total = ufDoJogo()
         ? DADOS.municipios.filter(function (m) { return m.uf === regiao; }).length
         : DADOS.total;
-      var prog = carregarMaratona(chaveMaratona(ufDoJogo(), lido.cfg.palavra));
+      var prog = carregarMaratona(chaveMaratona(ufDoJogo(), lido.cfg.palavra, lido.cfg.prefixo));
       var n = prog && prog.ids ? prog.ids.length : 0;
-      var qual = lido.cfg.palavra ? "maratona por palavra" : "maratona";
+      var qual = lido.cfg.prefixo ? "maratona por 3 letras" : lido.cfg.palavra ? "maratona por palavra" : "maratona";
       // onde o progresso está guardado: só aqui, ou também na conta Google
       var conta = window.CONTA ? CONTA.estado() : { disponivel: false };
       var onde = !conta.disponivel ? ""
@@ -1134,7 +1136,7 @@
     else if (modoAtual === "ponte") jogo = new MODOS.JogoPonte(lido.cfg);
     else if (modoAtual === "estudo") jogo = new MODOS.JogoEstudo(lido.cfg);
     else if (modoAtual === "maratona") {
-      var prog = carregarMaratona(chaveMaratona(lido.cfg.uf, lido.cfg.palavra));
+      var prog = carregarMaratona(chaveMaratona(lido.cfg.uf, lido.cfg.palavra, lido.cfg.prefixo));
       lido.cfg.idsIniciais = prog && prog.ids ? prog.ids : [];
       tempoPrevio = prog && prog.tempoSeg ? prog.tempoSeg : 0;
       maratonaUltimos = prog && Array.isArray(prog.ultimos) ? prog.ultimos : [];
@@ -1190,6 +1192,10 @@
     $("barra-progresso").parentElement.hidden = jogoModo === "estudo";
     $("input-palpite").placeholder = jogoModo === "estudo"
       ? "Busque um município… (ex.: Sorocaba ou Bom Jesus, RS)"
+      : jogoModo === "maratona" && jogo.cfg.prefixo
+      ? "Digite as 3 primeiras letras… (ex.: ita ou ita mg)"
+      : jogoModo === "maratona" && jogo.cfg.palavra
+      ? "Digite uma palavra… (ex.: são ou rita sp)"
       : "Digite uma cidade… (ex.: Campinas ou Bom Jesus, RS)";
 
     // o modo de clique esconde o campo de texto (a resposta é no mapa) e
@@ -1705,7 +1711,12 @@
   // ---------------- modo Maratona ----------------
   function palpitarMaratona(texto) {
     var r = jogo.palpitar(texto);
+    var emGrupo = jogo.cfg.palavra || jogo.cfg.prefixo;
     if (r.tipo === "vazio") return;
+    if (r.tipo === "prefixo_curto") {
+      feedback("Digite ao menos as 3 primeiras letras do nome do município.", "erro");
+      return;
+    }
     if (r.tipo === "generico") {
       feedback("“" + r.termo + "” sozinho não vale — junte com outra palavra do nome.", "erro");
       return;
@@ -1713,6 +1724,8 @@
     if (r.tipo === "nao_encontrado") {
       feedback(r.ufErrada
         ? "Esse município existe, mas não nessa UF."
+        : jogo.cfg.prefixo
+        ? "Nenhum município da região começa com esse prefixo."
         : jogo.cfg.palavra
         ? "Nenhum município da região tem essa palavra no nome."
         : "Não encontrei nenhum município com esse nome.", "erro");
@@ -1725,8 +1738,8 @@
       return;
     }
     if (r.tipo === "repetido") {
-      if (!jogo.cfg.palavra) registrarCitadas([r.mun]);
-      feedback(jogo.cfg.palavra && r.total > 1
+      if (!emGrupo) registrarCitadas([r.mun]);
+      feedback(emGrupo && r.total > 1
         ? "Você já acendeu todos os " + fmtInt(r.total) + " municípios com “" + r.termo + "”."
         : "Você já citou " + nomeUF(r.mun) + ".", "erro");
       $("input-palpite").select();
@@ -1736,8 +1749,8 @@
 
     var muns = r.revelados.map(function (par) { return par.mun; });
     // nos pontos cegos só conta o que foi citado pelo nome inteiro: uma
-    // palavra que acende 80 cidades não é "lembrar" de cada uma
-    registrarCitadas(jogo.cfg.palavra
+    // palavra ou prefixo que acende 80 cidades não é "lembrar" de cada uma
+    registrarCitadas(emGrupo
       ? muns.filter(function (m) { return m.chave === r.termo; })
       : muns);
     r.revelados.forEach(function (par) {
@@ -1749,11 +1762,11 @@
       return nomeUF(m) + (muns.length === 1 ? " · " + fmtPop(m.pop) + " hab. · " + fmtPib(m.pib) : "");
     });
     if (muns.length > 3) nomes.push("+" + fmtInt(muns.length - 3));
-    feedback((jogo.cfg.palavra && muns.length > 1
+    feedback((emGrupo && muns.length > 1
       ? "✔ “" + r.termo + "”: " + fmtInt(muns.length) + " municípios · "
       : "✔ ") + nomes.join(" · "), "ok");
     // painel do canto: um item por palpite (uma palavra vale por vários)
-    maratonaUltimos.unshift(jogo.cfg.palavra && muns.length > 1
+    maratonaUltimos.unshift(emGrupo && muns.length > 1
       ? { t: "“" + r.termo + "” → " + fmtInt(muns.length) + " municípios", ids: muns.slice(0, 400).map(function (m) { return m.id; }) }
       : { t: nomeUF(muns[0]), ids: [muns[0].id] });
     if (maratonaUltimos.length > MAX_ULTIMOS) maratonaUltimos.length = MAX_ULTIMOS;
@@ -1795,7 +1808,7 @@
 
   function salvarProgressoMaratona() {
     if (jogoModo !== "maratona" || !jogo) return;
-    salvarMaratona(chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra), {
+    salvarMaratona(chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo), {
       ids: jogo.idsAchados(),
       tempoSeg: tempoDecorrido(),
       ultimos: maratonaUltimos,
@@ -3617,12 +3630,12 @@
     Object.keys(todas).forEach(function (chave) {
       var p = todas[chave];
       if (!p || !p.ids || p.ids.length === 0) return;
-      // chave: "BR", "SP" ou "SP:palavra" (variante por palavra)
+      // chave: "BR", "SP", "SP:palavra" ou "SP:prefixo"
       var partes = chave.split(":");
       var reg = partes[0];
       if (reg !== "BR" && !NOMES_UF[reg]) return;
       if (!melhor || p.ids.length > melhor.n) {
-        melhor = { reg: reg, palavra: partes[1] === "palavra", n: p.ids.length };
+        melhor = { reg: reg, variante: partes[1] === "prefixo" ? "prefixo" : partes[1] === "palavra" ? "palavra" : "completa", n: p.ids.length };
       }
     });
     var card = $("convite-maratona");
@@ -3631,15 +3644,16 @@
       : DADOS.municipios.filter(function (m) { return m.uf === melhor.reg; }).length;
     card.hidden = false;
     card.dataset.regiao = melhor.reg;
-    card.dataset.palavra = melhor.palavra ? "1" : "";
-    $("convite-maratona-texto").innerHTML = "<b>Continuar sua maratona" + (melhor.palavra ? " por palavra" : "") +
+    card.dataset.variante = melhor.variante;
+    $("convite-maratona-texto").innerHTML = "<b>Continuar sua maratona" +
+      (melhor.variante === "prefixo" ? " por 3 letras" : melhor.variante === "palavra" ? " por palavra" : "") +
       "</b><small>" + (melhor.reg === "BR" ? "Brasil inteiro" : NOMES_UF[melhor.reg]) + ": <b>" + fmtInt(melhor.n) +
       "</b> de " + fmtInt(total) + " municípios (" + fmtPct(melhor.n / total) + ")</small>";
   }
   $("convite-maratona").addEventListener("click", function () {
     var card = $("convite-maratona");
     var reg = card.dataset.regiao || "BR";
-    $("cfg-maratona-palavra").checked = card.dataset.palavra === "1";
+    $("cfg-maratona-variante").value = card.dataset.variante || "completa";
     iniciarPreset("maratona", { uf: reg === "BR" ? null : reg });
   });
   // catálogo dobrável (aberto no desktop, fechado no celular — lembrado)
@@ -3791,10 +3805,12 @@
   });
   $("btn-zerar-maratona").addEventListener("click", function () {
     var regiao = ufDoJogo() || "BR";
-    var palavra = jogo && jogoModo === "maratona" ? !!jogo.cfg.palavra : $("cfg-maratona-palavra").checked;
+    var variante = $("cfg-maratona-variante").value;
+    var palavra = jogo && jogoModo === "maratona" ? !!jogo.cfg.palavra : variante === "palavra";
+    var prefixo = jogo && jogoModo === "maratona" ? !!jogo.cfg.prefixo : variante === "prefixo";
     var nome = regiao === "BR" ? "do Brasil inteiro" : "de " + NOMES_UF[regiao];
-    if (!confirm("Apagar TODO o progresso da maratona" + (palavra ? " por palavra " : " ") + nome + "? Isso não tem volta.")) return;
-    zerarMaratona(chaveMaratona(ufDoJogo(), palavra));
+    if (!confirm("Apagar TODO o progresso da maratona" + (prefixo ? " por 3 letras " : palavra ? " por palavra " : " ") + nome + "? Isso não tem volta.")) return;
+    zerarMaratona(chaveMaratona(ufDoJogo(), palavra, prefixo));
     maratonaUltimos = [];
     if (jogo && jogoModo === "maratona") {
       jogo.encerrado = true; // não deixa abandonarJogo() salvar de volta o progresso
@@ -3880,7 +3896,7 @@
       // maratona em andamento nesta região: os achados do outro aparelho
       // entram na partida agora, sem reiniciar
       if (jogo && jogoModo === "maratona" && !jogo.encerrado) {
-        var regAtual = chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra);
+        var regAtual = chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo);
         if (novosPorRegiao[regAtual]) absorverMaratona(novosPorRegiao[regAtual]);
       }
     }
@@ -3964,6 +3980,7 @@
   }
   atualizarCamposLimite();
   atualizarCardDiario();
+  atualizarConviteMaratona();
   aplicarDesafioDaURL();
   // um link de desafio colado na aba já aberta também vale
   window.addEventListener("hashchange", aplicarDesafioDaURL);

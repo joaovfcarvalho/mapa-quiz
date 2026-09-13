@@ -303,14 +303,26 @@ recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
   área e PIB. Com o botão ⬡ Formas ligado, o território inteiro do município
   responde ao mouse — não é preciso acertar o pontinho da sede.
 
-### Maratona por palavra
+### Variantes da maratona: nome completo, palavra ou 3 letras
 
-Na configuração da Maratona há a opção **Por palavra**: cada palpite acende
+Na configuração da Maratona, **Como completar os municípios** permite escolher
+**Nome completo**, **Por palavra** ou **Por 3 letras**.
+
+Em **Por palavra**, cada palpite acende
 todos os municípios da região que têm aquela palavra inteira no nome —
 "são" acende São Paulo, São Luís e as outras dezenas, mas não Mansão; "são
 josé" acende só os São José; "rita sp" restringe à UF. Palavrinhas como "do"
-e "da" só valem acompanhadas. O progresso dessa variante fica salvo à parte
-do da maratona clássica. Nos dois casos o placar mostra município, população,
+e "da" só valem acompanhadas.
+
+Em **Por 3 letras**, basta digitar ao menos as três primeiras letras do nome:
+"ita" acende Itaúna, Itabira, Itatinga e todos os municípios cujo nome começa
+assim. A busca ignora acentos, maiúsculas, espaços e hífens ("jip" encontra
+Ji-Paraná); "ita mg" restringe à UF. Um
+prefixo maior, como "itab", restringe os resultados. Só o início do nome
+conta: "ita" não acende Santa Rita. Palpites de uma ou duas letras não valem.
+
+Cada variante salva seu progresso e tempo separadamente por região, inclusive
+no backup e na sincronização da conta. Nas três variantes o placar mostra município, população,
 PIB e área já cobertos, e o canto do mapa lista os últimos palpites certos
 (clicar num deles acende de novo o que ele revelou).
 
