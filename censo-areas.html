@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="google-adsense-account" content="ca-pub-3843329468867244">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1b28">
+<title>População por área de ponderação — Censo 2022 — Mapa Quiz</title>
+<meta name="description" content="Mapa interativo da população e da densidade demográfica do Brasil nas 14.406 áreas de ponderação do Censo 2022 do IBGE, em coroplético e em barras 3D.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mapa Quiz">
+<meta property="og:title" content="População por área de ponderação — Censo 2022">
+<meta property="og:description" content="Mapa interativo da população e da densidade do Brasil nas 14.406 áreas de ponderação do Censo 2022.">
+<meta property="og:image" content="https://mapaquiz.com.br/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://mapaquiz.com.br/censo-areas.html">
+<link rel="icon" href="img/icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fonts/sora.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/censo.css">
+</head>
+<body>
+<header>
+  <a class="marca" href="index.html">
+    <span class="marca-icone"><img src="img/icone.svg" alt="" width="36" height="36"></span>
+    <span class="marca-texto">
+      <b>População por área de ponderação</b>
+      <small>Censo 2022 · 14.406 áreas</small>
+    </span>
+  </a>
+  <nav class="header-acoes">
+    <a href="censo-setores.html" class="botao-sec">🔬 Por setor censitário</a>
+    <a href="index.html" class="botao-sec">🗺️ Voltar ao quiz</a>
+  </nav>
+</header>
+
+<main>
+  <aside id="painel">
+    <p id="descricao-modo">As <b>áreas de ponderação</b> são os pedaços em que o
+    IBGE divide cada município para expandir a amostra do Censo — juntam setores
+    censitários vizinhos e, nas cidades grandes, coincidem com bairros. São
+    14.406 no Brasil, com <b>12 mil habitantes cada</b>, em mediana.</p>
+
+    <form id="config" autocomplete="off" onsubmit="return false">
+      <label>Cor por
+        <span class="escolhas">
+          <label><input type="radio" name="metrica" value="densidade" checked> Densidade</label>
+          <label><input type="radio" name="metrica" value="populacao"> População</label>
+        </span>
+      </label>
+      <label>Escala
+        <span class="escolhas">
+          <label><input type="radio" name="escala" value="log" checked> Log</label>
+          <label><input type="radio" name="escala" value="linear"> Linear</label>
+        </span>
+      </label>
+      <label class="check"><input type="checkbox" id="chk-3d"> Barras 3D</label>
+      <div id="controles-3d" hidden>
+        <label>Altura das barras
+          <span class="escolhas">
+            <label><input type="radio" name="altura" value="raiz"> Raiz</label>
+            <label><input type="radio" name="altura" value="linear" checked> Linear</label>
+            <label><input type="radio" name="altura" value="log"> Log</label>
+          </span>
+        </label>
+        <label>Exagero vertical
+          <span class="linha-controle">
+            <input type="range" id="cfg-exagero" min="0.2" max="4" step="0.1" value="1">
+            <span id="exagero-valor">1.0×</span>
+          </span>
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" id="chk-bordas" checked> Contorno das áreas no zoom</label>
+      <label class="check"><input type="checkbox" id="chk-contorno" checked> Divisas dos estados</label>
+      <label>Ir para um município
+        <input type="text" id="busca" placeholder="Ex.: Recife — e Enter">
+      </label>
+      <div id="busca-resultado"></div>
+      <div id="linha-botoes">
+        <button type="button" id="btn-enquadrar" class="botao-sec">⤢ Brasil inteiro</button>
+        <button type="button" id="btn-girar" class="botao-sec">⟳ Girar</button>
+      </div>
+    </form>
+
+    <div class="bloco">
+      <h3 id="legenda-titulo">Densidade (hab/km²)</h3>
+      <canvas id="legenda-canvas" width="300" height="14"></canvas>
+      <div id="legenda-ticks"></div>
+      <div id="legenda-vazio"></div>
+    </div>
+
+    <div class="bloco" id="stats"></div>
+    <div class="bloco" id="detalhe" hidden></div>
+
+    <div class="bloco">
+      <h3 id="ranking-titulo">Mais densas</h3>
+      <ol id="ranking"></ol>
+    </div>
+
+    <div class="bloco">
+      <h3>Fonte</h3>
+      <p class="fonte-nota">IBGE, <b>Censo Demográfico 2022</b>. População
+      residente somada dos setores censitários de cada área (tabela “básico”
+      dos Agregados por Setores Censitários); malha das áreas de ponderação de
+      2022. Total do país: 203.080.756 habitantes.</p>
+      <p class="fonte-nota">Como cada área de ponderação é montada para ter
+      população parecida, é a <b>densidade</b> que mostra o desenho do país —
+      colorir pela população deixa o mapa quase todo do mesmo tom.</p>
+    </div>
+  </aside>
+
+  <div id="mapa-wrap">
+    <div class="pilha">
+      <canvas id="mapa"></canvas>
+      <div id="pintando" hidden>Desenhando…</div>
+      <div id="dica-3d" hidden>Arraste para mover · Shift + arraste (ou botão direito) para girar</div>
+      <div id="carregando">
+        <div id="carregando-texto">Carregando…</div>
+        <div id="barra-fora"><div id="barra-progresso"></div></div>
+      </div>
+    </div>
+  </div>
+</main>
+<div id="tooltip" hidden></div>
+
+<script src="js/config.js"></script>
+<script src="js/site.js"></script>
+<script src="data/municipios.js"></script>
+<script src="data/brasil_uf.js"></script>
+<script src="js/dados.js"></script>
+<script src="js/censo-topo.js"></script>
+<script src="js/censo-mapa.js"></script>
+<script src="js/censo-pagina.js"></script>
+<script>
+CENSO_PAGINA.iniciar({
+  singular: "Área de ponderação",
+  plural: "Áreas de ponderação",
+  arquivos: [{
+    arquivo: "data/censo_ap.js",
+    variavel: "CENSO_AP",
+    rotulo: "as 14.406 áreas de ponderação",
+  }],
+  montarBloco: function (f) {
+    return {
+      pop: Int32Array.from(f.pop),
+      aream2: Float64Array.from(f.aream2),
+      nome: f.nome,
+      cod: f.cod,
+      nsetores: f.nsetores,
+      mun: f.mun,
+      muns: f.muns,
+    };
+  },
+  descrever: function (bl, i) {
+    var mun = bl.muns[bl.mun[i]];
+    var nome = bl.nome[i];
+    return {
+      titulo: nome || mun[1],
+      sub: nome ? mun[1] + " · " + mun[2] : "Área de ponderação · " + mun[2],
+      linhas: [
+        ["Setores censitários", CENSO_MAPA.numero(bl.nsetores[i])],
+        ["Código IBGE", bl.cod[i]],
+      ],
+    };
+  },
+});
+</script>
+</body>
+</html>

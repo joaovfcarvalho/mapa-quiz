@@ -279,6 +279,73 @@ clique para fixar um círculo e listar os municípios dentro dele. O painel
 mostra ainda o pico de densidade do país para o raio escolhido (com 100 km, o
 recorde fica no oeste catarinense, na fronteira dos minifúndios de SC e RS).
 
+## Mapas do Censo 2022: onde mora a população
+
+Duas páginas fora do jogo (em **Outros modos**) mostram a mesma coisa em dois
+recortes diferentes do Censo Demográfico 2022 do IBGE:
+
+| Página | Recorte | Unidades | Malha |
+|---|---|---:|---:|
+| `censo-areas.html` | áreas de ponderação | 14.406 | 5,3 MB |
+| `censo-setores.html` | setores censitários | 468.061 | 76 MB (um arquivo por UF) |
+
+A **área de ponderação** é o pedaço em que o IBGE divide um município para
+expandir a amostra do Censo; nas cidades grandes ela coincide com bairros
+("Copacabana", "Complexo do Alemão 2", "Barra da Tijuca 1"). O **setor
+censitário** é a menor unidade publicada — a área que um recenseador percorre,
+cerca de 300 domicílios: um quarteirão na cidade, dezenas de quilômetros no
+interior da Amazônia.
+
+As duas páginas têm os mesmos controles:
+
+- **Cor por densidade ou por população.** Repare que os dois recortes são
+  desenhados para ter população parecida em cada unidade, então é a
+  **densidade** que revela o desenho do país; a população deixa o mapa quase
+  todo do mesmo tom. A escala de cor pode ser log ou linear, e é cortada nos
+  percentis 2 e 99,8 — sem esse corte, um setor de 380 m² com 442 moradores
+  (existe, na Bela Vista em São Paulo: 1,16 milhão de hab/km²) espreme todo o
+  resto no pé da rampa.
+- **Barras 3D.** Cada unidade vira um prisma com altura proporcional ao valor,
+  em escala linear, raiz ou log, com exagero vertical ajustável. Arraste para
+  mover, Shift + arraste (ou botão direito) para girar e inclinar.
+- **Zoom, busca por município, tooltip e ranking** das doze unidades mais
+  densas (ou mais populosas) — clicar numa linha do ranking voa até ela.
+
+O painel também responde à pergunta que dá o tamanho da concentração
+brasileira: **metade da população do país mora em 0,11% do território**
+(9.718 km² em 188.897 setores censitários).
+
+### Como a malha cabe no navegador
+
+Desenhar 468 mil polígonos a 60 quadros por segundo não é possível em canvas
+2D, e nem precisa ser. O que as páginas fazem:
+
+- A malha é guardada como **topologia** (arcos compartilhados entre unidades
+  vizinhas, no estilo TopoJSON) com as coordenadas quantizadas em inteiros
+  pequenos, simplificada pelo mapshaper preservando a topologia — assim
+  fronteiras vizinhas continuam coincidindo e não aparecem frestas.
+- O decodificador (`js/censo-topo.js`) transforma isso em *typed arrays* numa
+  passada só, junto com caixa envolvente, centroide e um índice espacial em
+  grade para achar a unidade sob o ponteiro.
+- O desenho (`js/censo-mapa.js`) acontece **em pedaços** num canvas fora da
+  tela, com orçamento de 14 ms por quadro. Enquanto o usuário arrasta ou dá
+  zoom, aparece a última imagem pronta deslocada (exato para o arrasto,
+  aproximado para o zoom); a repintura começa 80 ms depois que a mão para.
+  As unidades são pintadas **na ordem da cor**, o que junta os preenchimentos
+  de mesmo tom num caminho só, e quem fica menor que um pixel vira um
+  retângulo em vez de um polígono.
+- No 3D, a ordem de trás para a frente sai de uma **ordenação por contagem**
+  em 4.096 faixas de profundidade (O(n), refeita a cada giro).
+
+Os dados são gerados por `tools/build_censo.py` (precisa de `geopandas`,
+`pyogrio` e do `mapshaper`), que baixa ~1,9 GB de malhas e tabelas do IBGE e
+escreve `data/censo_ap.js` e `data/censo_setores_*.js`. Fontes: malha das áreas
+de ponderação 2022, malha dos setores censitários 2022, de-para setor × área de
+ponderação e a tabela “básico” dos Agregados por Setores Censitários (variável
+`v0001`, pessoas residentes). Os totais conferem com o publicado:
+**203.080.756 habitantes**. Na página de setores faltam 38 setores (8.116
+habitantes, 0,004% do país) que perdem a geometria na limpeza topológica.
+
 ## Como jogar
 
 - Digite o nome da cidade e aperte Enter. Acentos, maiúsculas, hífens e até
@@ -458,6 +525,8 @@ mapa-quiz/
 ├── rios.html           # quiz dos rios do Brasil
 ├── estatisticas.html   # mapa dos seus pontos cegos
 ├── densidade.html      # mapa de densidade de municípios (fora da navegação)
+├── censo-areas.html    # população/densidade por área de ponderação (Censo 2022)
+├── censo-setores.html  # população/densidade por setor censitário (Censo 2022)
 ├── CNAME, robots.txt, sitemap.xml, manifest.webmanifest
 ├── css/style.css
 ├── fonts/              # Sora (OFL), hospedada localmente
@@ -473,13 +542,16 @@ mapa-quiz/
 │   ├── conta.js        # entrar com Google + sincronização pelo Drive (appdata)
 │   ├── rios.js         # quiz dos rios: busca, placar e mapa próprio
 │   ├── densidade.js    # cálculo e desenho do mapa de densidade
+│   ├── censo-topo.js   # decodificador da malha topológica do Censo
+│   ├── censo-mapa.js   # câmera, coroplético e barras 3D dos mapas do Censo
+│   ├── censo-pagina.js # painel, legenda, busca e carregamento das duas páginas
 │   ├── estatisticas.js # mapa e listas dos pontos cegos
 │   ├── tutorial.js     # tutorial guiado
 │   └── app.js          # interface, mapa SVG, zoom/pan, Desafio do dia, backup
 ├── data/               # dados embutidos (gerados)
 ├── tests/              # testes node:test (npm test)
 ├── .github/workflows/  # CI: sintaxe + testes
-└── tools/              # build_data.py, build_satelite.py, build_rios.py, build_marca.py, og.html
+└── tools/              # build_data.py, build_censo.py, build_satelite.py, build_rios.py, build_marca.py, og.html
 ```
 
 ## Publicação e domínio
