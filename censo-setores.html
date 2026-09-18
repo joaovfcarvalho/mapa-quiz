@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="google-adsense-account" content="ca-pub-3843329468867244">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1b28">
+<title>População por setor censitário — Censo 2022 — Mapa Quiz</title>
+<meta name="description" content="Mapa interativo da população e da densidade demográfica do Brasil nos 468 mil setores censitários do Censo 2022 do IBGE — o recorte mais fino publicado —, em coroplético e em barras 3D.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mapa Quiz">
+<meta property="og:title" content="População por setor censitário — Censo 2022">
+<meta property="og:description" content="O Brasil nos 468 mil setores censitários do Censo 2022: o recorte mais fino que o IBGE publica.">
+<meta property="og:image" content="https://mapaquiz.com.br/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://mapaquiz.com.br/censo-setores.html">
+<link rel="icon" href="img/icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fonts/sora.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/censo.css">
+</head>
+<body>
+<header>
+  <a class="marca" href="index.html">
+    <span class="marca-icone"><img src="img/icone.svg" alt="" width="36" height="36"></span>
+    <span class="marca-texto">
+      <b>População por setor censitário</b>
+      <small>Censo 2022 · 468 mil setores</small>
+    </span>
+  </a>
+  <nav class="header-acoes">
+    <a href="censo-areas.html" class="botao-sec">🧩 Por área de ponderação</a>
+    <a href="index.html" class="botao-sec">🗺️ Voltar ao quiz</a>
+  </nav>
+</header>
+
+<main>
+  <aside id="painel">
+    <p id="descricao-modo">O <b>setor censitário</b> é a menor unidade que o
+    IBGE publica: a área que um recenseador percorre, cerca de 300 domicílios.
+    São 468 mil no país — um quarteirão nas cidades, dezenas de quilômetros no
+    interior da Amazônia. É o retrato mais fino que existe de onde mora a
+    população brasileira.</p>
+    <p class="fonte-nota"><b>Página pesada:</b> são 76 MB de malha, carregados
+    estado por estado. Feita para computador.</p>
+
+    <form id="config" autocomplete="off" onsubmit="return false">
+      <label>Cor por
+        <span class="escolhas">
+          <label><input type="radio" name="metrica" value="densidade" checked> Densidade</label>
+          <label><input type="radio" name="metrica" value="populacao"> População</label>
+        </span>
+      </label>
+      <label>Escala
+        <span class="escolhas">
+          <label><input type="radio" name="escala" value="log" checked> Log</label>
+          <label><input type="radio" name="escala" value="linear"> Linear</label>
+        </span>
+      </label>
+      <label class="check"><input type="checkbox" id="chk-3d"> Barras 3D</label>
+      <div id="controles-3d" hidden>
+        <label>Altura das barras
+          <span class="escolhas">
+            <label><input type="radio" name="altura" value="raiz"> Raiz</label>
+            <label><input type="radio" name="altura" value="linear" checked> Linear</label>
+            <label><input type="radio" name="altura" value="log"> Log</label>
+          </span>
+        </label>
+        <label>Exagero vertical
+          <span class="linha-controle">
+            <input type="range" id="cfg-exagero" min="0.2" max="4" step="0.1" value="1">
+            <span id="exagero-valor">1.0×</span>
+          </span>
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" id="chk-bordas" checked> Contorno dos setores no zoom</label>
+      <label class="check"><input type="checkbox" id="chk-contorno" checked> Divisas dos estados</label>
+      <label>Ir para um município
+        <input type="text" id="busca" placeholder="Ex.: Belém — e Enter">
+      </label>
+      <div id="busca-resultado"></div>
+      <div id="linha-botoes">
+        <button type="button" id="btn-enquadrar" class="botao-sec">⤢ Brasil inteiro</button>
+        <button type="button" id="btn-girar" class="botao-sec">⟳ Girar</button>
+      </div>
+    </form>
+
+    <div class="bloco">
+      <h3 id="legenda-titulo">Densidade (hab/km²)</h3>
+      <canvas id="legenda-canvas" width="300" height="14"></canvas>
+      <div id="legenda-ticks"></div>
+      <div id="legenda-vazio"></div>
+    </div>
+
+    <div class="bloco" id="stats"></div>
+    <div class="bloco" id="detalhe" hidden></div>
+
+    <div class="bloco">
+      <h3 id="ranking-titulo">Mais densos</h3>
+      <ol id="ranking"></ol>
+    </div>
+
+    <div class="bloco">
+      <h3>Fonte</h3>
+      <p class="fonte-nota">IBGE, <b>Censo Demográfico 2022</b>: malha de
+      setores censitários de 2022 e variável <code>v0001</code> (pessoas
+      residentes) da tabela “básico” dos Agregados por Setores Censitários.
+      38 setores (8.116 habitantes, 0,004% do país) ficaram de fora por não
+      terem geometria válida depois da simplificação.</p>
+      <p class="fonte-nota">Como o setor é desenhado para ter mais ou menos o
+      mesmo número de domicílios, é a <b>densidade</b> que revela o desenho do
+      país; a população por setor fica quase toda na mesma faixa.</p>
+    </div>
+  </aside>
+
+  <div id="mapa-wrap">
+    <div class="pilha">
+      <canvas id="mapa"></canvas>
+      <div id="pintando" hidden>Desenhando…</div>
+      <div id="dica-3d" hidden>Arraste para mover · Shift + arraste (ou botão direito) para girar</div>
+      <div id="carregando">
+        <div id="carregando-texto">Carregando…</div>
+        <div id="barra-fora"><div id="barra-progresso"></div></div>
+      </div>
+    </div>
+  </div>
+</main>
+<div id="tooltip" hidden></div>
+
+<script src="js/config.js"></script>
+<script src="js/site.js"></script>
+<script src="data/municipios.js"></script>
+<script src="data/brasil_uf.js"></script>
+<script src="js/dados.js"></script>
+<script src="data/censo_setores_indice.js"></script>
+<script src="js/censo-topo.js"></script>
+<script src="js/censo-mapa.js"></script>
+<script src="js/censo-pagina.js"></script>
+<script>
+CENSO_PAGINA.iniciar({
+  singular: "Setor censitário",
+  plural: "Setores censitários",
+  // um arquivo por UF, na ordem do índice: o mapa vai aparecendo estado a
+  // estado em vez de esperar os 76 MB inteiros
+  arquivos: CENSO_SETORES_INDICE.ufs.map(function (uf) {
+    return {
+      arquivo: uf.arquivo,
+      variavel: uf.variavel,
+      rotulo: uf.nome,
+      uf: uf.uf,
+    };
+  }),
+  montarBloco: function (f, item) {
+    return {
+      uf: item.uf,
+      pop: Int32Array.from(f.pop),
+      aream2: Float64Array.from(f.aream2),
+      cod: f.cod,
+      sit: f.sit,
+      local: f.local,
+      locais: f.locais,
+      mun: f.mun,
+      muns: f.muns,
+    };
+  },
+  descrever: function (bl, i) {
+    var mun = bl.muns[bl.mun[i]];
+    // nome do bairro quando o município tem, do distrito quando não tem
+    var local = bl.locais[bl.local[i]];
+    // o código completo do setor é o do município + os 8 dígitos guardados
+    var codigo = mun[0] + ("0000000" + bl.cod[i]).slice(-8);
+    return {
+      titulo: local || mun[1],
+      sub: (local && local !== mun[1] ? mun[1] + " · " : "") + bl.uf +
+           " · " + (bl.sit[i] ? "urbano" : "rural"),
+      linhas: [["Código IBGE", codigo]],
+    };
+  },
+});
+</script>
+</body>
+</html>
