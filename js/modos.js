@@ -781,6 +781,16 @@ var MODOS = (function () {
     }
     return null;
   };
+  // Quantas das maiores o jogador emendou a partir do topo: o universo vem
+  // ordenado por população, então basta andar da primeira cidade até a
+  // primeira que falta ("acertei as 37 maiores"). O parâmetro "de" retoma a
+  // conta de onde ela parou — achado nunca vira faltante, então a emenda só
+  // cresce e não precisa ser varrida de novo desde o começo.
+  JogoMaratona.prototype.topoSeguido = function (de) {
+    var i = de > 0 ? de : 0;
+    while (i < this.universo.length && this.achados.has(this.universo[i].idx)) i++;
+    return i;
+  };
   // Absorve ids achados em outro aparelho (sincronização no meio da sessão):
   // devolve os municípios que ainda não estavam marcados aqui.
   JogoMaratona.prototype.absorver = function (ids) {

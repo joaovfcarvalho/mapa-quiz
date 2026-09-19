@@ -490,6 +490,9 @@ main {
 /* na maratona do Brasil são 27 linhas (uma por UF): duas colunas */
 .portes-mar { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 
+/* maratona: a emenda a partir do topo do ranking ("acertou as 37 maiores") */
+.linha-topo b { color: var(--ouro-claro); font-weight: 700; }
+
 /* maratona: linha de UF clicável (abre a pista da maior cidade que falta) */
 .linha-uf { cursor: pointer; border-radius: 5px; }
 .linha-uf:hover { background: rgba(255, 255, 255, .06); }

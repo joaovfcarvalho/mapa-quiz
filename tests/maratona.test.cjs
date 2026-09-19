@@ -85,3 +85,27 @@ test("Maratona: nome completo e palavra mantêm suas regras", () => {
   assert.ok(r.revelados.every(p => p.mun.uf === "SP"));
   assert.equal(palavra.palpitar("ita").revelados.length, 1); // Itá/SC, sem prefixos
 });
+
+test("Maratona: a emenda do topo só anda quando cai a maior que falta", () => {
+  const jogo = new MODOS.JogoMaratona({ uf: "RJ" });
+  const [maior, segunda, terceira] = jogo.universo;
+  assert.equal(jogo.topoSeguido(0), 0);
+  // acertar a 2ª antes da 1ª não emenda nada: a fila para na primeira que falta
+  assert.equal(jogo.palpitar(segunda.nome + " RJ").tipo, "ok");
+  assert.equal(jogo.topoSeguido(0), 0);
+  assert.equal(jogo.palpitar(maior.nome + " RJ").tipo, "ok");
+  assert.equal(jogo.topoSeguido(0), 2); // a 1ª destrava a 2ª que já estava lá
+  assert.equal(jogo.palpitar(terceira.nome + " RJ").tipo, "ok");
+  // retomar de onde parou dá o mesmo que varrer desde o começo
+  assert.equal(jogo.topoSeguido(2), 3);
+  assert.equal(jogo.topoSeguido(0), 3);
+  assert.equal(jogo.topoSeguido(), 3);
+});
+
+test("Maratona: a emenda do topo chega ao universo inteiro quando tudo sai", () => {
+  const jogo = new MODOS.JogoMaratona({ uf: "RR", prefixo: true });
+  const prefixos = new Set(jogo.universo.map(m => m.chave.replace(/ /g, "").slice(0, 3)));
+  for (const prefixo of prefixos) jogo.palpitar(prefixo + " rr");
+  assert.equal(jogo.achados.size, jogo.alvosTotal);
+  assert.equal(jogo.topoSeguido(0), jogo.alvosTotal);
+});

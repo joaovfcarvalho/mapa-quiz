@@ -435,6 +435,7 @@
   var dicasUsadas = 0;      // dicas pedidas na partida (faixas/topn: −1 acerto cada)
   var maratonaContadores = null; // contadores da lista lateral da maratona
   var maratonaTop = null;        // uf -> {idxs, total, achados} das 10 maiores
+  var maratonaSeq = 0;           // quantas das maiores o jogador emendou desde o topo
   var maratonaDetalheUF = null;  // UF cujo detalhe (maior que falta) está aberto
   var recentes = [];        // idx dos municípios do último acerto da maratona
   var rotulosRecentes = []; // rótulos <text> desses acertos (somem no próximo)
@@ -1381,6 +1382,11 @@
       linhas.push("Área: <b>" + fmtArea(jogo.areaAchada) + "</b> de " +
         fmtArea(jogo.uniArea) +
         " (<b>" + fmtPct(jogo.uniArea ? jogo.areaAchada / jogo.uniArea : 0) + "</b>)");
+      linhas.push("Maiores em sequência: <b>" +
+        (maratonaSeq === 0 ? "nenhuma ainda"
+          : maratonaSeq >= jogo.alvosTotal ? "todas!"
+          : maratonaSeq === 1 ? "a maior da região"
+          : "as " + fmtInt(maratonaSeq) + " maiores") + "</b>");
       linhas.push("Nesta sessão: <b>+" + fmtInt(jogo.achadosSessao) + "</b>");
     } else if (jogoModo === "estudo") {
       // no estudo o "placar" é a carteira de identidade da região
@@ -1848,10 +1854,11 @@
     if (muns.length) destacarRecentes(muns);
   });
 
-  // Lista lateral da maratona: contadores por porte (sempre) e por UF (no
-  // Brasil inteiro). Cada UF mostra também quantas das 10 maiores cidades já
-  // saíram (★), e clicar na linha abre a posição da maior que falta — pista
-  // sem revelar o nome (para isso existe o botão 💡).
+  // Lista lateral da maratona: a emenda a partir do topo do ranking, os
+  // contadores por porte (sempre) e os por UF (no Brasil inteiro). Cada UF
+  // mostra também quantas das 10 maiores cidades já saíram (★), e clicar na
+  // linha abre a posição da maior que falta — pista sem revelar o nome (para
+  // isso existe o botão 💡).
   function contadorHtml(id, c) {
     return "<b id='" + id + "'" + (c.achados === c.total ? " class='completo'" : "") + ">" +
       c.achados + "/" + c.total + "</b>";
@@ -1862,6 +1869,7 @@
     alvo.innerHTML = "";
     maratonaContadores = {};
     maratonaTop = {};
+    maratonaSeq = jogo.topoSeguido(0);
     maratonaDetalheUF = null;
 
     // uma passada só pelo universo (ordenado por população): portes, totais
@@ -1910,6 +1918,12 @@
           " maiores do estado</span>" + contadorHtml("mar-top-" + jogo.cfg.uf, tUF) + "</div>");
       }
     }
+    // e acima de tudo a emenda do topo: não só "15/15 acima de 1 mi", mas
+    // até onde o ranking está inteiro ("você acertou as 37 maiores")
+    linhasPorte.unshift("<div class='linha-porte linha-uf linha-topo'" +
+      " title='Clique: pista da maior que ainda falta'><span>🏅 Acertou</span>" +
+      "<b id='mar-topo'" + (maratonaSeq >= jogo.alvosTotal ? " class='completo'" : "") + ">" +
+      textoTopoSeguido() + "</b></div>");
     itemPorte.innerHTML = "<div class='titulo-faixa'><span>Progresso por porte</span></div>" +
       "<div class='portes'>" + linhasPorte.join("") + "</div>";
     itemPorte.addEventListener("click", cliqueLinhaUF);
@@ -1936,6 +1950,27 @@
     alvo.appendChild(itemUF);
   }
 
+  // "as 37 maiores": quantas cabeças do ranking da região saíram em fila,
+  // sem buraco nenhum — o número para de subir na primeira que falta.
+  function textoTopoSeguido() {
+    if (maratonaSeq >= jogo.alvosTotal) return "todas!";
+    if (maratonaSeq === 0) return "—";
+    if (maratonaSeq === 1) return "a maior";
+    return "as " + fmtInt(maratonaSeq) + " maiores";
+  }
+
+  // Pista da primeira que quebra a emenda (posição e porte, nunca o nome).
+  function textoDetalheTopo() {
+    var onde = jogo.cfg.uf ? "do estado" : "do país";
+    var m = jogo.universo[maratonaSeq];
+    if (!m) return "✓ Todos os municípios da região!";
+    if (maratonaSeq === 0) {
+      return "A emenda começa na <b>1ª</b> " + onde + " · " + fmtPop(m.pop) + " hab.";
+    }
+    return "Você emendou as <b>" + fmtInt(maratonaSeq) + "</b> maiores " + onde +
+      ". A próxima é a <b>" + fmtInt(maratonaSeq + 1) + "ª</b> · " + fmtPop(m.pop) + " hab.";
+  }
+
   // Posição (no ranking do estado) da maior cidade que ainda falta.
   function textoDetalheUF(uf) {
     var pos = 0;
@@ -1959,14 +1994,15 @@
   function cliqueLinhaUF(ev) {
     var linha = ev.target.closest(".linha-uf");
     if (!linha || !jogo) return;
-    var uf = linha.dataset.uf;
+    // a linha da emenda do topo não é de UF nenhuma: guarda-se como "topo"
+    var uf = linha.classList.contains("linha-topo") ? "topo" : linha.dataset.uf;
     var estavaAberto = maratonaDetalheUF;
     fecharDetalheUF();
     if (estavaAberto === uf) return; // segundo clique na mesma UF só fecha
     var det = document.createElement("div");
     det.className = "detalhe-uf";
     det.id = "mar-det";
-    det.innerHTML = textoDetalheUF(uf);
+    det.innerHTML = uf === "topo" ? textoDetalheTopo() : textoDetalheUF(uf);
     linha.insertAdjacentElement("afterend", det);
     maratonaDetalheUF = uf;
   }
@@ -1997,10 +2033,28 @@
         el.classList.toggle("completo", t.achados === t.total);
       }
     }
+    atualizarTopoSeguido();
     // a pista aberta acompanha os acertos da própria UF
     if (maratonaDetalheUF === mun.uf) {
       var det = document.getElementById("mar-det");
       if (det) det.innerHTML = textoDetalheUF(mun.uf);
+    }
+  }
+
+  // A emenda só anda quando cai a cidade que a estava travando — daí a conta
+  // retomar do ponto anterior em vez de varrer o ranking inteiro a cada acerto.
+  function atualizarTopoSeguido() {
+    var antes = maratonaSeq;
+    maratonaSeq = jogo.topoSeguido(maratonaSeq);
+    if (maratonaSeq === antes) return;
+    var el = document.getElementById("mar-topo");
+    if (el) {
+      el.textContent = textoTopoSeguido();
+      el.classList.toggle("completo", maratonaSeq >= jogo.alvosTotal);
+    }
+    if (maratonaDetalheUF === "topo") {
+      var det = document.getElementById("mar-det");
+      if (det) det.innerHTML = textoDetalheTopo();
     }
   }
 
@@ -2029,7 +2083,9 @@
         " municípios da região em " + fmtTempo(tempoDecorrido()) + ". Lenda."
       : "⏸ <b>Sessão pausada.</b> Progresso salvo: <b>" + fmtInt(jogo.achados.size) +
         "</b> de " + fmtInt(jogo.alvosTotal) + " (<b>" + fmtPct(jogo.pct()) + "</b>)" +
-        " — <b>+" + fmtInt(jogo.achadosSessao) + "</b> nesta sessão. Volte quando quiser." + ondeSalvo;
+        " — <b>+" + fmtInt(jogo.achadosSessao) + "</b> nesta sessão." +
+        (maratonaSeq > 0 ? " Ranking em dia até a <b>" + fmtInt(maratonaSeq) + "ª</b> maior." : "") +
+        " Volte quando quiser." + ondeSalvo;
     var linkPausa = $("link-conta-pausa");
     if (linkPausa) linkPausa.addEventListener("click", function (ev) { ev.preventDefault(); abrirRecordes(); });
     // pausar é um clique: dá para renovar o token e enviar agora
