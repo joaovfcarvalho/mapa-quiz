@@ -454,7 +454,7 @@
     dist: "Chute cidades: cada palpite cobre todos os municípios num raio fixo. Cubra o máximo da região antes de acabarem os palpites — ou o tempo.",
     pop: "Cada cidade chutada vira o centro de um círculo que cresce até somar a população — ou o PIB — alvo. Escolha bem para cobrir o máximo da região.",
     faixas: "O mapa é dividido em faixas (ou numa grade de quadrados) e você precisa nomear as maiores cidades de cada uma. A cor da faixa vai se intensificando conforme você acerta.",
-    topn: "O modo raiz: cite de memória as N maiores cidades da região — por população ou por PIB. Cada acerto acende a cidade no mapa e mostra a posição no ranking.",
+    topn: "O modo raiz: cite de memória as N maiores cidades da região — por população ou por PIB. Cada acerto acende a cidade no mapa e mostra a posição no ranking. Jogue livre, contra o relógio ou com um orçamento de palpites — aí só a pontaria conta: cada cidade nova que você cita gasta um palpite, esteja ela no ranking ou não.",
     ondestou: "O jogo sorteia um município secreto e cada palpite responde com a distância e a direção até ele. Encontre-o no menor número de palpites — a cor dos pontos esquenta conforme você chega perto.",
     clique: "O jogo mostra o nome de um município e você clica no mapa onde acha que ele fica. Até 15 km de erro vale 100%; a pontuação cai até zerar em 500 km.",
     maratona: "O desafio definitivo: cite todos os municípios da região, no seu ritmo. O progresso e o tempo ficam salvos neste navegador — pause e continue quando quiser.",
@@ -943,10 +943,16 @@
       // invalidar recordes já salvos
       var chaveT = "topn|n=" + cfgT.n + (cfgT.metrica === "pib" ? "|metrica=pib" : "");
       var rotuloT = "As " + cfgT.n + " maiores cidades" + (cfgT.metrica === "pib" ? " por PIB" : "");
-      if ($("cfg-topn-limite").value === "tempo") {
+      var limiteT = $("cfg-topn-limite").value;
+      if (limiteT === "tempo") {
         cfgT.tempoMin = num("cfg-topn-tempo", 1, 240);
         chaveT += "|tempo=" + cfgT.tempoMin;
         rotuloT += " · contra o relógio: " + cfgT.tempoMin + " min";
+      } else if (limiteT === "palpites") {
+        cfgT.palpites = num("cfg-topn-palpites", 1, 2000);
+        chaveT += "|palpites=" + cfgT.palpites;
+        rotuloT += " · sem relógio, com " + cfgT.palpites +
+          (cfgT.palpites === 1 ? " palpite" : " palpites");
       }
       return { cfg: cfgT, chave: chaveT + sufChave, rotulo: rotuloT + sufRotulo };
     }
@@ -1315,7 +1321,7 @@
 
   function tique() {
     if (jogo && !jogo.encerrado && limiteSeg !== null && tempoDecorrido() >= limiteSeg) {
-      fimDeJogo(true, true);
+      fimDeJogo(true, "tempo");
       return;
     }
     // fechar o navegador no meio da maratona não pode perder o relógio
@@ -1437,7 +1443,7 @@
       linhas.push("Cidades achadas: <b>" + jogo.achadosTotal + "</b> de " + jogo.alvosTotal +
         " (<b>" + fmtPct(pct) + "</b>)");
     }
-    if ((jogoModo === "dist" || jogoModo === "pop") && jogo.cfg.palpites) {
+    if ((jogoModo === "dist" || jogoModo === "pop" || jogoModo === "topn") && jogo.cfg.palpites) {
       linhas.push("Palpites restantes: <b>" + jogo.palpitesRestantes() + "</b> de " + jogo.cfg.palpites);
     }
     if (limiteSeg !== null) {
@@ -1579,9 +1585,12 @@
       var naoAlvo = jogoModo === "topn"
         ? " não está entre as " + jogo.alvosTotal + " maiores."
         : " não está entre as respostas.";
-      feedback(r.municipios.length === 1
+      feedback((r.municipios.length === 1
         ? nomeUF(r.municipios[0]) + naoAlvo
-        : "Nenhum dos municípios chamados " + r.municipios[0].nome + naoAlvo, "erro");
+        : "Nenhum dos municípios chamados " + r.municipios[0].nome + naoAlvo) +
+        avisoPalpitesRestantes(), "erro");
+      atualizarPlacar();
+      if (r.semPalpites) { fimDeJogo(true, "palpites"); return; }
       $("input-palpite").select();
       return;
     }
@@ -1596,10 +1605,20 @@
             : fmtPop(par.mun.pop) + " hab.")
         : nomeUF(par.mun) + " — " + (jogo.cfg.tipo === "grade" ? "célula " : "faixa ") + par.faixa.rotulo;
     });
-    feedback("✔ " + nomes.join(" · "), "ok");
+    feedback("✔ " + nomes.join(" · ") + avisoPalpitesRestantes(), "ok");
     $("input-palpite").value = "";
     atualizarPlacar();
     if (r.completo) fimDeJogo(false);
+    else if (r.semPalpites) fimDeJogo(true, "palpites");
+  }
+
+  // Aviso no rodapé do feedback quando a partida tem orçamento de palpites —
+  // o jogador precisa saber o custo de cada chute sem olhar para o placar.
+  function avisoPalpitesRestantes() {
+    if (jogoModo !== "topn" || !jogo.cfg.palpites) return "";
+    var r = jogo.palpitesRestantes();
+    return r === 0 ? " — acabaram os palpites."
+      : " — resta" + (r === 1 ? " 1 palpite." : "m " + r + " palpites.");
   }
 
   function revelarAlvo(mun, faixa, faltante, rank) {
@@ -2741,7 +2760,14 @@
     $("input-palpite").focus();
   }
 
-  function fimDeJogo(desistiu, porTempo) {
+  function tituloFim(motivo) {
+    if (motivo === "tempo") return "⏰ Tempo esgotado";
+    if (motivo === "palpites") return "🎯 Acabaram os palpites";
+    return "Fim de jogo";
+  }
+
+  // motivo: "tempo" (relógio zerado), "palpites" (orçamento gasto) ou nada
+  function fimDeJogo(desistiu, motivo) {
     clearInterval(timerInt);
     var tempoSeg = tempoDecorrido();
     if (limiteSeg !== null && tempoSeg > limiteSeg) tempoSeg = limiteSeg;
@@ -2809,6 +2835,8 @@
       pct = Math.max(0, (jogo.achadosTotal - dicasUsadas) / jogo.alvosTotal);
       placar = jogo.achadosTotal + "/" + jogo.alvosTotal +
         (jogoModo === "faixas" ? " respostas" : jogoModo === "cerco" ? " vizinhos" : " cidades") +
+        (jogoModo === "topn" && jogo.cfg.palpites
+          ? " · " + jogo.palpitesGastos + "/" + jogo.cfg.palpites + " palpites" : "") +
         (dicasUsadas > 0 ? " (" + dicasUsadas + (dicasUsadas === 1 ? " dica" : " dicas") + ")" : "");
     } else if (jogoModo === "caminho") {
       placar = jogo.venceu
@@ -2889,7 +2917,7 @@
       });
       el.className = res.melhor ? "recorde" : "";
       el.innerHTML = "<div class='resultado-topo'><span class='resultado-pct'>" + fmtPct(pct) +
-        "</span><span class='resultado-titulo'>" + (porTempo ? "⏰ Tempo esgotado" : "Fim de jogo") + "</span></div>" +
+        "</span><span class='resultado-titulo'>" + tituloFim(motivo) + "</span></div>" +
         placar + " em " + fmtTempo(tempoSeg) + ".<br>" +
         (res.incomparavel
           ? "📐 Seu recorde anterior era de uma versão antiga das regras ou dos dados — este resultado passa a valer como marca."
@@ -3368,8 +3396,10 @@
     } else {
       setVal("cfg-topn-n", p.n);
       $("cfg-topn-metrica").value = p.metrica === "pib" ? "pib" : "pop";
-      $("cfg-topn-limite").value = p.tempo ? "tempo" : "livre";
+      $("cfg-topn-limite").value = p.tempo ? "tempo" : p.palpites ? "palpites" : "livre";
       setVal("cfg-topn-tempo", p.tempo);
+      setVal("cfg-topn-palpites", p.palpites);
+      if (p.palpites) topnPalpitesEditado = true; // o número veio no desafio
     }
     atualizarCamposLimite();
     selecionarModo(modo);
@@ -3618,7 +3648,7 @@
   var CAMPOS_PRESET = {
     dist: { raio: "cfg-dist-raio", limite: "cfg-dist-limite", palpites: "cfg-dist-palpites", tempo: "cfg-dist-tempo", metrica: "cfg-dist-metrica" },
     pop: { metrica: "cfg-pop-metrica", alvo: "cfg-pop-alvo", limite: "cfg-pop-limite", palpites: "cfg-pop-palpites" },
-    topn: { n: "cfg-topn-n", metrica: "cfg-topn-metrica", limite: "cfg-topn-limite", tempo: "cfg-topn-tempo" },
+    topn: { n: "cfg-topn-n", metrica: "cfg-topn-metrica", limite: "cfg-topn-limite", tempo: "cfg-topn-tempo", palpites: "cfg-topn-palpites" },
     faixas: { tipo: "cfg-faixas-tipo", largura: "cfg-faixas-largura", top: "cfg-faixas-topn", limite: "cfg-faixas-limite" },
     ondestou: { pool: "cfg-onde-pool" },
     clique: { pool: "cfg-clique-pool", rodadas: "cfg-clique-rodadas" },
@@ -3812,6 +3842,16 @@
   $("cfg-faixas-tipo").addEventListener("change", function () {
     $("rotulo-centro").hidden = $("cfg-faixas-tipo").value !== "aneis";
   });
+  // Orçamento de palpites do Top N: enquanto o jogador não mexer no campo,
+  // ele acompanha o N escolhido com 20% de folga (100 maiores → 120 palpites).
+  var topnPalpitesEditado = false;
+  function sugerirPalpitesTopN() {
+    if (topnPalpitesEditado || $("cfg-topn-limite").value !== "palpites") return;
+    var n = parseInt($("cfg-topn-n").value, 10);
+    if (isNaN(n)) return;
+    $("cfg-topn-palpites").value = Math.min(2000, Math.max(1, Math.round(n * 1.2)));
+  }
+
   function atualizarCamposLimite() {
     ["dist", "pop"].forEach(function (p) {
       var porTempo = $("cfg-" + p + "-limite").value === "tempo";
@@ -3820,6 +3860,7 @@
     });
     $("rotulo-faixas-tempo").hidden = $("cfg-faixas-limite").value !== "tempo";
     $("rotulo-topn-tempo").hidden = $("cfg-topn-limite").value !== "tempo";
+    $("rotulo-topn-palpites").hidden = $("cfg-topn-limite").value !== "palpites";
     $("rotulo-mancha-tempo").hidden = $("cfg-mancha-limite").value !== "tempo";
     // nos círculos por população, o campo do alvo acompanha a métrica
     var popPorPib = $("cfg-pop-metrica").value === "pib";
@@ -3829,6 +3870,9 @@
   document.querySelectorAll(".sel-limite").forEach(function (s) {
     s.addEventListener("change", atualizarCamposLimite);
   });
+  $("cfg-topn-palpites").addEventListener("input", function () { topnPalpitesEditado = true; });
+  $("cfg-topn-limite").addEventListener("change", sugerirPalpitesTopN);
+  $("cfg-topn-n").addEventListener("input", sugerirPalpitesTopN);
   $("cfg-pop-metrica").addEventListener("change", atualizarCamposLimite);
   document.querySelectorAll("#config input, #config select").forEach(function (c) {
     c.addEventListener("change", atualizarRecordeUI);

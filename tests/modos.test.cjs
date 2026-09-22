@@ -90,6 +90,41 @@ test("Top N: acerto, repetido, não alvo, dica e faltantes", () => {
   assert.equal(j.pct(), 0.2);
 });
 
+test("Top N: orçamento de palpites conta só as cidades novas nomeadas", () => {
+  const j = new MODOS.JogoTopN({ n: 10, palpites: 3 });
+  assert.equal(j.palpitesRestantes(), 3);
+
+  // nome inexistente e cidade fora do ranking: só o segundo gasta palpite
+  assert.equal(j.palpitar("Xanadu").tipo, "nao_encontrado");
+  assert.equal(j.palpitesRestantes(), 3);
+  assert.equal(j.palpitar("Campinas").tipo, "nao_alvo");
+  assert.equal(j.palpitesRestantes(), 2);
+
+  // acerto gasta palpite; repetir o mesmo acerto não
+  const ok = j.palpitar("São Paulo");
+  assert.equal(ok.tipo, "ok");
+  assert.equal(ok.semPalpites, false);
+  assert.equal(j.palpitesRestantes(), 1);
+  assert.equal(j.palpitar("sao paulo").tipo, "repetido");
+  assert.equal(j.palpitesRestantes(), 1);
+
+  // o último palpite encerra a partida, com os alvos restantes por revelar
+  const fim = j.palpitar("Rio de Janeiro");
+  assert.equal(fim.semPalpites, true);
+  assert.equal(fim.completo, false);
+  assert.equal(j.encerrado, true);
+  assert.equal(j.palpitesRestantes(), 0);
+  assert.equal(j.palpitar("Brasília").tipo, "encerrado");
+  assert.equal(j.encerrar().length, 8);
+});
+
+test("Top N sem orçamento: palpitesRestantes é nulo e nada encerra antes do fim", () => {
+  const j = new MODOS.JogoTopN({ n: 5 });
+  assert.equal(j.palpitesRestantes(), null);
+  assert.equal(j.palpitar("Campinas").semPalpites, false);
+  assert.equal(j.encerrado, false);
+});
+
 test("Círculos por distância: cobre e bloqueia cidade coberta", () => {
   const j = new MODOS.JogoCirculosDistancia({ raio: 100, metrica: "pop", palpites: 2, bloqueio: true });
   const sp = DADOS.buscar("São Paulo").municipios;

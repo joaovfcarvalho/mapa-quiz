@@ -136,7 +136,7 @@
         <button class="carta-modo" data-modo="topn" type="button">
           <span class="carta-icone">🏙️</span>
           <span class="carta-texto"><b>Top N cidades</b>
-            <small>Cite as maiores cidades — por população ou PIB — contra o relógio</small></span>
+            <small>Cite as maiores cidades — por população ou PIB — no tempo ou nos palpites</small></span>
           <span class="carta-seta">›</span>
         </button>
         <button class="carta-modo" data-modo="faixas" type="button">
@@ -383,14 +383,18 @@
               <option value="pib">PIB (R$)</option>
             </select>
           </label>
-          <label>Limite de tempo
+          <label>Limite da partida
             <select id="cfg-topn-limite" class="sel-limite">
               <option value="tempo">Contra o relógio</option>
+              <option value="palpites">Por nº de palpites</option>
               <option value="livre">Sem limite</option>
             </select>
           </label>
           <label id="rotulo-topn-tempo">Tempo (minutos)
             <input type="number" id="cfg-topn-tempo" value="15" min="1" max="240">
+          </label>
+          <label id="rotulo-topn-palpites" hidden>Palpites (cada cidade nova custa 1)
+            <input type="number" id="cfg-topn-palpites" value="120" min="1" max="2000">
           </label>
         </div>
 
