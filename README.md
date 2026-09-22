@@ -60,8 +60,9 @@ até o tom cheio quando ela está 100% respondida. Tudo configurável: largura
 em km, quantidade de cidades por faixa e o centro dos anéis.
 
 **4. Top N cidades** — o modo raiz do HugeQuiz: cite de memória as N maiores
-cidades (100 por padrão), de preferência contra o relógio — com o ranking por
-população ou por PIB, à sua escolha. Cada acerto acende
+cidades (100 por padrão), contra o relógio, com um orçamento de palpites ou
+sem limite nenhum — com o ranking por população ou por PIB, à sua escolha.
+Cada acerto acende
 a cidade no mapa com a posição no ranking, e um placar por porte mostra
 quantas você já achou em cada faixa de população (ex.: 3/10 entre 500 mil e
 1 milhão) — ou de PIB, no ranking por PIB (ex.: 5/9 entre R$ 50 e 100 bi).
@@ -160,9 +161,15 @@ nome, com a inicial de cada palavra e o tamanho (`S__ J___ dos C_____`).
 
 **Limite da partida** — nos modos de círculos, escolha entre limitar por
 número de palpites (ex.: 10 chutes, sem pressa) ou por tempo (ex.: 30 minutos
-com palpites ilimitados). Faixas e Top N podem ser jogados livres ou contra o
-relógio. Quando o tempo esgota, a partida encerra sozinha e o resultado vale
-para o recorde daquela configuração.
+com palpites ilimitados). Faixas pode ser jogado livre ou contra o relógio.
+O **Top N** aceita os três: livre, contra o relógio ou **por nº de palpites** —
+aí some a pressa e sobra a pontaria, porque cada cidade nova que você cita
+gasta um palpite, esteja ela no ranking ou não. Nome inexistente, cidade fora
+da região do jogo e repetição de um acerto não gastam nada; o campo sugere
+20% de folga sobre o N escolhido (100 maiores → 120 palpites) até você mexer
+nele. Quando o tempo esgota ou o orçamento acaba, a partida encerra sozinha,
+revela o que faltou e o resultado vale para o recorde daquela configuração
+(cada limite tem o seu recorde, separado na chave: `|tempo=15`, `|palpites=120`).
 
 **Desafio por link** — o botão 🔗 Desafiar copia um link com a configuração
 atual (e seu recorde como marca a bater). Quem abrir o link joga exatamente o

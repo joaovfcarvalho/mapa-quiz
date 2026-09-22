@@ -432,10 +432,14 @@ var MODOS = (function () {
   // Modo 4 — Top N: citar de memória as N maiores cidades do universo — por
   // população (padrão) ou por PIB (metrica 'pib'). Os alvos são revelados no
   // mapa e na lista com a posição no ranking.
-  // cfg: {n, metrica?: 'pop'|'pib', uf?, tempoMin?}
+  // O limite da partida é opcional e de um tipo só: tempoMin (contra o
+  // relógio) ou palpites (orçamento de chutes — cada cidade nova nomeada
+  // gasta um, esteja ela no ranking ou não).
+  // cfg: {n, metrica?: 'pop'|'pib', uf?, tempoMin?, palpites?}
   // ---------------------------------------------------------------
   function JogoTopN(cfg) {
     this.cfg = cfg;
+    this.palpitesGastos = 0;
     var u = universoDe(cfg);
     this.universo = u.lista;
     this.uniPop = u.pop;
@@ -453,6 +457,11 @@ var MODOS = (function () {
     var self = this;
     this.alvos.forEach(function (m, i) { self.rankPorAlvo.set(m.idx, i + 1); });
   }
+
+  // null quando a partida não tem orçamento de palpites (livre ou por tempo).
+  JogoTopN.prototype.palpitesRestantes = function () {
+    return this.cfg.palpites ? Math.max(0, this.cfg.palpites - this.palpitesGastos) : null;
+  };
 
   JogoTopN.prototype.palpitar = function (texto) {
     if (this.encerrado) return { tipo: "encerrado" };
@@ -473,13 +482,23 @@ var MODOS = (function () {
       self.achadosTotal++;
       revelados.push({ mun: m, rank: rank });
     });
+    // repetir uma cidade já acertada é engano de digitação, não jogada: não
+    // gasta palpite (nome fora da região ou inexistente também não gasta)
+    if (revelados.length === 0 && jaTinha) return { tipo: "repetido", mun: cand[0] };
+
+    this.palpitesGastos++;
+    var semPalpites = !!this.cfg.palpites && this.palpitesGastos >= this.cfg.palpites;
+    if (semPalpites) this.encerrado = true;
     if (revelados.length === 0) {
-      return jaTinha
-        ? { tipo: "repetido", mun: cand[0] }
-        : { tipo: "nao_alvo", municipios: cand };
+      return { tipo: "nao_alvo", municipios: cand, semPalpites: semPalpites };
     }
     if (this.achadosTotal >= this.alvosTotal) this.encerrado = true;
-    return { tipo: "ok", revelados: revelados, completo: this.encerrado };
+    return {
+      tipo: "ok",
+      revelados: revelados,
+      completo: this.achadosTotal >= this.alvosTotal,
+      semPalpites: semPalpites,
+    };
   };
 
   // Dica: o maior alvo ainda não achado (alvos já estão em ordem de população).
