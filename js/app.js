@@ -289,6 +289,8 @@
   // Progresso da maratona por região ("BR" ou sigla da UF)
   // ------------------------------------------------------------------
   var LS_MARATONA = "mapaquiz.maratona.v1";
+  var LS_MARATONA_CONECTIVOS = "mapaquiz.maratona.conectivos.v1";
+  try { $("cfg-maratona-conectivos").checked = localStorage.getItem(LS_MARATONA_CONECTIVOS) === "1"; } catch (e) {}
   function lerMaratonas() {
     try { return JSON.parse(localStorage.getItem(LS_MARATONA)) || {}; }
     catch (e) { return {}; }
@@ -847,7 +849,8 @@
       var palavra = variante === "palavra";
       var prefixo = variante === "prefixo";
       return {
-        cfg: { uf: uf || undefined, palavra: palavra || undefined, prefixo: prefixo || undefined },
+        cfg: { uf: uf || undefined, palavra: palavra || undefined, prefixo: prefixo || undefined,
+          incluirConectivos: palavra && $("cfg-maratona-conectivos").checked },
         chave: "maratona" + (prefixo ? "|prefixo" : palavra ? "|palavra" : "") + sufChave,
         rotulo: (prefixo ? "Maratona por 3 letras: todos os municípios" : palavra ? "Maratona por palavra: todos os municípios" : "Maratona: todos os municípios") +
           (uf ? " de " + NOMES_UF[uf] : " do Brasil"),
@@ -989,6 +992,7 @@
   }
 
   function atualizarRecordeUI() {
+    $("rotulo-maratona-conectivos").hidden = $("cfg-maratona-variante").value !== "palavra";
     var lido = lerConfig();
     var el = $("recorde-atual");
     $("btn-iniciar").textContent = "▶ Iniciar jogo";
@@ -1145,6 +1149,8 @@
     else if (modoAtual === "maratona") {
       var prog = carregarMaratona(chaveMaratona(lido.cfg.uf, lido.cfg.palavra, lido.cfg.prefixo));
       lido.cfg.idsIniciais = prog && prog.ids ? prog.ids : [];
+      lido.cfg.termosIniciais = MODOS.JogoMaratona.termosSalvos(prog);
+      lido.cfg.historicoTermosParcial = historicoTermosParcial(prog);
       tempoPrevio = prog && prog.tempoSeg ? prog.tempoSeg : 0;
       maratonaUltimos = prog && Array.isArray(prog.ultimos) ? prog.ultimos : [];
       jogo = new MODOS.JogoMaratona(lido.cfg);
@@ -1219,6 +1225,7 @@
     $("btn-zerar-maratona").hidden = jogoModo !== "maratona";
     $("recentes-maratona").hidden = jogoModo !== "maratona";
     if (jogoModo === "maratona") renderUltimosMaratona();
+    prepararTermosMaratona();
     $("btn-encerrar").textContent =
       jogoModo === "maratona" ? "⏸ Pausar (o progresso fica salvo)" :
       jogoModo === "ondestou" ? "🏳️ Desistir / revelar o município" :
@@ -1285,8 +1292,10 @@
   function atualizarBotaoDica() {
     var btn = $("btn-dica");
     if (jogoModo === "maratona") {
-      btn.textContent = "💡 Dica (grátis) · o maior que falta";
-      btn.title = "Mostra pistas do maior município que ainda falta";
+      var emGrupo = jogo.cfg.palavra || jogo.cfg.prefixo;
+      btn.textContent = emGrupo ? "💡 Dica (grátis) · inicial e quantidade" : "💡 Dica (grátis) · o maior que falta";
+      btn.title = emGrupo ? "Mostra a inicial e quantas cidades novas " + (jogo.cfg.prefixo ? "o próximo prefixo" : "a próxima palavra") +
+        " completa, sem revelar a resposta" : "Mostra pistas do maior município que ainda falta";
       btn.disabled = false;
       return;
     }
@@ -1743,7 +1752,7 @@
       return;
     }
     if (r.tipo === "generico") {
-      feedback("“" + r.termo + "” sozinho não vale — junte com outra palavra do nome.", "erro");
+      feedback("“" + r.termo + "” sozinho não vale — ative a opção de considerar conectivos ou junte com outra palavra do nome.", "erro");
       return;
     }
     if (r.tipo === "nao_encontrado") {
@@ -1764,6 +1773,13 @@
     }
     if (r.tipo === "repetido") {
       if (!emGrupo) registrarCitadas([r.mun]);
+      if (r.termoNovo) {
+        atualizarTermosMaratona();
+        salvarProgressoMaratona();
+        feedback("✔ “" + r.termo + "” entrou no seu placar; as cidades desse termo já estavam encontradas.", "ok");
+        $("input-palpite").value = "";
+        return;
+      }
       feedback(emGrupo && r.total > 1
         ? "Você já acendeu todos os " + fmtInt(r.total) + " municípios com “" + r.termo + "”."
         : "Você já citou " + nomeUF(r.mun) + ".", "erro");
@@ -1796,6 +1812,7 @@
       : { t: nomeUF(muns[0]), ids: [muns[0].id] });
     if (maratonaUltimos.length > MAX_ULTIMOS) maratonaUltimos.length = MAX_ULTIMOS;
     renderUltimosMaratona();
+    atualizarTermosMaratona();
     $("input-palpite").value = "";
     salvarProgressoMaratona();
     atualizarPlacar();
@@ -1837,6 +1854,8 @@
       ids: jogo.idsAchados(),
       tempoSeg: tempoDecorrido(),
       ultimos: maratonaUltimos,
+      termos: Array.from(jogo.termosAchados),
+      historicoTermosParcial: !!jogo.cfg.historicoTermosParcial,
     });
   }
 
@@ -1871,6 +1890,58 @@
     }
     var muns = u.ids.map(function (id) { return porId[id]; }).filter(Boolean);
     if (muns.length) destacarRecentes(muns);
+  });
+
+  // Só agrega posições acertadas. Nenhuma resposta é colocada no DOM.
+  function historicoTermosParcial(prog) {
+    return !!(prog && (prog.historicoTermosParcial ||
+      (prog.ids && prog.ids.length && !Array.isArray(prog.termos))));
+  }
+  function prepararTermosMaratona() {
+    var ativo = jogoModo === "maratona" && (jogo.cfg.palavra || jogo.cfg.prefixo);
+    $("maratona-termos").hidden = !ativo;
+    if (!ativo) return;
+    $("rotulo-jogo-conectivos").hidden = !jogo.cfg.palavra;
+    $("maratona-conectivos-nota").hidden = !jogo.cfg.palavra;
+    $("jogo-maratona-conectivos").checked = !!jogo.cfg.incluirConectivos;
+    $("maratona-placar-titulo").textContent = jogo.cfg.prefixo
+      ? "Seu placar de prefixos · 3 letras" : "Seu placar de palavras";
+    $("maratona-placar-nota").textContent = "Posições fixas pelo total de cidades da região. Contam " +
+      (jogo.cfg.prefixo ? "os prefixos de exatamente 3 letras digitados." : "as palavras digitadas individualmente.");
+    atualizarTermosMaratona();
+  }
+  function atualizarTermosMaratona() {
+    if (jogoModo !== "maratona" || (!jogo.cfg.palavra && !jogo.cfg.prefixo)) return;
+    // A dica anterior pode não ser a melhor jogada depois de um acerto.
+    $("dica-atual").hidden = true;
+    $("dica-atual").innerHTML = "";
+    var p = jogo.placarTermos();
+    var prefixo = jogo.cfg.prefixo;
+    var linhas = ["<div class='linha-porte'><span>" + (prefixo ? "Prefixo nº 1" : "Palavra nº 1") +
+      "</span><b" + (p.primeira ? " class='completo'" : "") + ">" + (p.primeira ? "✓ Acertou" : "Ainda falta") + "</b></div>"];
+    p.faixas.forEach(function (f) {
+      linhas.push("<div class='linha-porte'><span>" + (prefixo ? "Entre os " : "Entre as ") + f.total +
+        (prefixo ? " primeiros" : " primeiras") + "</span><b" + (f.acertados === f.total ? " class='completo'" : "") +
+        ">" + f.acertados + " de " + f.total + "</b></div>");
+    });
+    linhas.push("<div class='linha-porte'><span>Em sequência desde o nº 1</span><b>" + fmtInt(p.seguidas) + "</b></div>");
+    linhas.push("<div class='linha-porte'><span>" + (prefixo ? "Prefixos acertados" : "Palavras acertadas") +
+      "</span><b>" + fmtInt(p.acertados) + " de " + fmtInt(p.total) + "</b></div>");
+    $("maratona-placar-linhas").innerHTML = linhas.join("");
+    $("maratona-historico-parcial").hidden = !jogo.cfg.historicoTermosParcial;
+  }
+  function salvarOpcaoConectivos(incluir) {
+    $("cfg-maratona-conectivos").checked = incluir;
+    try { localStorage.setItem(LS_MARATONA_CONECTIVOS, incluir ? "1" : "0"); } catch (e) {}
+  }
+  $("cfg-maratona-conectivos").addEventListener("change", function () {
+    salvarOpcaoConectivos(this.checked);
+  });
+  $("jogo-maratona-conectivos").addEventListener("change", function () {
+    if (!jogo || jogoModo !== "maratona" || !jogo.cfg.palavra) return;
+    salvarOpcaoConectivos(this.checked);
+    jogo.cfg.incluirConectivos = this.checked;
+    atualizarTermosMaratona();
   });
 
   // Lista lateral da maratona: a emenda a partir do topo do ranking, os
@@ -2720,9 +2791,15 @@
     } else if (jogoModo === "maratona") {
       var dm = jogo.dica();
       if (!dm) return;
-      CONHECIMENTO.dica(dm.mun);
-      mostrarDica("💡", "O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
-        "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>");
+      if (dm.inicial) {
+        mostrarDica("💡", (jogo.cfg.prefixo ? "O próximo prefixo tem 3 letras, começa" : "A próxima palavra começa") +
+          " com <b>“" + dm.inicial + "”</b> e completa <b>" + fmtInt(dm.restantes) +
+          (dm.restantes === 1 ? " cidade nova" : " cidades novas") + "</b>.");
+      } else {
+        CONHECIMENTO.dica(dm.mun);
+        mostrarDica("💡", "O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
+          "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>");
+      }
     } else if (jogoModo === "caminho" || jogoModo === "ponte" || jogoModo === "mancha") {
       var dv = jogo.dica(); // caminho e ponte já contam o custo no motor
       if (!dv) return;
@@ -3986,7 +4063,12 @@
         deles.ids.forEach(function (id) { if (!ids.has(id)) { ids.add(id); novosReg.push(id); } });
         novosMar += novosReg.length;
         if (novosReg.length) novosPorRegiao[reg] = novosReg;
+        var parcial = historicoTermosParcial(minha) || historicoTermosParcial(deles);
         minha.ids = Array.from(ids);
+        var termos = new Set(MODOS.JogoMaratona.termosSalvos(minha));
+        MODOS.JogoMaratona.termosSalvos(deles).forEach(function (t) { if (typeof t === "string") termos.add(t); });
+        minha.historicoTermosParcial = parcial;
+        minha.termos = Array.from(termos);
         minha.tempoSeg = Math.max(minha.tempoSeg || 0, deles.tempoSeg || 0);
         if (!minha.ultimos && Array.isArray(deles.ultimos)) minha.ultimos = deles.ultimos;
         minhas[reg] = minha;
@@ -3997,6 +4079,11 @@
       // entram na partida agora, sem reiniciar
       if (jogo && jogoModo === "maratona" && !jogo.encerrado) {
         var regAtual = chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo);
+        if (minhas[regAtual]) {
+          jogo.absorverTermos(minhas[regAtual].termos);
+          jogo.cfg.historicoTermosParcial = !!minhas[regAtual].historicoTermosParcial;
+          atualizarTermosMaratona();
+        }
         if (novosPorRegiao[regAtual]) absorverMaratona(novosPorRegiao[regAtual]);
       }
     }
@@ -4027,6 +4114,7 @@
       atualizarContadorMaratona(m);
     });
     feedback("☁️ " + fmtInt(novos.length) + " município(s) que você citou em outro aparelho entraram aqui.", "ok");
+    atualizarTermosMaratona();
     atualizarPlacar();
     if (jogo.encerrado) fimSessaoMaratona(true);
   }

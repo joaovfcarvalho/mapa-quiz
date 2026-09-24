@@ -490,6 +490,14 @@ main {
 /* na maratona do Brasil são 27 linhas (uma por UF): duas colunas */
 .portes-mar { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 
+/* Dicas e ranking geral das variantes por palavra e por 3 letras. */
+.maratona-conectivos { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; }
+.maratona-conectivos input { flex: 0 0 auto; width: 16px; height: 16px; accent-color: var(--ouro); }
+#maratona-termos .nota-config { margin: 8px 0; }
+#maratona-placar-titulo { color: var(--ouro-claro); margin-top: 8px; }
+#maratona-placar-linhas .linha-porte { gap: 10px; }
+#maratona-placar-linhas b { text-align: right; }
+
 /* maratona: a emenda a partir do topo do ranking ("acertou as 37 maiores") */
 .linha-topo b { color: var(--ouro-claro); font-weight: 700; }
 

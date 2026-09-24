@@ -149,7 +149,8 @@ alvo: os vizinhos contam mesmo quando ficam do outro lado da divisa estadual.
 **Dicas** — nos modos de alvos nomeados (faixas, Top N, Onde estou?,
 maratona, e os quatro modos de divisas), o botão 💡 — logo abaixo do campo
 de palpite, com o rótulo dizendo o que a próxima dica revela e quanto custa —
-dá pistas do maior alvo que falta (primeira letra, população, onde). Nos modos
+dá pistas do maior alvo que falta (primeira letra, população, onde). Nas variantes
+da maratona por palavra e por 3 letras, informa a inicial e a quantidade de cidades novas da próxima jogada. Nos modos
 com recorde cada dica tem custo: −1 acerto no resultado (faixas/Top N/Cerco/
 Mancha), +1 palpite no placar (Onde estou?) ou +1 salto/município
 (Caminho/Ponte); na maratona é de graça. No Caminho e na Ponte a dica aponta o
@@ -389,8 +390,12 @@ Na configuração da Maratona, **Como completar os municípios** permite escolhe
 Em **Por palavra**, cada palpite acende
 todos os municípios da região que têm aquela palavra inteira no nome —
 "são" acende São Paulo, São Luís e as outras dezenas, mas não Mansão; "são
-josé" acende só os São José; "rita sp" restringe à UF. Palavrinhas como "do"
-e "da" só valem acompanhadas.
+josé" acende só os São José; "rita sp" restringe à UF. Por padrão, "de", "do",
+"da", "dos", "das", "e" e "d" só valem acompanhados. O controle **Considerar
+“de”, “do”, “da”, “dos”, “das”, “e” e “d”**, na configuração e durante a partida,
+permite usá-los sozinhos e incluí-los nas dicas e no ranking. A preferência
+fica salva neste navegador. Alterná-la preserva o progresso da variante;
+desligá-la não desfaz cidades já encontradas.
 
 Em **Por 3 letras**, basta digitar ao menos as três primeiras letras do nome:
 "ita" acende Itaúna, Itabira, Itatinga e todos os municípios cujo nome começa
@@ -398,6 +403,29 @@ assim. A busca ignora acentos, maiúsculas, espaços e hífens ("jip" encontra
 Ji-Paraná); "ita mg" restringe à UF. Um
 prefixo maior, como "itab", restringe os resultados. Só o início do nome
 conta: "ita" não acende Santa Rita. Palpites de uma ou duas letras não valem.
+
+Nessas duas variantes, o **placar** mostra se você acertou o termo nº 1,
+quantos acertou entre os 10, 25 e 50 primeiros e quantos primeiros em sequência.
+As posições são fixas pelo total de cidades da região (desempate alfabético),
+não mudam conforme as cidades vão sendo cobertas. Só contam palavras digitadas
+individualmente ou prefixos de exatamente três letras; cobrir cidades com outra
+jogada não conta como ter adivinhado os termos delas. Um termo correto ainda
+entra no placar se suas cidades já estavam marcadas. Sufixos de UF são aceitos.
+Não há lista de respostas, nem botão para revelá-las.
+
+A **dica grátis**, apenas quando pedida, informa a inicial e quantas cidades
+novas a próxima palavra ou prefixo completa. Prioriza os termos ainda não
+citados que revelam mais cidades restantes; nunca mostra o termo completo.
+Se só faltarem cidades de termos já usados com restrição de UF, a dica pode
+voltar a um deles para completar a região. Na variante por nome completo,
+a dica continua sendo a maior cidade que falta.
+
+O histórico de termos fica salvo com o progresso, sem limite de oito palpites,
+e é unido na importação de backup e na sincronização. Para partidas antigas,
+o progresso das cidades é preservado e só os termos comprovados pelos últimos
+palpites salvos são recuperados; a interface avisa quando o histórico é parcial.
+Os acertos novos ficam todos registrados. O controle de conectivos recalcula
+as posições e os contadores, sem apagar os termos já acertados.
 
 Cada variante salva seu progresso e tempo separadamente por região, inclusive
 no backup e na sincronização da conta. Nas três variantes o placar mostra município, população,

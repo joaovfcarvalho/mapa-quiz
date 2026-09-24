@@ -669,7 +669,8 @@ var MODOS = (function () {
   // ---------------------------------------------------------------
   // Modo 7 — Maratona: citar todos os municípios da região, com progresso
   // persistente entre sessões (a interface injeta/salva os ids achados).
-  // cfg: {uf?, palavra?, prefixo?, idsIniciais?: array de ids do IBGE já achados}
+  // cfg: {uf?, palavra?, prefixo?, incluirConectivos?, idsIniciais?: ids do IBGE}
+  // termosIniciais guarda os termos efetivamente digitados em sessões anteriores.
   // Com palavra=true um palpite vale por todos os municípios da região que
   // têm aquela palavra (ou sequência de palavras) inteira no nome: "são"
   // acende São Paulo e São Luís, mas não Mansão.
@@ -688,6 +689,8 @@ var MODOS = (function () {
     this.pibAchado = 0;
     this.areaAchada = 0;
     this.achados = new Set();
+    this.termosAchados = new Set();
+    this.absorverTermos(cfg.termosIniciais || []);
     this.achadosSessao = 0;
     this.encerrado = false;
     if (cfg.idsIniciais && cfg.idsIniciais.length) {
@@ -704,9 +707,33 @@ var MODOS = (function () {
       this.areaAchada = area;
     }
   }
-  // Palavras que sozinhas não identificam ninguém ("do" acenderia metade do
-  // mapa) — só valem acompanhadas de outra.
+  // Por padrão, conectivos só valem acompanhados de outra palavra.
+  // incluirConectivos permite usá-los sozinhos, nos palpites e nas dicas.
   var PALAVRAS_VAZIAS = { de: 1, do: 1, da: 1, dos: 1, das: 1, e: 1, d: 1 };
+  // Salvos antigos só guardavam os últimos oito palpites. Recupera apenas
+  // os termos que esse histórico comprova; cidades cobertas não são palpites.
+  JogoMaratona.termosSalvos = function (progresso) {
+    if (!progresso) return [];
+    if (Array.isArray(progresso.termos)) return progresso.termos;
+    return (Array.isArray(progresso.ultimos) ? progresso.ultimos : []).map(function (u) {
+      var m = u && typeof u.t === "string" && /^“([^”]+)” → /.exec(u.t);
+      return m ? m[1] : "";
+    }).filter(Boolean);
+  };
+  JogoMaratona.prototype.absorverTermos = function (termos) {
+    var self = this;
+    var antes = this.termosAchados.size;
+    (Array.isArray(termos) ? termos : []).forEach(function (termo) {
+      if (typeof termo !== "string") return;
+      var t = DADOS.normalizar(termo);
+      if (self.cfg.prefixo) {
+        t = t.replace(/ /g, "");
+        if (!/^[a-z]{3}$/.test(t)) return;
+      } else if (!self.cfg.palavra || !/^[a-z0-9]+$/.test(t)) return;
+      self.termosAchados.add(t);
+    });
+    return this.termosAchados.size > antes;
+  };
   var siglasUF = null;
   // As duas variantes aceitam um sufixo de UF e a mesma normalização.
   function termoMaratona(texto) {
@@ -729,7 +756,7 @@ var MODOS = (function () {
     if (!t) return { status: "vazio" };
     var partes = entrada.partes;
     var uf = entrada.uf;
-    if (partes.every(function (p) { return PALAVRAS_VAZIAS[p]; })) {
+    if (!this.cfg.incluirConectivos && partes.every(function (p) { return PALAVRAS_VAZIAS[p]; })) {
       return { status: "generico", termo: t };
     }
     var n = partes.length;
@@ -788,12 +815,68 @@ var MODOS = (function () {
       self.areaAchada += m.area;
       revelados.push({ mun: m });
     });
-    if (revelados.length === 0) return { tipo: "repetido", mun: cand[0], total: cand.length, termo: termo };
+    var termoNovo = this.absorverTermos(termo ? [termo] : []);
+    if (revelados.length === 0) return { tipo: "repetido", mun: cand[0], total: cand.length, termo: termo, termoNovo: termoNovo };
     if (this.achados.size >= this.alvosTotal) this.encerrado = true;
     return { tipo: "ok", revelados: revelados, completo: this.encerrado, termo: termo, total: cand.length };
   };
-  // Dica (grátis na maratona): o maior município que ainda falta.
+  // Ranking interno, fixo pelo total de municípios da região. As respostas
+  // nunca vão para o placar público; só os termos digitados contam como acerto.
+  JogoMaratona.prototype.rankingTermos = function () {
+    if (!this.cfg.palavra && !this.cfg.prefixo) return [];
+    var contagens = new Map();
+    var self = this;
+    this.universo.forEach(function (m) {
+      var termos = self.cfg.prefixo
+        ? [m.chave.replace(/ /g, "").slice(0, 3)]
+        : m.chave.split(" ");
+      new Set(termos).forEach(function (termo) {
+        if (!self.cfg.prefixo && !self.cfg.incluirConectivos && PALAVRAS_VAZIAS[termo]) return;
+        var c = contagens.get(termo);
+        if (!c) contagens.set(termo, (c = { total: 0, restantes: 0 }));
+        c.total++;
+        if (!self.achados.has(m.idx)) c.restantes++;
+      });
+    });
+    return Array.from(contagens, function (par) {
+      return { termo: par[0], total: par[1].total, restantes: par[1].restantes,
+        acertado: self.termosAchados.has(par[0]) };
+    }).sort(function (a, b) {
+      return b.total - a.total || (a.termo < b.termo ? -1 : a.termo > b.termo ? 1 : 0);
+    });
+  };
+  JogoMaratona.prototype.placarTermos = function () {
+    var ranking = this.rankingTermos();
+    var seguidas = 0;
+    while (seguidas < ranking.length && ranking[seguidas].acertado) seguidas++;
+    return {
+      primeira: !!ranking.length && ranking[0].acertado,
+      seguidas: seguidas,
+      acertados: ranking.filter(function (r) { return r.acertado; }).length,
+      total: ranking.length,
+      faixas: [10, 25, 50].filter(function (n, i, ns) {
+        return i === 0 || ranking.length > ns[i - 1];
+      }).map(function (n) {
+        var grupo = ranking.slice(0, n);
+        return { total: grupo.length, acertados: grupo.filter(function (r) { return r.acertado; }).length };
+      }),
+    };
+  };
+  // Nas variantes em grupo, só a inicial e a quantidade: nunca a resposta.
+  // Por nome completo, mantém a pista do maior município que ainda falta.
   JogoMaratona.prototype.dica = function () {
+    if (this.cfg.palavra || this.cfg.prefixo) {
+      var disponiveis = this.rankingTermos().filter(function (r) { return r.restantes > 0; });
+      var naoCitados = disponiveis.filter(function (r) { return !r.acertado; });
+      // Se só restarem termos citados com restrição de UF, ainda dá para
+      // completar as cidades deles em outros estados.
+      var candidatos = naoCitados.length ? naoCitados : disponiveis;
+      candidatos.sort(function (a, b) {
+        return b.restantes - a.restantes || b.total - a.total || (a.termo < b.termo ? -1 : a.termo > b.termo ? 1 : 0);
+      });
+      var melhor = candidatos[0];
+      return melhor ? { inicial: melhor.termo.charAt(0).toUpperCase(), restantes: melhor.restantes } : null;
+    }
     for (var i = 0; i < this.universo.length; i++) {
       var m = this.universo[i];
       if (!this.achados.has(m.idx)) return { mun: m };

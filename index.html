@@ -440,9 +440,14 @@
               <option value="prefixo">Por 3 letras</option>
             </select>
           </label>
+          <label class="check" id="rotulo-maratona-conectivos" hidden>
+            <input type="checkbox" id="cfg-maratona-conectivos" role="switch">
+            Considerar “de”, “do”, “da”, “dos”, “das”, “e” e “d”
+          </label>
           <p class="nota-config" id="maratona-variantes-nota"><b>Por palavra:</b>
           “são” acende São Paulo, São Luís e todos os nomes com essa palavra
-          inteira. “do” e “da” só valem acompanhados.<br>
+          inteira. Ative a opção acima para aceitar conectivos sozinhos,
+          inclusive nas dicas e no ranking.<br>
           <b>Por 3 letras:</b> digite ao menos as três primeiras letras do nome:
           “ita” acende Itaúna, Itabira, Itatinga e todos os outros que começam
           assim. Acentos não importam; “ita mg” restringe a Minas Gerais.
@@ -543,6 +548,20 @@
       <div id="feedback"></div>
       <div id="dica-atual" hidden></div>
       <button id="btn-dica" class="botao-sec" type="button" hidden>💡 Dica</button>
+      <div id="maratona-termos" class="item-faixa" hidden>
+        <label class="maratona-conectivos" id="rotulo-jogo-conectivos" hidden>
+          <input type="checkbox" id="jogo-maratona-conectivos" role="switch"
+            aria-describedby="maratona-conectivos-nota">
+          Considerar “de”, “do”, “da”, “dos”, “das”, “e” e “d”
+        </label>
+        <p id="maratona-conectivos-nota" class="nota-config" hidden>Vale para palpites, dicas e ranking. Mudar não desfaz cidades já encontradas.</p>
+        <div id="maratona-placar-termos" role="region" aria-labelledby="maratona-placar-titulo">
+          <div class="titulo-faixa" id="maratona-placar-titulo">Seu placar de palavras</div>
+          <div id="maratona-placar-linhas" class="portes" aria-live="polite"></div>
+          <p class="nota-config" id="maratona-placar-nota"></p>
+          <p class="nota-config" id="maratona-historico-parcial" hidden>Seu progresso de cidades foi mantido. O histórico antigo só permite recuperar os últimos termos salvos; os novos acertos ficam todos registrados.</p>
+        </div>
+      </div>
       <div id="fim-jogo" hidden></div>
       <button id="btn-seguinte" class="botao-pri seguinte" type="button" hidden></button>
       <div id="fim-acoes" hidden>
