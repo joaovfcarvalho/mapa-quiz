@@ -149,7 +149,8 @@ alvo: os vizinhos contam mesmo quando ficam do outro lado da divisa estadual.
 **Dicas** — nos modos de alvos nomeados (faixas, Top N, Onde estou?,
 maratona, e os quatro modos de divisas), o botão 💡 — logo abaixo do campo
 de palpite, com o rótulo dizendo o que a próxima dica revela e quanto custa —
-dá pistas do maior alvo que falta (primeira letra, população, onde). Nos modos
+dá pistas do maior alvo que falta (primeira letra, população, onde). Nas variantes
+da maratona por palavra e por 3 letras, sugere o termo que revela mais cidades novas. Nos modos
 com recorde cada dica tem custo: −1 acerto no resultado (faixas/Top N/Cerco/
 Mancha), +1 palpite no placar (Onde estou?) ou +1 salto/município
 (Caminho/Ponte); na maratona é de graça. No Caminho e na Ponte a dica aponta o
@@ -389,8 +390,12 @@ Na configuração da Maratona, **Como completar os municípios** permite escolhe
 Em **Por palavra**, cada palpite acende
 todos os municípios da região que têm aquela palavra inteira no nome —
 "são" acende São Paulo, São Luís e as outras dezenas, mas não Mansão; "são
-josé" acende só os São José; "rita sp" restringe à UF. Palavrinhas como "do"
-e "da" só valem acompanhadas.
+josé" acende só os São José; "rita sp" restringe à UF. Por padrão, "de", "do",
+"da", "dos", "das", "e" e "d" só valem acompanhados. O controle **Considerar
+“de”, “do”, “da”, “dos”, “das”, “e” e “d”**, na configuração e durante a partida,
+permite usá-los sozinhos e incluí-los nas dicas e no ranking. A preferência
+fica salva neste navegador. Alterná-la preserva o progresso da variante;
+desligá-la não desfaz cidades já encontradas.
 
 Em **Por 3 letras**, basta digitar ao menos as três primeiras letras do nome:
 "ita" acende Itaúna, Itabira, Itatinga e todos os municípios cujo nome começa
@@ -398,6 +403,17 @@ assim. A busca ignora acentos, maiúsculas, espaços e hífens ("jip" encontra
 Ji-Paraná); "ita mg" restringe à UF. Um
 prefixo maior, como "itab", restringe os resultados. Só o início do nome
 conta: "ita" não acende Santa Rita. Palpites de uma ou duas letras não valem.
+
+Nessas duas variantes, a **dica grátis** revela a palavra ou o prefixo de
+três letras que completa mais municípios **ainda não encontrados** na região
+selecionada, junto com a quantidade de cidades novas. Em caso de empate,
+usa ordem alfabética. O painel **Ver ranking de palavras/prefixos restantes**
+mostra as 25 melhores jogadas e permite abrir o ranking completo. Ele considera
+todos os termos disponíveis, conta cada município uma vez por termo e se
+atualiza após acertos, mudança do controle de conectivos ou sincronização.
+As contagens se sobrepõem: uma cidade pode aparecer em mais de uma jogada.
+O ranking começa fechado para não entregar respostas sem o jogador pedir.
+Na variante por nome completo, a dica continua sendo a maior cidade que falta.
 
 Cada variante salva seu progresso e tempo separadamente por região, inclusive
 no backup e na sincronização da conta. Nas três variantes o placar mostra município, população,

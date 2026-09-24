@@ -289,6 +289,8 @@
   // Progresso da maratona por região ("BR" ou sigla da UF)
   // ------------------------------------------------------------------
   var LS_MARATONA = "mapaquiz.maratona.v1";
+  var LS_MARATONA_CONECTIVOS = "mapaquiz.maratona.conectivos.v1";
+  try { $("cfg-maratona-conectivos").checked = localStorage.getItem(LS_MARATONA_CONECTIVOS) === "1"; } catch (e) {}
   function lerMaratonas() {
     try { return JSON.parse(localStorage.getItem(LS_MARATONA)) || {}; }
     catch (e) { return {}; }
@@ -847,7 +849,8 @@
       var palavra = variante === "palavra";
       var prefixo = variante === "prefixo";
       return {
-        cfg: { uf: uf || undefined, palavra: palavra || undefined, prefixo: prefixo || undefined },
+        cfg: { uf: uf || undefined, palavra: palavra || undefined, prefixo: prefixo || undefined,
+          incluirConectivos: palavra && $("cfg-maratona-conectivos").checked },
         chave: "maratona" + (prefixo ? "|prefixo" : palavra ? "|palavra" : "") + sufChave,
         rotulo: (prefixo ? "Maratona por 3 letras: todos os municípios" : palavra ? "Maratona por palavra: todos os municípios" : "Maratona: todos os municípios") +
           (uf ? " de " + NOMES_UF[uf] : " do Brasil"),
@@ -989,6 +992,7 @@
   }
 
   function atualizarRecordeUI() {
+    $("rotulo-maratona-conectivos").hidden = $("cfg-maratona-variante").value !== "palavra";
     var lido = lerConfig();
     var el = $("recorde-atual");
     $("btn-iniciar").textContent = "▶ Iniciar jogo";
@@ -1219,6 +1223,7 @@
     $("btn-zerar-maratona").hidden = jogoModo !== "maratona";
     $("recentes-maratona").hidden = jogoModo !== "maratona";
     if (jogoModo === "maratona") renderUltimosMaratona();
+    prepararTermosMaratona();
     $("btn-encerrar").textContent =
       jogoModo === "maratona" ? "⏸ Pausar (o progresso fica salvo)" :
       jogoModo === "ondestou" ? "🏳️ Desistir / revelar o município" :
@@ -1285,8 +1290,10 @@
   function atualizarBotaoDica() {
     var btn = $("btn-dica");
     if (jogoModo === "maratona") {
-      btn.textContent = "💡 Dica (grátis) · o maior que falta";
-      btn.title = "Mostra pistas do maior município que ainda falta";
+      var emGrupo = jogo.cfg.palavra || jogo.cfg.prefixo;
+      btn.textContent = emGrupo ? "💡 Dica (grátis) · revela mais cidades" : "💡 Dica (grátis) · o maior que falta";
+      btn.title = emGrupo ? "Revela " + (jogo.cfg.prefixo ? "o prefixo de 3 letras" : "a palavra") +
+        " que completa mais municípios ainda não encontrados" : "Mostra pistas do maior município que ainda falta";
       btn.disabled = false;
       return;
     }
@@ -1743,7 +1750,7 @@
       return;
     }
     if (r.tipo === "generico") {
-      feedback("“" + r.termo + "” sozinho não vale — junte com outra palavra do nome.", "erro");
+      feedback("“" + r.termo + "” sozinho não vale — ative a opção de considerar conectivos ou junte com outra palavra do nome.", "erro");
       return;
     }
     if (r.tipo === "nao_encontrado") {
@@ -1796,6 +1803,7 @@
       : { t: nomeUF(muns[0]), ids: [muns[0].id] });
     if (maratonaUltimos.length > MAX_ULTIMOS) maratonaUltimos.length = MAX_ULTIMOS;
     renderUltimosMaratona();
+    atualizarTermosMaratona();
     $("input-palpite").value = "";
     salvarProgressoMaratona();
     atualizarPlacar();
@@ -1871,6 +1879,64 @@
     }
     var muns = u.ids.map(function (id) { return porId[id]; }).filter(Boolean);
     if (muns.length) destacarRecentes(muns);
+  });
+
+  // O ranking usa todos os termos da região, não o histórico de palpites.
+  // Só renderiza as respostas quando o jogador abre o painel de ajuda.
+  var maratonaRanking = [];
+  var maratonaRankingCompleto = false;
+  function prepararTermosMaratona() {
+    var ativo = jogoModo === "maratona" && (jogo.cfg.palavra || jogo.cfg.prefixo);
+    $("maratona-termos").hidden = !ativo;
+    $("maratona-ranking").open = false;
+    maratonaRanking = [];
+    maratonaRankingCompleto = false;
+    if (!ativo) return;
+    $("rotulo-jogo-conectivos").hidden = !jogo.cfg.palavra;
+    $("maratona-conectivos-nota").hidden = !jogo.cfg.palavra;
+    $("jogo-maratona-conectivos").checked = !!jogo.cfg.incluirConectivos;
+    $("maratona-ranking-titulo").textContent = jogo.cfg.prefixo
+      ? "Ver ranking de prefixos restantes" : "Ver ranking de palavras restantes";
+    $("maratona-ranking-coluna").textContent = jogo.cfg.prefixo ? "3 letras" : "Palavra";
+    atualizarTermosMaratona();
+  }
+  function atualizarTermosMaratona() {
+    if (jogoModo !== "maratona" || (!jogo.cfg.palavra && !jogo.cfg.prefixo)) return;
+    maratonaRanking = jogo.rankingTermos();
+    // A dica anterior pode não ser a melhor jogada depois de um acerto.
+    $("dica-atual").hidden = true;
+    $("dica-atual").innerHTML = "";
+    renderRankingMaratona();
+  }
+  function renderRankingMaratona() {
+    if ($("maratona-termos").hidden || !$("maratona-ranking").open) return;
+    var linhas = maratonaRankingCompleto ? maratonaRanking : maratonaRanking.slice(0, 25);
+    // Os termos vêm da chave normalizada: somente letras, números e espaços.
+    $("maratona-ranking-linhas").innerHTML = linhas.map(function (item, i) {
+      return "<tr><td>" + fmtInt(i + 1) + "</td><td>" + item.termo +
+        "</td><td>+" + fmtInt(item.restantes) + "</td></tr>";
+    }).join("");
+    $("maratona-ranking-vazio").hidden = maratonaRanking.length > 0;
+    $("maratona-ranking-todos").hidden = linhas.length >= maratonaRanking.length;
+    $("maratona-ranking-todos").textContent = "Ver ranking completo (" + fmtInt(maratonaRanking.length) + " termos)";
+  }
+  $("maratona-ranking").addEventListener("toggle", renderRankingMaratona);
+  $("maratona-ranking-todos").addEventListener("click", function () {
+    maratonaRankingCompleto = true;
+    renderRankingMaratona();
+  });
+  function salvarOpcaoConectivos(incluir) {
+    $("cfg-maratona-conectivos").checked = incluir;
+    try { localStorage.setItem(LS_MARATONA_CONECTIVOS, incluir ? "1" : "0"); } catch (e) {}
+  }
+  $("cfg-maratona-conectivos").addEventListener("change", function () {
+    salvarOpcaoConectivos(this.checked);
+  });
+  $("jogo-maratona-conectivos").addEventListener("change", function () {
+    if (!jogo || jogoModo !== "maratona" || !jogo.cfg.palavra) return;
+    salvarOpcaoConectivos(this.checked);
+    jogo.cfg.incluirConectivos = this.checked;
+    atualizarTermosMaratona();
   });
 
   // Lista lateral da maratona: a emenda a partir do topo do ranking, os
@@ -2720,9 +2786,15 @@
     } else if (jogoModo === "maratona") {
       var dm = jogo.dica();
       if (!dm) return;
-      CONHECIMENTO.dica(dm.mun);
-      mostrarDica("💡", "O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
-        "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>");
+      if (dm.termo) {
+        mostrarDica("💡", (jogo.cfg.prefixo ? "O prefixo" : "A palavra") + " <b>“" + dm.termo +
+          "”</b> revela <b>+" + fmtInt(dm.restantes) + (dm.restantes === 1 ? " cidade nova" : " cidades novas") +
+          "</b> — o maior número entre as jogadas restantes.");
+      } else {
+        CONHECIMENTO.dica(dm.mun);
+        mostrarDica("💡", "O maior que falta: começa com <b>«" + dm.mun.nome.charAt(0) +
+          "»</b>, fica em <b>" + dm.mun.uf + "</b> e tem <b>" + fmtPop(dm.mun.pop) + " hab.</b>");
+      }
     } else if (jogoModo === "caminho" || jogoModo === "ponte" || jogoModo === "mancha") {
       var dv = jogo.dica(); // caminho e ponte já contam o custo no motor
       if (!dv) return;
@@ -4027,6 +4099,7 @@
       atualizarContadorMaratona(m);
     });
     feedback("☁️ " + fmtInt(novos.length) + " município(s) que você citou em outro aparelho entraram aqui.", "ok");
+    atualizarTermosMaratona();
     atualizarPlacar();
     if (jogo.encerrado) fimSessaoMaratona(true);
   }

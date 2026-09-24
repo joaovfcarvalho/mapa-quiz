@@ -490,6 +490,20 @@ main {
 /* na maratona do Brasil são 27 linhas (uma por UF): duas colunas */
 .portes-mar { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; }
 
+/* Dicas e ranking geral das variantes por palavra e por 3 letras. */
+.maratona-conectivos { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; }
+.maratona-conectivos input { flex: 0 0 auto; width: 16px; height: 16px; accent-color: var(--ouro); }
+#maratona-termos .nota-config { margin: 8px 0; }
+#maratona-ranking summary { cursor: pointer; color: var(--ouro-claro); font-weight: 600; }
+.maratona-ranking-rolagem { max-height: 280px; overflow: auto; margin: 8px 0; }
+.maratona-ranking-tabela { width: 100%; border-collapse: collapse; font-size: 12px; }
+.maratona-ranking-tabela th { position: sticky; top: 0; background: var(--painel-2); text-align: left; }
+.maratona-ranking-tabela th, .maratona-ranking-tabela td { padding: 5px 4px; border-bottom: 1px solid var(--borda); }
+.maratona-ranking-tabela th:last-child, .maratona-ranking-tabela td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.maratona-ranking-tabela td:nth-child(2) { overflow-wrap: anywhere; }
+.maratona-ranking-tabela tbody tr:first-child { color: var(--ouro-claro); font-weight: 700; }
+#maratona-ranking-todos { width: 100%; font-size: 12px; }
+
 /* maratona: a emenda a partir do topo do ranking ("acertou as 37 maiores") */
 .linha-topo b { color: var(--ouro-claro); font-weight: 700; }
 

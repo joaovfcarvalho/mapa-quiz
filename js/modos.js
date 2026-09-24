@@ -669,7 +669,7 @@ var MODOS = (function () {
   // ---------------------------------------------------------------
   // Modo 7 — Maratona: citar todos os municípios da região, com progresso
   // persistente entre sessões (a interface injeta/salva os ids achados).
-  // cfg: {uf?, palavra?, prefixo?, idsIniciais?: array de ids do IBGE já achados}
+  // cfg: {uf?, palavra?, prefixo?, incluirConectivos?, idsIniciais?: ids do IBGE}
   // Com palavra=true um palpite vale por todos os municípios da região que
   // têm aquela palavra (ou sequência de palavras) inteira no nome: "são"
   // acende São Paulo e São Luís, mas não Mansão.
@@ -704,8 +704,8 @@ var MODOS = (function () {
       this.areaAchada = area;
     }
   }
-  // Palavras que sozinhas não identificam ninguém ("do" acenderia metade do
-  // mapa) — só valem acompanhadas de outra.
+  // Por padrão, conectivos só valem acompanhados de outra palavra.
+  // incluirConectivos permite usá-los sozinhos, nos palpites e nas dicas.
   var PALAVRAS_VAZIAS = { de: 1, do: 1, da: 1, dos: 1, das: 1, e: 1, d: 1 };
   var siglasUF = null;
   // As duas variantes aceitam um sufixo de UF e a mesma normalização.
@@ -729,7 +729,7 @@ var MODOS = (function () {
     if (!t) return { status: "vazio" };
     var partes = entrada.partes;
     var uf = entrada.uf;
-    if (partes.every(function (p) { return PALAVRAS_VAZIAS[p]; })) {
+    if (!this.cfg.incluirConectivos && partes.every(function (p) { return PALAVRAS_VAZIAS[p]; })) {
       return { status: "generico", termo: t };
     }
     var n = partes.length;
@@ -792,8 +792,34 @@ var MODOS = (function () {
     if (this.achados.size >= this.alvosTotal) this.encerrado = true;
     return { tipo: "ok", revelados: revelados, completo: this.encerrado, termo: termo, total: cand.length };
   };
-  // Dica (grátis na maratona): o maior município que ainda falta.
+  // Ranking geral de jogadas: conta apenas municípios ainda não encontrados,
+  // uma vez por termo, mesmo se a palavra aparecer duas vezes no mesmo nome.
+  // Uma palavra isolada cobre ao menos tantas cidades quanto uma expressão;
+  // o prefixo mínimo de 3 letras cobre ao menos tantas quanto um mais longo.
+  JogoMaratona.prototype.rankingTermos = function () {
+    if (!this.cfg.palavra && !this.cfg.prefixo) return [];
+    var contagens = new Map();
+    var self = this;
+    this.universo.forEach(function (m) {
+      if (self.achados.has(m.idx)) return;
+      var termos = self.cfg.prefixo
+        ? [m.chave.replace(/ /g, "").slice(0, 3)]
+        : m.chave.split(" ");
+      new Set(termos).forEach(function (termo) {
+        if (!self.cfg.prefixo && !self.cfg.incluirConectivos && PALAVRAS_VAZIAS[termo]) return;
+        contagens.set(termo, (contagens.get(termo) || 0) + 1);
+      });
+    });
+    return Array.from(contagens, function (par) {
+      return { termo: par[0], restantes: par[1] };
+    }).sort(function (a, b) {
+      return b.restantes - a.restantes || (a.termo < b.termo ? -1 : a.termo > b.termo ? 1 : 0);
+    });
+  };
+  // Nas variantes em grupo, sugere a jogada que revela mais cidades novas.
+  // Por nome completo, mantém a pista do maior município que ainda falta.
   JogoMaratona.prototype.dica = function () {
+    if (this.cfg.palavra || this.cfg.prefixo) return this.rankingTermos()[0] || null;
     for (var i = 0; i < this.universo.length; i++) {
       var m = this.universo[i];
       if (!this.achados.has(m.idx)) return { mun: m };

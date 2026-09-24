@@ -4,6 +4,113 @@ const assert = require("node:assert/strict");
 const { carregar } = require("./_carregar.cjs");
 const { DADOS, MODOS } = carregar(["data/municipios.js", "js/dados.js", "js/modos.js"]);
 
+function maratonaPequena(cfg) {
+  const nomes = [
+    ["Capital Gigante", "SP", 1000000],
+    ["São Bento", "SP", 1000],
+    ["São José do Vale", "SP", 900],
+    ["São São do Sul", "MG", 800],
+    ["Vale do Sol", "SP", 700],
+    ["Dois Irmãos", "SP", 600],
+    ["Ji-Paraná", "RO", 500],
+    ["Santa Rita", "MG", 400],
+    ["Itá", "SC", 300],
+  ];
+  const ctx = carregar(["js/dados.js", "js/modos.js"], {
+    MUNICIPIOS: nomes.map(([nome, uf, pop], i) => [i + 1, nome, uf, 0, 0, pop, 0, 1, 1]),
+  });
+  return new ctx.MODOS.JogoMaratona(cfg);
+}
+
+test("Maratona: dica prioriza cidades novas por termo, não população nem repetições no nome", () => {
+  for (const cfg of [{ palavra: true }, { prefixo: true }]) {
+    const jogo = maratonaPequena(cfg);
+    assert.equal(jogo.dica().termo, "sao");
+    assert.equal(jogo.dica().restantes, 3); // São São conta uma cidade, não duas
+    assert.equal(jogo.achados.size, 0); // pedir ajuda não joga pelo usuário
+    assert.equal(jogo.palpitar(jogo.dica().termo).revelados.length, 3);
+    assert.ok(!jogo.rankingTermos().some(p => p.termo === "sao"));
+  }
+  const completa = maratonaPequena({});
+  assert.equal(completa.dica().mun.nome, "Capital Gigante");
+  assert.equal(completa.rankingTermos().length, 0);
+});
+
+test("Maratona por palavra: ranking geral inclui jogadas ainda não usadas e desconta sobreposição", () => {
+  const jogo = maratonaPequena({ palavra: true });
+  assert.equal(jogo.rankingTermos().find(p => p.termo === "vale").restantes, 2);
+  jogo.palpitar("são sp");
+  assert.equal(jogo.rankingTermos().find(p => p.termo === "vale").restantes, 1);
+  assert.equal(jogo.rankingTermos().find(p => p.termo === "sao").restantes, 1);
+  assert.equal(jogo.palpitar("vale").revelados.length, 1);
+  assert.ok(!jogo.rankingTermos().some(p => p.termo === "vale"));
+});
+
+test("Maratona por palavra: conectivos afetam palpite, ranking e dica, sem desfazer progresso", () => {
+  const jogo = maratonaPequena({ palavra: true });
+  assert.equal(jogo.palpitar("do").tipo, "generico");
+  assert.ok(!jogo.rankingTermos().some(p => p.termo === "do"));
+  jogo.cfg.incluirConectivos = true;
+  assert.equal(jogo.dica().termo, "do"); // empate com são, resolvido alfabeticamente
+  assert.equal(jogo.dica().restantes, 3);
+  const r = jogo.palpitar("DO, SP");
+  assert.equal(r.revelados.length, 2);
+  assert.ok(!r.revelados.some(p => p.mun.nome === "Dois Irmãos"));
+  jogo.cfg.incluirConectivos = false;
+  assert.equal(jogo.achados.size, 2);
+  assert.equal(jogo.palpitar("do").tipo, "generico");
+  assert.ok(!jogo.rankingTermos().some(p => p.termo === "do"));
+  assert.equal(jogo.dica().termo, "sao");
+  assert.equal(jogo.dica().restantes, 2);
+  assert.equal(jogo.palpitar("do sul").tipo, "ok"); // expressões continuam valendo
+});
+
+test("Maratona: ranking respeita UF, retomada, sincronização e fim do jogo", () => {
+  for (const variante of [{ palavra: true }, { prefixo: true }]) {
+    const jogo = maratonaPequena({ ...variante, uf: "SP", idsIniciais: [2] });
+    assert.equal(jogo.rankingTermos().find(p => p.termo === "sao").restantes, 1);
+    assert.ok(!jogo.rankingTermos().some(p => p.termo === "jip" || p.termo === "parana"));
+    jogo.absorver([3, 4]); // o id 4 é de MG e não entra
+    assert.equal(jogo.achados.size, 2);
+    assert.ok(!jogo.rankingTermos().some(p => p.termo === "sao"));
+    while (jogo.dica()) {
+      const d = jogo.dica();
+      assert.equal(jogo.palpitar(d.termo).revelados.length, d.restantes);
+    }
+    assert.equal(jogo.encerrado, true);
+    assert.equal(jogo.rankingTermos().length, 0);
+    assert.equal(jogo.dica(), null);
+  }
+});
+
+test("Maratona por 3 letras: ranking segue o início normalizado, incluindo hífens e acentos", () => {
+  const jogo = maratonaPequena({ prefixo: true });
+  assert.equal(jogo.rankingTermos().find(p => p.termo === "jip").restantes, 1);
+  assert.equal(jogo.rankingTermos().find(p => p.termo === "ita").restantes, 1); // só Itá, não Santa Rita
+  const ranking = JSON.stringify(jogo.rankingTermos());
+  jogo.cfg.incluirConectivos = true;
+  assert.equal(JSON.stringify(jogo.rankingTermos()), ranking);
+  assert.equal(jogo.palpitar("  JÍ-P  ").revelados.length, 1);
+  assert.ok(!jogo.rankingTermos().some(p => p.termo === "jip"));
+});
+
+test("Maratona: todo termo sugerido é jogável e tem a contagem correta nos dados do Brasil", () => {
+  for (const cfg of [{ palavra: true }, { palavra: true, incluirConectivos: true }, { prefixo: true }]) {
+    const jogo = new MODOS.JogoMaratona(cfg);
+    jogo.palpitar("sao sp");
+    const ranking = jogo.rankingTermos();
+    for (let i = 0; i < ranking.length; i++) {
+      const item = ranking[i];
+      const busca = cfg.prefixo ? jogo.buscarPorPrefixo(item.termo) : jogo.buscarPorPalavra(item.termo);
+      assert.equal(busca.status, "ok", item.termo);
+      assert.equal(item.restantes, busca.municipios.filter(m => !jogo.achados.has(m.idx)).length, item.termo);
+      if (i) assert.ok(ranking[i - 1].restantes >= item.restantes);
+    }
+    const dica = jogo.dica();
+    assert.equal(jogo.palpitar(dica.termo).revelados.length, dica.restantes);
+  }
+});
+
 test("Maratona por 3 letras: ita revela os municípios pelo início do nome", () => {
   const jogo = new MODOS.JogoMaratona({ prefixo: true });
   const r = jogo.palpitar("  ÍTA  ");
