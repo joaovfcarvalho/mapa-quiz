@@ -22,79 +22,133 @@ function maratonaPequena(cfg) {
   return new ctx.MODOS.JogoMaratona(cfg);
 }
 
-test("Maratona: dica prioriza cidades novas por termo, não população nem repetições no nome", () => {
+test("Maratona: dicas de palavra e prefixo mostram só inicial e cidades novas", () => {
   for (const cfg of [{ palavra: true }, { prefixo: true }]) {
     const jogo = maratonaPequena(cfg);
-    assert.equal(jogo.dica().termo, "sao");
-    assert.equal(jogo.dica().restantes, 3); // São São conta uma cidade, não duas
-    assert.equal(jogo.achados.size, 0); // pedir ajuda não joga pelo usuário
-    assert.equal(jogo.palpitar(jogo.dica().termo).revelados.length, 3);
-    assert.ok(!jogo.rankingTermos().some(p => p.termo === "sao"));
+    const dica = jogo.dica();
+    assert.deepEqual(Object.keys(dica).sort(), ["inicial", "restantes"]);
+    assert.equal(dica.inicial, "S");
+    assert.equal(dica.restantes, 3); // São São conta só uma cidade
+    assert.equal(jogo.achados.size, 0);
+    assert.equal(jogo.placarTermos().acertados, 0);
+    jogo.palpitar("sao");
+    assert.equal(jogo.placarTermos().primeira, true);
+    assert.equal(jogo.placarTermos().seguidas, 1);
+    assert.equal(jogo.rankingTermos()[0].termo, "sao"); // posição não muda
+    assert.equal(jogo.rankingTermos()[0].restantes, 0);
+    assert.notEqual(jogo.dica().inicial, "S");
   }
   const completa = maratonaPequena({});
   assert.equal(completa.dica().mun.nome, "Capital Gigante");
   assert.equal(completa.rankingTermos().length, 0);
 });
 
-test("Maratona por palavra: ranking geral inclui jogadas ainda não usadas e desconta sobreposição", () => {
+test("Maratona: placar conta os termos digitados, sem dar crédito por sobreposição", () => {
   const jogo = maratonaPequena({ palavra: true });
-  assert.equal(jogo.rankingTermos().find(p => p.termo === "vale").restantes, 2);
-  jogo.palpitar("são sp");
-  assert.equal(jogo.rankingTermos().find(p => p.termo === "vale").restantes, 1);
-  assert.equal(jogo.rankingTermos().find(p => p.termo === "sao").restantes, 1);
-  assert.equal(jogo.palpitar("vale").revelados.length, 1);
-  assert.ok(!jogo.rankingTermos().some(p => p.termo === "vale"));
+  jogo.palpitar("sao");
+  const bento = jogo.rankingTermos().find(p => p.termo === "bento");
+  assert.equal(bento.restantes, 0);
+  assert.equal(bento.acertado, false);
+  assert.equal(jogo.placarTermos().acertados, 1);
+  const r = jogo.palpitar("bento");
+  assert.equal(r.tipo, "repetido");
+  assert.equal(r.termoNovo, true); // ainda vale como palavra acertada
+  assert.equal(jogo.placarTermos().acertados, 2);
+  assert.equal(jogo.palpitar("bento").termoNovo, false);
 });
 
-test("Maratona por palavra: conectivos afetam palpite, ranking e dica, sem desfazer progresso", () => {
-  const jogo = maratonaPequena({ palavra: true });
-  assert.equal(jogo.palpitar("do").tipo, "generico");
-  assert.ok(!jogo.rankingTermos().some(p => p.termo === "do"));
-  jogo.cfg.incluirConectivos = true;
-  assert.equal(jogo.dica().termo, "do"); // empate com são, resolvido alfabeticamente
-  assert.equal(jogo.dica().restantes, 3);
-  const r = jogo.palpitar("DO, SP");
-  assert.equal(r.revelados.length, 2);
-  assert.ok(!r.revelados.some(p => p.mun.nome === "Dois Irmãos"));
-  jogo.cfg.incluirConectivos = false;
-  assert.equal(jogo.achados.size, 2);
-  assert.equal(jogo.palpitar("do").tipo, "generico");
-  assert.ok(!jogo.rankingTermos().some(p => p.termo === "do"));
-  assert.equal(jogo.dica().termo, "sao");
-  assert.equal(jogo.dica().restantes, 2);
-  assert.equal(jogo.palpitar("do sul").tipo, "ok"); // expressões continuam valendo
-});
-
-test("Maratona: ranking respeita UF, retomada, sincronização e fim do jogo", () => {
-  for (const variante of [{ palavra: true }, { prefixo: true }]) {
-    const jogo = maratonaPequena({ ...variante, uf: "SP", idsIniciais: [2] });
-    assert.equal(jogo.rankingTermos().find(p => p.termo === "sao").restantes, 1);
-    assert.ok(!jogo.rankingTermos().some(p => p.termo === "jip" || p.termo === "parana"));
-    jogo.absorver([3, 4]); // o id 4 é de MG e não entra
-    assert.equal(jogo.achados.size, 2);
-    assert.ok(!jogo.rankingTermos().some(p => p.termo === "sao"));
-    while (jogo.dica()) {
-      const d = jogo.dica();
-      assert.equal(jogo.palpitar(d.termo).revelados.length, d.restantes);
-    }
-    assert.equal(jogo.encerrado, true);
-    assert.equal(jogo.rankingTermos().length, 0);
-    assert.equal(jogo.dica(), null);
+test("Maratona: oito das dez primeiras, nº 1 e sequência têm posições fixas", () => {
+  for (const cfg of [{ palavra: true }, { prefixo: true }]) {
+    const jogo = new MODOS.JogoMaratona(cfg);
+    const primeiras = jogo.rankingTermos().slice(0, 10).map(p => p.termo);
+    for (const termo of primeiras.slice(1, 9)) jogo.palpitar(termo);
+    let p = jogo.placarTermos();
+    assert.equal(p.primeira, false);
+    assert.equal(p.seguidas, 0);
+    assert.equal(p.faixas[0].total, 10);
+    assert.equal(p.faixas[0].acertados, 8);
+    jogo.palpitar(primeiras[0]);
+    p = jogo.placarTermos();
+    assert.equal(p.primeira, true);
+    assert.equal(p.seguidas, 9);
+    assert.equal(p.faixas[0].acertados, 9);
+    assert.equal(JSON.stringify(jogo.rankingTermos().slice(0, 10).map(p => p.termo)), JSON.stringify(primeiras));
+    assert.ok(!JSON.stringify(p).includes(primeiras[0])); // saída do placar não contém resposta
   }
 });
 
-test("Maratona por 3 letras: ranking segue o início normalizado, incluindo hífens e acentos", () => {
-  const jogo = maratonaPequena({ prefixo: true });
-  assert.equal(jogo.rankingTermos().find(p => p.termo === "jip").restantes, 1);
-  assert.equal(jogo.rankingTermos().find(p => p.termo === "ita").restantes, 1); // só Itá, não Santa Rita
-  const ranking = JSON.stringify(jogo.rankingTermos());
+test("Maratona: conectivos afetam palpites, posições e dicas, preservando acertos", () => {
+  const jogo = maratonaPequena({ palavra: true });
+  assert.equal(jogo.palpitar("do").tipo, "generico");
+  assert.equal(jogo.termosAchados.size, 0);
   jogo.cfg.incluirConectivos = true;
-  assert.equal(JSON.stringify(jogo.rankingTermos()), ranking);
-  assert.equal(jogo.palpitar("  JÍ-P  ").revelados.length, 1);
-  assert.ok(!jogo.rankingTermos().some(p => p.termo === "jip"));
+  assert.equal(jogo.dica().inicial, "D");
+  assert.equal(jogo.dica().restantes, 3);
+  assert.equal(jogo.palpitar("DO, SP").revelados.length, 2);
+  assert.equal(jogo.placarTermos().primeira, true);
+  assert.equal(jogo.placarTermos().acertados, 1);
+  jogo.cfg.incluirConectivos = false;
+  assert.equal(jogo.placarTermos().acertados, 0);
+  assert.equal(jogo.achados.size, 2);
+  assert.equal(jogo.palpitar("do").tipo, "generico");
+  assert.equal(jogo.dica().inicial, "S");
+  assert.equal(jogo.dica().restantes, 2);
+  jogo.cfg.incluirConectivos = true;
+  assert.equal(jogo.placarTermos().acertados, 1);
 });
 
-test("Maratona: todo termo sugerido é jogável e tem a contagem correta nos dados do Brasil", () => {
+test("Maratona: UF, normalização e expressões não inventam acertos de termos", () => {
+  const jogo = maratonaPequena({ palavra: true, uf: "SP" });
+  assert.equal(jogo.rankingTermos()[0].total, 2);
+  assert.equal(jogo.palpitar("sao mg").tipo, "nao_encontrado");
+  assert.equal(jogo.palpitar("são josé").tipo, "ok");
+  assert.equal(jogo.placarTermos().acertados, 0); // não digitou são isoladamente
+  assert.equal(jogo.palpitar(" SÃO, SP ").tipo, "ok");
+  assert.equal(jogo.placarTermos().acertados, 1);
+  const prefixo = maratonaPequena({ prefixo: true });
+  prefixo.palpitar("sao b");
+  assert.equal(prefixo.placarTermos().acertados, 0);
+  prefixo.palpitar(" JÍ-P ");
+  assert.equal(prefixo.rankingTermos().find(p => p.termo === "jip").acertado, true);
+  assert.equal(prefixo.rankingTermos().find(p => p.termo === "ita").total, 1); // sem Santa Rita
+});
+
+test("Maratona: placar persiste além de oito palpites e absorve só termos da região", () => {
+  for (const cfg of [{ palavra: true }, { prefixo: true }]) {
+    const anterior = new MODOS.JogoMaratona(cfg);
+    anterior.rankingTermos().slice(0, 15).forEach(p => anterior.palpitar(p.termo));
+    const jogo = new MODOS.JogoMaratona({ ...cfg, idsIniciais: anterior.idsAchados(), termosIniciais: Array.from(anterior.termosAchados) });
+    assert.equal(jogo.placarTermos().acertados, 15);
+    assert.equal(jogo.achados.size, anterior.achados.size);
+    jogo.absorverTermos([null, 1, {}, "zzzzzzz"]);
+    assert.equal(jogo.placarTermos().acertados, 15); // termo inexistente não pontua
+    const termo = jogo.rankingTermos()[15].termo;
+    assert.equal(jogo.absorverTermos([termo]), true);
+    assert.equal(jogo.absorverTermos([termo]), false);
+    assert.equal(jogo.placarTermos().acertados, 16);
+  }
+});
+
+test("Maratona: migração só recupera termos comprovados pelos últimos palpites", () => {
+  const antigos = { ids: [1, 2], ultimos: [{ t: "“são” → 3 municípios" }, { t: "São Paulo (SP)" }, null] };
+  const termos = MODOS.JogoMaratona.termosSalvos(antigos);
+  assert.equal(JSON.stringify(termos), JSON.stringify(["são"]));
+  const jogo = maratonaPequena({ palavra: true, idsIniciais: [2], termosIniciais: termos });
+  assert.equal(jogo.placarTermos().acertados, 1);
+  assert.equal(jogo.placarTermos().primeira, true);
+  assert.equal(JSON.stringify(MODOS.JogoMaratona.termosSalvos({ termos: ["vale"], ultimos: antigos.ultimos })), JSON.stringify(["vale"]));
+});
+
+test("Maratona: dicas terminam quando todas as cidades estão cobertas", () => {
+  for (const cfg of [{ palavra: true }, { prefixo: true }]) {
+    const jogo = maratonaPequena(cfg);
+    jogo.absorver(jogo.universo.map(m => m.id));
+    assert.equal(jogo.dica(), null);
+    assert.equal(jogo.placarTermos().acertados, 0); // sincronizar cidades não inventa palpites
+  }
+});
+
+test("Maratona: contagens internas conferem com as buscas reais do Brasil", () => {
   for (const cfg of [{ palavra: true }, { palavra: true, incluirConectivos: true }, { prefixo: true }]) {
     const jogo = new MODOS.JogoMaratona(cfg);
     jogo.palpitar("sao sp");
@@ -103,11 +157,13 @@ test("Maratona: todo termo sugerido é jogável e tem a contagem correta nos dad
       const item = ranking[i];
       const busca = cfg.prefixo ? jogo.buscarPorPrefixo(item.termo) : jogo.buscarPorPalavra(item.termo);
       assert.equal(busca.status, "ok", item.termo);
+      assert.equal(item.total, busca.municipios.length, item.termo);
       assert.equal(item.restantes, busca.municipios.filter(m => !jogo.achados.has(m.idx)).length, item.termo);
-      if (i) assert.ok(ranking[i - 1].restantes >= item.restantes);
+      if (i) assert.ok(ranking[i - 1].total >= item.total);
     }
-    const dica = jogo.dica();
-    assert.equal(jogo.palpitar(dica.termo).revelados.length, dica.restantes);
+    const candidatos = ranking.filter(r => !r.acertado && r.restantes > 0);
+    assert.equal(jogo.dica().restantes, Math.max(...candidatos.map(r => r.restantes)));
+    assert.deepEqual(Object.keys(jogo.dica()).sort(), ["inicial", "restantes"]);
   }
 });
 

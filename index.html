@@ -555,18 +555,12 @@
           Considerar “de”, “do”, “da”, “dos”, “das”, “e” e “d”
         </label>
         <p id="maratona-conectivos-nota" class="nota-config" hidden>Vale para palpites, dicas e ranking. Mudar não desfaz cidades já encontradas.</p>
-        <details id="maratona-ranking">
-          <summary id="maratona-ranking-titulo">Ver ranking de palavras restantes</summary>
-          <p class="nota-config">Ordenado por quantas cidades novas cada jogada revela na região. As contagens se sobrepõem e mudam a cada acerto.</p>
-          <div class="maratona-ranking-rolagem" tabindex="0" role="region" aria-labelledby="maratona-ranking-titulo">
-            <table class="maratona-ranking-tabela">
-              <thead><tr><th scope="col">#</th><th scope="col" id="maratona-ranking-coluna">Palavra</th><th scope="col">Novas cidades</th></tr></thead>
-              <tbody id="maratona-ranking-linhas"></tbody>
-            </table>
-          </div>
-          <button id="maratona-ranking-todos" class="botao-sec" type="button" hidden>Ver ranking completo</button>
-          <p id="maratona-ranking-vazio" class="nota-config" hidden>Todos os municípios da região já foram encontrados!</p>
-        </details>
+        <div id="maratona-placar-termos" role="region" aria-labelledby="maratona-placar-titulo">
+          <div class="titulo-faixa" id="maratona-placar-titulo">Seu placar de palavras</div>
+          <div id="maratona-placar-linhas" class="portes" aria-live="polite"></div>
+          <p class="nota-config" id="maratona-placar-nota"></p>
+          <p class="nota-config" id="maratona-historico-parcial" hidden>Seu progresso de cidades foi mantido. O histórico antigo só permite recuperar os últimos termos salvos; os novos acertos ficam todos registrados.</p>
+        </div>
       </div>
       <div id="fim-jogo" hidden></div>
       <button id="btn-seguinte" class="botao-pri seguinte" type="button" hidden></button>
