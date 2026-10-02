@@ -504,8 +504,10 @@
     };
     s.onerror = function () {
       s.remove();
+      var esperando = vizinhosCbs.length > 0;
       vizinhosCbs = null; // a próxima tentativa recomeça do zero
-      if (!silencioso) {
+      cancelarInicioPendente(); // o ▶ volta a valer para tentar de novo
+      if (!silencioso || esperando) {
         alert("Não deu para carregar o mapa de divisas (~360 KB) — é preciso internet na primeira vez.");
       }
     };
@@ -530,35 +532,35 @@
 
   // ------------------------------------------------------------------
   // Desafio do dia: um "Onde estou?" com o mesmo município secreto para
-  // todo mundo, sorteado por uma semente derivada da data. Uma jogada por
-  // dia; o resultado (e a sequência de dias) fica no localStorage.
+  // todo mundo, sorteado por uma semente derivada da data (o calendário e
+  // o sorteio estão em js/diario.js). Uma jogada por dia; o resultado (e a
+  // sequência de dias) fica no localStorage — e a partida em andamento
+  // também, a cada palpite, para sair ou recarregar não dar outra chance.
   // ------------------------------------------------------------------
   var LS_DIARIO = "mapaquiz.diario.v1";
-  var DIARIO_EPOCA = Date.UTC(2026, 8, 1); // desafio #1 = 1º de setembro de 2026
   var DIARIO_MIN_POP = 100000;
-  function pad2(n) { return (n < 10 ? "0" : "") + n; }
-  function chaveDia(d) {
-    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  var pad2 = DIARIO.pad2;
+  // hoje em Brasília: o dia vira à meia-noite de Brasília para todo mundo,
+  // não no relógio do aparelho
+  function diaDeHoje() {
+    var d = DIARIO.agoraBrasilia();
+    return { chave: DIARIO.chaveDia(d), n: DIARIO.numeroDia(d) };
   }
-  function numeroDia(d) {
-    var meio = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
-    return Math.floor((meio - DIARIO_EPOCA) / 86400000) + 1;
-  }
-  var poolDiario = null;
-  function secretoDoDia(n) {
-    if (!poolDiario) {
-      poolDiario = DADOS.municipios
-        .filter(function (m) { return m.pop >= DIARIO_MIN_POP; })
-        .sort(function (a, b) { return a.id - b.id; }); // ordem estável, não a de população
+  var munsPorIdDiario = null;
+  function munDoId(id) {
+    if (!munsPorIdDiario) {
+      munsPorIdDiario = {};
+      DADOS.municipios.forEach(function (m) { munsPorIdDiario[m.id] = m; });
     }
-    // o gerador com semente (mulberry32) vive em js/modos.js — a mesma
-    // sequência de sempre, para o desafio #n continuar sendo o mesmo
-    var r = MODOS.rngSemente(n);
-    return poolDiario[Math.floor(r() * poolDiario.length)];
+    return munsPorIdDiario[id] || null;
+  }
+  function secretoDoDia(n) {
+    return munDoId(DIARIO.idSecreto(n, MODOS.rngSemente));
   }
   function lerDiario() {
-    try { return JSON.parse(localStorage.getItem(LS_DIARIO)) || { dias: {} }; }
-    catch (e) { return { dias: {} }; }
+    var d = null;
+    try { d = JSON.parse(localStorage.getItem(LS_DIARIO)); } catch (e) {}
+    return d && d.dias ? d : { dias: {} };
   }
   function salvarDiario(d) {
     try { localStorage.setItem(LS_DIARIO, JSON.stringify(d)); } catch (e) {}
@@ -566,15 +568,16 @@
   }
   // sequência: dias consecutivos (até hoje ou ontem) com o desafio vencido
   function sequenciaDiario(dados) {
-    var d = new Date();
+    var d = DIARIO.agoraBrasilia();
     var seq = 0;
-    var hoje = dados.dias[chaveDia(d)];
-    if (!hoje) d.setDate(d.getDate() - 1); // hoje ainda não jogou: conta a partir de ontem
+    var hoje = dados.dias[DIARIO.chaveDia(d)];
+    // hoje ainda não terminou: conta a partir de ontem
+    if (!hoje || hoje.emAndamento) d = DIARIO.diaAnterior(d);
     for (;;) {
-      var r = dados.dias[chaveDia(d)];
+      var r = dados.dias[DIARIO.chaveDia(d)];
       if (!r || !r.venceu) break;
       seq++;
-      d.setDate(d.getDate() - 1);
+      d = DIARIO.diaAnterior(d);
     }
     return seq;
   }
@@ -584,13 +587,12 @@
       s += km === 0 ? "🎯" : km < 50 ? "🟩" : km < 200 ? "🟨" : km < 500 ? "🟧" : km < 1000 ? "🟥" : "⬛";
     });
     for (var i = 0; i < (res.dicas || 0); i++) s += "💡";
-    if (!res.venceu) s += "🏳️";
+    if (!res.venceu && !res.emAndamento) s += "🏳️";
     return s;
   }
   function textoDiario(n, res, seq) {
-    var d = new Date();
     var total = (res.dists || []).length + (res.dicas || 0);
-    return "🗺️ Mapa Quiz · Desafio #" + n + " (" + pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1) + ")\n" +
+    return "🗺️ Mapa Quiz · Desafio #" + n + " (" + DIARIO.ddmm(diarioAtual.chave) + ")\n" +
       emojisDiario(res) + " " + (res.venceu
         ? total + (total === 1 ? " palpite" : " palpites")
         : "não achei") +
@@ -598,75 +600,109 @@
       "\n" + SITE.dominio.replace(/^https?:\/\//, "").replace(/\/$/, "");
   }
   function tempoAteAmanha() {
-    var agora = new Date();
-    var amanha = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1);
-    var seg = Math.max(0, Math.floor((amanha - agora) / 1000));
+    var seg = DIARIO.segundosAteAmanha();
     return Math.floor(seg / 3600) + "h" + pad2(Math.floor(seg / 60) % 60) + "min" + pad2(seg % 60) + "s";
   }
-  var relogioDiario = null;
+  var relogioDiario = null;     // relógio do fim da partida do diário
+  var relogioCardDiario = null; // relógio do cartão na lista de modos
   function atualizarCardDiario() {
     var card = $("card-diario");
     if (!card) return;
-    var hoje = new Date();
-    var n = numeroDia(hoje);
+    var hoje = diaDeHoje();
     var dados = lerDiario();
-    var res = dados.dias[chaveDia(hoje)];
+    var res = dados.dias[hoje.chave];
+    var feito = !!res && !res.emAndamento;
     var seq = sequenciaDiario(dados);
-    $("diario-num").textContent = "#" + n + " · " + pad2(hoje.getDate()) + "/" + pad2(hoje.getMonth() + 1);
-    card.classList.toggle("jogado", !!res);
-    clearInterval(relogioDiario);
-    if (res) {
+    var txtSeq = seq + (seq === 1 ? " dia seguido" : " dias seguidos");
+    $("diario-num").textContent = "#" + hoje.n + " · " + DIARIO.ddmm(hoje.chave);
+    card.classList.toggle("jogado", feito);
+    clearInterval(relogioCardDiario);
+    // o relógio só anda com a lista de modos à vista (mostrarTela refaz o
+    // cartão ao voltar); na virada do dia o cartão passa para o desafio novo
+    function relogio() {
+      if ($("tela-modos").hidden) { clearInterval(relogioCardDiario); return; }
+      if (diaDeHoje().chave !== hoje.chave) { atualizarCardDiario(); return; }
+      if (feito) $("diario-status").textContent = (seq > 0 ? "🔥 " + txtSeq + " · " : "") + "próximo em " + tempoAteAmanha();
+    }
+    if (feito) {
       var total = (res.dists || []).length + (res.dicas || 0);
       $("diario-titulo").textContent = res.venceu
         ? "Feito! Achou em " + total + (total === 1 ? " palpite" : " palpites")
         : "Hoje não deu — amanhã tem outro";
       $("diario-sub").textContent = emojisDiario(res) + " · toque para rever o mapa";
-      function relogio() {
-        $("diario-status").textContent = (seq > 0 ? "🔥 " + seq + (seq === 1 ? " dia seguido" : " dias seguidos") + " · " : "") +
-          "próximo em " + tempoAteAmanha();
-      }
-      relogio();
-      relogioDiario = setInterval(relogio, 1000);
+    } else if (res) {
+      $("diario-titulo").textContent = "Continue o desafio de hoje";
+      $("diario-sub").textContent = (emojisDiario(res) || "Nenhum palpite ainda") + " · o secreto continua esperando";
+      $("diario-status").textContent = "▶ Continuar";
     } else {
       $("diario-titulo").textContent = "Ache o município secreto de hoje";
       $("diario-sub").textContent = "O mesmo para todo mundo, um por dia. Cada palpite diz a distância e a direção.";
       $("diario-status").textContent = seq > 0
-        ? "🔥 " + seq + (seq === 1 ? " dia seguido" : " dias seguidos") + " — jogue hoje para manter"
+        ? "🔥 " + txtSeq + " — jogue hoje para manter"
         : "▶ Jogar agora";
     }
+    relogio();
+    relogioCardDiario = setInterval(relogio, 1000);
   }
+  // Refazendo uma partida gravada do diário: o mapa e o placar voltam, mas
+  // nada conta de novo (pontos cegos, métricas, sincronização da conta).
+  var refazendoDiario = false;
+  var modoAntesDoDiario = null; // o modo da tela de configuração, para voltar a ele
   function iniciarDiario() {
-    var hoje = new Date();
-    var n = numeroDia(hoje);
-    modoAtual = "diario";
+    var hoje = diaDeHoje();
     abandonarJogo();
-    diarioAtual = { n: n, chave: chaveDia(hoje), secreto: secretoDoDia(n) };
-    iniciar();
-    // dia já jogado: refaz os palpites gravados para mostrar o mapa e o resultado
+    modoAntesDoDiario = modoAtual;
+    modoAtual = "diario";
+    diarioAtual = { n: hoje.n, chave: hoje.chave, secreto: secretoDoDia(hoje.n) };
+    // dia já começado (ou já jogado): refaz as dicas e os palpites gravados,
+    // pelo código IBGE — sair ou recarregar continua de onde parou
     var res = lerDiario().dias[diarioAtual.chave];
-    if (res && jogo) {
-      var muns = (res.ids || []).map(function (id) {
-        return DADOS.municipios.filter(function (m) { return m.id === id; })[0];
-      }).filter(Boolean);
-      jogo.dicasDadas = res.dicas || 0;
-      muns.forEach(function (m) { if (jogo && !jogo.encerrado) palpitarOnde(m.nome + ", " + m.uf); });
-      if (jogo && !jogo.encerrado) fimDeJogo(true);
+    refazendoDiario = !!res;
+    try {
+      iniciar();
+      if (res && jogo) {
+        for (var i = 0; i < Math.min(res.dicas || 0, 3); i++) pedirDica();
+        (res.ids || []).forEach(function (id) {
+          var m = munDoId(id);
+          if (m && jogo && !jogo.encerrado) palpitarOnde(null, m);
+        });
+        // terminado sem acertar (desistiu): mostra o resultado do mesmo jeito
+        if (!res.emAndamento && jogo && !jogo.encerrado) fimDeJogo(true);
+      }
+    } finally {
+      refazendoDiario = false;
     }
+  }
+  function registroDiario() {
+    return {
+      n: diarioAtual.n,
+      venceu: jogo.venceu,
+      ids: jogo.palpites.map(function (p) { return p.mun.id; }),
+      dists: jogo.palpites.map(function (p) { return Math.round(p.distKm); }),
+      dicas: jogo.dicasDadas,
+    };
+  }
+  // grava a partida do dia a cada palpite ou dica (marcada emAndamento)
+  function salvarDiarioEmAndamento() {
+    if (!diarioAtual || refazendoDiario || !jogo || jogo.encerrado) return;
+    var dados = lerDiario();
+    var atual = dados.dias[diarioAtual.chave];
+    if (atual && !atual.emAndamento) return; // já terminou (em outra aba)
+    var reg = registroDiario();
+    reg.emAndamento = true;
+    dados.dias[diarioAtual.chave] = reg;
+    salvarDiario(dados);
   }
   // grava o resultado do dia (só uma vez) e devolve o registro
   function registrarDiario() {
     var dados = lerDiario();
     var k = diarioAtual.chave;
-    if (!dados.dias[k]) {
-      dados.dias[k] = {
-        n: diarioAtual.n,
-        venceu: jogo.venceu,
-        ids: jogo.palpites.map(function (p) { return p.mun.id; }),
-        dists: jogo.palpites.map(function (p) { return Math.round(p.distKm); }),
-        dicas: jogo.dicasDadas,
-      };
+    if (!dados.dias[k] || dados.dias[k].emAndamento) {
+      dados.dias[k] = registroDiario();
       salvarDiario(dados);
-      SITE.rastrear("diario_jogado", { numero: diarioAtual.n, venceu: jogo.venceu, palpites: jogo.totalPalpites() });
+      if (!refazendoDiario) {
+        SITE.rastrear("diario_jogado", { numero: diarioAtual.n, venceu: jogo.venceu, palpites: jogo.totalPalpites() });
+      }
     }
     return dados.dias[k];
   }
@@ -675,6 +711,13 @@
   // o mapa volta ao Brasil inteiro e as camadas de jogo são limpas.
   function abandonarJogo() {
     if (jogo && !jogo.encerrado) salvarProgressoMaratona();
+    cancelarInicioPendente();
+    // saindo do desafio do dia (cada palpite já ficou gravado): o modo volta
+    // a ser o da tela de configuração
+    if (diarioAtual || modoAtual === "diario") {
+      diarioAtual = null;
+      if (modoAtual === "diario") modoAtual = modoAntesDoDiario || "ondestou";
+    }
     clearInterval(timerInt);
     jogo = null;
     document.body.classList.remove("jogo-ativo");
@@ -1075,9 +1118,31 @@
     });
   }
 
-  function iniciar() {
+  // Início que espera o grafo de divisas ou a sincronização da conta: um só
+  // por vez (o ▶ fica desligado), e cancelado se o jogador sair da tela —
+  // o retorno atrasado não pode abrir uma partida que ninguém pediu mais,
+  // nem gastar duas vezes a semente de um link de desafio.
+  var inicioPendente = null;
+  function esperarInicio(sincronizou) {
+    inicioPendente = { inicioPendente: true, sincronizou: !!sincronizou };
+    $("btn-iniciar").disabled = true;
+    return inicioPendente;
+  }
+  function cancelarInicioPendente() {
+    if (!inicioPendente) return;
+    inicioPendente = null;
+    $("btn-iniciar").disabled = false;
+  }
+
+  function iniciar(retomada) {
+    // retomada: o token de esperarInicio (os cliques chegam com o evento)
+    var pend = retomada && retomada.inicioPendente ? retomada : null;
+    if (pend && pend !== inicioPendente) return; // cancelado (saiu da tela) ou substituído
+    if (!pend && inicioPendente) return;         // já há um início esperando
+    cancelarInicioPendente();
     var lido;
     if (modoAtual === "diario") {
+      if (!diarioAtual) return;
       lido = {
         cfg: { minPop: DIARIO_MIN_POP, secreto: diarioAtual.secreto },
         chave: "diario|n=" + diarioAtual.n,
@@ -1094,23 +1159,22 @@
     }
     // os modos de divisas dependem do grafo de vizinhos: carrega e volta aqui
     if (MODOS_COM_VIZINHOS[modoAtual] && !window.VIZINHOS) {
-      carregarVizinhos(iniciar);
+      var espera = esperarInicio(pend && pend.sincronizou);
+      carregarVizinhos(function () { iniciar(espera); });
       return;
     }
     // com a conta ligada, a maratona busca antes o progresso feito em outro
     // aparelho (com prazo curto: a rede não segura a partida) e volta aqui
-    if (modoAtual === "maratona" && window.CONTA && CONTA.estado().ligado && !iniciar._sincronizou) {
-      iniciar._sincronizou = true;
-      $("btn-iniciar").disabled = true;
+    if (modoAtual === "maratona" && window.CONTA && CONTA.estado().ligado && !(pend && pend.sincronizou)) {
+      var esperaConta = esperarInicio(true);
       $("btn-iniciar").textContent = "☁️ Buscando seu progresso…";
       CONTA.sincronizarNoGesto("inicio", 6000, function () {
-        $("btn-iniciar").disabled = false;
+        if (esperaConta !== inicioPendente) return; // saiu da tela ou cancelou
         atualizarRecordeUI();
-        iniciar();
+        iniciar(esperaConta);
       });
       return;
     }
-    iniciar._sincronizou = false;
     limparCamadasDeJogo();
     jogoModo = modoAtual;
     jogoChave = lido.chave;
@@ -1153,6 +1217,7 @@
       lido.cfg.historicoTermosParcial = historicoTermosParcial(prog);
       tempoPrevio = prog && prog.tempoSeg ? prog.tempoSeg : 0;
       maratonaUltimos = prog && Array.isArray(prog.ultimos) ? prog.ultimos : [];
+      maratonaSalvaEm = Date.now(); // o próximo salvamento automático é daqui a 30 s
       jogo = new MODOS.JogoMaratona(lido.cfg);
     } else jogo = new MODOS.JogoFaixas(lido.cfg);
     if (jogo.erroInicial) {
@@ -1178,7 +1243,9 @@
     document.querySelectorAll(".anuncio[data-slot='resultado']").forEach(function (a) { a.hidden = true; });
     var info = INFO_MODOS[diarioAtual ? "diario" : jogoModo];
     $("jogo-titulo").textContent = info.icone + " " + info.nome;
-    SITE.rastrear("partida_iniciada", { modo: diarioAtual ? "diario" : jogoModo, regiao: jogo.cfg.uf || "BR" });
+    if (!refazendoDiario) {
+      SITE.rastrear("partida_iniciada", { modo: diarioAtual ? "diario" : jogoModo, regiao: jogo.cfg.uf || "BR" });
+    }
     // o resumo da configuração dispensa o nome do modo, que já está no título
     var sub = jogoRotulo;
     if (sub.indexOf(info.nome) === 0) {
@@ -1333,8 +1400,9 @@
       fimDeJogo(true, "tempo");
       return;
     }
-    // fechar o navegador no meio da maratona não pode perder o relógio
-    if (jogoModo === "maratona" && jogo && !jogo.encerrado && tempoDecorrido() % 30 === 0) {
+    // fechar o navegador no meio da maratona não pode perder o relógio (um
+    // tique atrasado pela aba em segundo plano não pode pular o salvamento)
+    if (jogoModo === "maratona" && jogo && !jogo.encerrado && Date.now() - maratonaSalvaEm >= 30000) {
       salvarProgressoMaratona();
     }
     atualizarPlacar();
@@ -1510,7 +1578,6 @@
     }
     // com a opção de homônimas ligada, um nome ambíguo entra inteiro:
     // todas as cidades daquele nome, num palpite só
-    registrarCitadas(muns);
     var r = jogo.palpitar(muns);
     if (r.tipo === "repetido") {
       feedback(muns.length > 1
@@ -1526,6 +1593,9 @@
     if (r.tipo !== "ok") return;
 
     var j = r.jogada;
+    // nos pontos cegos entram só as cidades que viraram círculo (não as
+    // homônimas já usadas ou já cobertas, nem um palpite recusado)
+    registrarCitadas(j.muns);
     j.circulos.forEach(function (c) {
       elSvg("path", { d: caminhoGeodesico(c.mun.lat, c.mun.lng, c.raioKm), "class": "circulo-cobertura" }, gCirculos);
     });
@@ -1677,8 +1747,20 @@
     return SETAS_RUMO[Math.round(graus / 45) % 8];
   }
 
-  function palpitarOnde(texto) {
-    var r = jogo.palpitar(texto);
+  // O motor do Onde estou? recebe o texto digitado; para refazer um palpite
+  // gravado do diário pelo código IBGE, a busca devolve exatamente aquele
+  // município ("Nome, UF" nem sempre volta ao mesmo: "Aracatu, BA" cai em
+  // Araçatuba, SP).
+  function palpitarOndePorMun(mun) {
+    var buscar = DADOS.buscar;
+    DADOS.buscar = function () { return { status: "ok", municipios: [mun] }; };
+    try { return jogo.palpitar(mun.nome); }
+    finally { DADOS.buscar = buscar; }
+  }
+
+  // munRefeito: palpite gravado do Desafio do dia sendo refeito
+  function palpitarOnde(texto, munRefeito) {
+    var r = munRefeito ? palpitarOndePorMun(munRefeito) : jogo.palpitar(texto);
     if (r.tipo === "vazio") return;
     if (r.tipo === "nao_encontrado") {
       feedback(r.ufErrada
@@ -1705,7 +1787,7 @@
     }
     if (r.tipo !== "ok") return;
 
-    registrarCitadas([r.mun]);
+    if (!refazendoDiario) registrarCitadas([r.mun]);
     var km = fmtInt(Math.round(r.distKm)) + " km";
     var item = document.createElement("div");
     item.className = "item-jogada";
@@ -1740,6 +1822,7 @@
     $("input-palpite").value = "";
     atualizarPlacar();
     atualizarMissao(); // a explicação inicial sai depois do primeiro palpite
+    salvarDiarioEmAndamento();
   }
 
   // ---------------- modo Maratona ----------------
@@ -1848,16 +1931,64 @@
     });
   }
 
+  // A mesma maratona pode estar aberta em duas abas: o salvamento soma ao
+  // que já está gravado (nunca troca os achados da outra aba pelos desta)
+  // e só grava quando algo mudou.
+  var maratonaSalvaEm = 0; // Date.now() do último salvamento
   function salvarProgressoMaratona() {
     if (jogoModo !== "maratona" || !jogo) return;
-    salvarMaratona(chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo), {
-      ids: jogo.idsAchados(),
-      tempoSeg: tempoDecorrido(),
+    maratonaSalvaEm = Date.now();
+    var chave = chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo);
+    var salvo = carregarMaratona(chave);
+    var ids = jogo.idsAchados();
+    var termos = Array.from(jogo.termosAchados);
+    var tempoSeg = tempoDecorrido();
+    if (salvo) {
+      var temId = new Set(ids);
+      (Array.isArray(salvo.ids) ? salvo.ids : []).forEach(function (id) {
+        if (!temId.has(id)) { temId.add(id); ids.push(id); }
+      });
+      var temTermo = new Set(termos);
+      MODOS.JogoMaratona.termosSalvos(salvo).forEach(function (t) {
+        if (typeof t === "string" && !temTermo.has(t)) { temTermo.add(t); termos.push(t); }
+      });
+      tempoSeg = Math.max(tempoSeg, salvo.tempoSeg || 0);
+    }
+    var novo = {
+      ids: ids,
+      tempoSeg: tempoSeg,
       ultimos: maratonaUltimos,
-      termos: Array.from(jogo.termosAchados),
+      termos: termos,
       historicoTermosParcial: !!jogo.cfg.historicoTermosParcial,
-    });
+    };
+    if (salvo && JSON.stringify(salvo) === JSON.stringify(novo)) return;
+    salvarMaratona(chave, novo);
   }
+  // fechar ou esconder a aba no meio da maratona: salva na hora
+  function salvarMaratonaAoSair() {
+    if (jogoModo === "maratona" && jogo && !jogo.encerrado) salvarProgressoMaratona();
+  }
+  window.addEventListener("pagehide", salvarMaratonaAoSair);
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") salvarMaratonaAoSair();
+  });
+  // a outra aba avançou a mesma maratona: os achados dela entram aqui
+  window.addEventListener("storage", function (ev) {
+    if (ev.key !== LS_MARATONA || jogoModo !== "maratona" || !jogo || jogo.encerrado) return;
+    var salvo = carregarMaratona(chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo));
+    if (!salvo) return;
+    if (jogo.absorverTermos(MODOS.JogoMaratona.termosSalvos(salvo))) atualizarTermosMaratona();
+    var novos = jogo.absorver(Array.isArray(salvo.ids) ? salvo.ids : []);
+    if (novos.length === 0) return;
+    novos.forEach(function (m) {
+      pintarPonto(m, "achada");
+      atualizarContadorMaratona(m);
+    });
+    feedback("🗂️ " + fmtInt(novos.length) + " município(s) que você citou em outra aba entraram aqui.", "ok");
+    atualizarTermosMaratona();
+    atualizarPlacar();
+    if (jogo.encerrado) fimSessaoMaratona(true);
+  });
 
   // Painel no canto do mapa com os últimos palpites certos (persistido com
   // o progresso). Clicar num item acende de novo no mapa o que ele revelou.
@@ -2603,13 +2734,19 @@
     return "quase empate";
   }
   var ordemEscolhida = []; // idx dos municípios já tocados na rodada do Ordene
+  var revelando = false;   // duelo respondido, à espera do "Próxima" (teclas 1/2 não valem)
 
   function mostrarRodadaComparar() {
     var caixa = $("comparar");
     caixa.hidden = false;
+    revelando = false;
     if (!jogo || jogo.encerrado || !jogo.atual) { caixa.hidden = true; return; }
     var metrica = jogo.cfg.metrica;
     var geo = metrica === "lat" || metrica === "lng";
+    // a rodada anterior sai do mapa (no Ordene também — senão os rótulos se
+    // acumulam); a sede das cidades aparece quando a rodada é respondida
+    limparCamadasDeJogo();
+    aplicarRegiao(jogo.cfg.uf || null);
     if (jogo.cfg.formato === "ordene") {
       ordemEscolhida = [];
       var itens = jogo.atual.itens;
@@ -2642,9 +2779,6 @@
       }).join("") + "</div>" +
       "<div class='comparar-nota'>" + (geo ? "Toque na cidade. " : "Toque na cidade. Tecla 1 ou 2 também vale. ") +
       "Rodada " + (jogo.resultados.length + 1) + " de " + jogo.rodadas + "</div>";
-    // a sede das duas aparece no mapa (a posição é parte da intuição)
-    limparCamadasDeJogo();
-    aplicarRegiao(jogo.cfg.uf || null);
   }
 
   function atualizarOrdene() {
@@ -2690,6 +2824,7 @@
     if (!jogo || jogo.encerrado || !jogo.atual || jogoModo !== "maiormenor") return;
     var r = jogo.responder(lado);
     if (!r) return;
+    revelando = true;
     var metrica = jogo.cfg.metrica;
     CONHECIMENTO.comparou([r.a, r.b], r.acertou);
     // revela os dois no mapa
@@ -2744,6 +2879,7 @@
   document.addEventListener("keydown", function (ev) {
     if (jogoModo !== "maiormenor" || !jogo || jogo.encerrado || $("comparar").hidden) return;
     if (ev.target && /^(INPUT|SELECT|TEXTAREA)$/.test(ev.target.tagName)) return;
+    if (revelando) return; // o resultado do duelo está na tela: só o "Próxima" avança
     if (jogo.atual && jogo.cfg.formato !== "ordene") {
       if (ev.key === "1" || ev.key === "ArrowLeft") { ev.preventDefault(); responderComparar("a"); }
       if (ev.key === "2" || ev.key === "ArrowRight") { ev.preventDefault(); responderComparar("b"); }
@@ -2784,10 +2920,11 @@
       var d = jogo.dica();
       if (!d) return;
       dicasUsadas = jogo.dicasDadas;
-      CONHECIMENTO.dica(jogo.secreto);
+      if (!refazendoDiario) CONHECIMENTO.dica(jogo.secreto);
       // a dica do estado também aproxima o mapa: a busca fica visual
       if (d.tipo === "uf" && d.municipios.length) enquadrarLista(d.municipios);
       mostrarDica("💡 " + d.etapa + "/3", textoDicaOnde(d), true);
+      salvarDiarioEmAndamento();
     } else if (jogoModo === "maratona") {
       var dm = jogo.dica();
       if (!dm) return;
@@ -2881,7 +3018,7 @@
     } else if (jogoModo === "ondestou") {
       var secreto = jogo.encerrar();
       if (!jogo.venceu) {
-        CONHECIMENTO.faltou([secreto]);
+        if (!refazendoDiario) CONHECIMENTO.faltou([secreto]);
         pontos[secreto.idx].setAttribute("class", "cidade faltante");
         pontos[secreto.idx].style.fill = "";
         sincronizarForma(secreto);
@@ -2957,7 +3094,9 @@
     }
     var el = $("fim-jogo");
     el.hidden = false;
-    SITE.rastrear("partida_encerrada", { modo: diarioAtual ? "diario" : jogoModo, pct: Math.round(pct * 100), desistiu: !!desistiu });
+    if (!refazendoDiario) {
+      SITE.rastrear("partida_encerrada", { modo: diarioAtual ? "diario" : jogoModo, pct: Math.round(pct * 100), desistiu: !!desistiu });
+    }
     if (diarioAtual) {
       // o diário não entra nos recordes por configuração: tem o próprio
       // histórico, a sequência de dias e o resultado em emojis
@@ -3695,8 +3834,11 @@
 
   // sair da partida para a configuração (a maratona salva antes)
   function voltarParaConfig() {
+    var eraDiario = !!diarioAtual;
     abandonarJogo();
     $("linha-palpite").hidden = false;
+    // o desafio do dia não tem configuração: volta para a lista de modos
+    if (eraDiario) { mostrarTela("modos"); return; }
     atualizarRecordeUI();
     mostrarTela("config");
   }

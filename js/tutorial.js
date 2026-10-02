@@ -99,12 +99,22 @@ var TUTORIAL = (function () {
       else if (acao === "anterior") ir(passo - 1);
       else if (acao === "proximo") ir(passo + 1);
     });
+    // na fase de captura: com o tutorial aberto, as teclas não chegam aos
+    // atalhos do jogo (o comportamento padrão, como o Tab, continua)
     document.addEventListener("keydown", function (ev) {
       if (overlay.hidden) return;
+      ev.stopPropagation();
+      if (ev.defaultPrevented) return;
       if (ev.key === "Escape") fechar();
-      if (ev.key === "ArrowRight" || ev.key === "Enter") ir(passo + 1);
-      if (ev.key === "ArrowLeft") ir(passo - 1);
-    });
+      else if (ev.key === "ArrowRight") ir(passo + 1);
+      else if (ev.key === "ArrowLeft") ir(passo - 1);
+      else if (ev.key === "Enter") {
+        // Enter num botão já vira o clique dele — não pode avançar duas vezes
+        if (ev.target && ev.target.closest && ev.target.closest("button")) return;
+        ev.preventDefault();
+        ir(passo + 1);
+      }
+    }, true);
     window.addEventListener("resize", function () { if (!overlay.hidden) posicionar(); });
   }
 
