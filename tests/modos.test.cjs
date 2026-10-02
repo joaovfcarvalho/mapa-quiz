@@ -238,3 +238,144 @@ test("Ordene: ordem inválida é recusada", () => {
   assert.equal(j.responder([1, 2, 3]), null);
   assert.equal(j.encerrado, false);
 });
+
+test("Ordene: cidade repetida na resposta é recusada", () => {
+  const j = new MODOS.JogoOrdene({ metrica: "pop", rodadas: 1, minPop: 50000, semente: 4 });
+  const certa = j.atual.itens.slice().sort((x, y) => x.v - y.v).map((p) => p.m.idx);
+  const repetida = certa.slice();
+  repetida[1] = repetida[0];
+  assert.equal(j.responder(repetida), null);
+  assert.equal(j.encerrado, false);
+  assert.equal(j.responder(certa).score, 1);
+});
+
+test("Ordene: a maior cidade do pool também é sorteada", () => {
+  [["pop", undefined, 50000], ["pop", "RJ", 20000], ["area", "SP", 50000]].forEach(([metrica, uf, minPop]) => {
+    let apareceu = false;
+    for (let semente = 1; semente <= 400 && !apareceu; semente++) {
+      const j = new MODOS.JogoOrdene({ metrica, uf, minPop, rodadas: 5, semente });
+      const topo = j.pool[j.pool.length - 1].m.idx;
+      while (!j.encerrado && !apareceu) {
+        apareceu = j.atual.itens.some((p) => p.m.idx === topo);
+        j.responder(j.atual.itens.map((p) => p.m.idx));
+      }
+    }
+    assert.ok(apareceu, metrica + "/" + (uf || "BR"));
+  });
+});
+
+// ---- toda configuração começa com erro claro ou joga todas as rodadas ----
+const UFS = [undefined].concat(Array.from(new Set(DADOS.municipios.map((m) => m.uf))));
+const PORTES = [0, 20000, 50000, 100000];
+
+test("Maior ou menor? e Ordene: toda métrica × UF × porte dá erroInicial ou partida completa", () => {
+  Object.keys(MODOS.METRICAS).forEach((metrica) => UFS.forEach((uf) => PORTES.forEach((minPop) => {
+    const rot = metrica + "/" + (uf || "BR") + "/" + minPop;
+    const d = new MODOS.JogoMaiorMenor({ metrica, uf, minPop, rodadas: 10, semente: 1 });
+    if (!d.erroInicial) {
+      assert.ok(d.atual && !d.encerrado, "duelo " + rot);
+      while (!d.encerrado) { const p = d.atual; d.responder(p.va > p.vb ? "a" : "b"); }
+      assert.equal(d.resultados.length, 10, "duelo " + rot);
+      assert.equal(d.pct(), 1, "duelo " + rot);
+    }
+    const o = new MODOS.JogoOrdene({ metrica, uf, minPop, rodadas: 5, semente: 1 });
+    if (!o.erroInicial) {
+      assert.ok(o.atual && !o.encerrado, "ordene " + rot);
+      while (!o.encerrado) o.responder(o.atual.itens.slice().sort((x, y) => x.v - y.v).map((p) => p.m.idx));
+      assert.equal(o.resultados.length, 5, "ordene " + rot);
+      assert.equal(o.pct(), 1, "ordene " + rot);
+    }
+  })));
+});
+
+test("Maior ou menor? e Ordene: regiões apertadas afrouxam a faixa em vez de começar encerradas", () => {
+  [{ metrica: "pibpc", uf: "RO", minPop: 50000 }, { metrica: "lat", uf: "AL", minPop: 20000 }].forEach((cfg) => {
+    const j = new MODOS.JogoMaiorMenor(Object.assign({ rodadas: 10, semente: 1 }, cfg));
+    assert.ok(!j.erroInicial && j.atual, cfg.metrica + "/" + cfg.uf);
+  });
+  [{ metrica: "lat", uf: "AL", minPop: 0 }, { metrica: "lat", uf: "PE", minPop: 50000 }].forEach((cfg) => {
+    const j = new MODOS.JogoOrdene(Object.assign({ rodadas: 5, semente: 1 }, cfg));
+    assert.ok(!j.erroInicial && j.atual, cfg.metrica + "/" + cfg.uf);
+  });
+});
+
+test("Maior ou menor? e Ordene: pool que acaba no meio pontua pelas rodadas jogadas", () => {
+  const d = new MODOS.JogoMaiorMenor({ metrica: "pop", rodadas: 10, minPop: 50000, semente: 2 });
+  const p = d.atual;
+  // empates não são comparáveis: não sai mais nenhum par
+  d.pool = [{ m: p.a, v: 1 }, { m: p.b, v: 1 }];
+  d.responder(p.va > p.vb ? "a" : "b");
+  assert.equal(d.encerrado, true);
+  assert.equal(d.rodadas, 1);
+  assert.equal(d.pct(), 1);
+
+  const o = new MODOS.JogoOrdene({ metrica: "pop", rodadas: 5, minPop: 50000, semente: 2 });
+  const certa = o.atual.itens.slice().sort((x, y) => x.v - y.v).map((q) => q.m.idx);
+  o.pool = [];
+  o.responder(certa);
+  assert.equal(o.encerrado, true);
+  assert.equal(o.rodadas, 1);
+  assert.equal(o.pct(), 1);
+});
+
+test("Maior ou menor?: diferença mínima de 8% (0,25°) em todas as UFs, mesmo com a faixa aberta", () => {
+  Object.keys(MODOS.METRICAS).forEach((metrica) => UFS.forEach((uf) => [50000, 100000].forEach((minPop) => {
+    for (let semente = 1; semente <= 5; semente++) {
+      const j = new MODOS.JogoMaiorMenor({ metrica, uf, minPop, rodadas: 10, semente });
+      if (j.erroInicial) return;
+      while (!j.encerrado) {
+        const p = j.atual;
+        const rot = metrica + "/" + (uf || "BR") + "/" + minPop + "/" + semente;
+        if (metrica === "lat" || metrica === "lng") assert.ok(Math.abs(p.va - p.vb) >= 0.25, rot);
+        else assert.ok(Math.max(p.va, p.vb) / Math.min(p.va, p.vb) >= 1.08, rot);
+        j.responder("a");
+      }
+    }
+  })));
+});
+
+// ---- Top N: repetir um erro não gasta palpite ----
+test("Top N: repetir a mesma cidade fora do ranking não gasta palpite", () => {
+  const j = new MODOS.JogoTopN({ n: 10, palpites: 3 });
+  assert.equal(j.palpitar("Campinas").tipo, "nao_alvo");
+  assert.equal(j.palpitesRestantes(), 2);
+  assert.equal(j.palpitar("campinas").tipo, "repetido");
+  assert.equal(j.palpitar("Campinas, SP").tipo, "repetido");
+  assert.equal(j.palpitesRestantes(), 2);
+  assert.equal(j.palpitar("Guarulhos").tipo, "nao_alvo");
+  assert.equal(j.palpitesRestantes(), 1);
+});
+
+// ---- Mancha: só conta quem a mancha alcança ----
+test("Mancha: ilhas sem divisa ficam fora do total; o DF não tem jogo", () => {
+  assert.equal(new MODOS.JogoMancha({}).alvosTotal, 5568);
+  assert.equal(new MODOS.JogoMancha({ uf: "SP" }).alvosTotal, 644);
+  assert.equal(new MODOS.JogoMancha({ uf: "PE" }).alvosTotal, 184);
+  assert.equal(new MODOS.JogoMancha({ uf: "MT" }).alvosTotal, 141);
+  assert.equal(new MODOS.JogoMancha({ uf: "RJ" }).alvosTotal, 92);
+  assert.ok(new MODOS.JogoMancha({ uf: "DF" }).erroInicial);
+  assert.ok(!new MODOS.JogoMancha({ uf: "SP" }).erroInicial);
+  assert.equal(new MODOS.JogoMancha({ uf: "SP" }).palpitar("Ilhabela").tipo, "isolado");
+});
+
+test("Mancha: cobrir todo município alcançável vale 100%", () => {
+  const j = new MODOS.JogoMancha({ uf: "SE" });
+  j.palpitar(j.universo[0].nome + ", SE");
+  while (j.fronteira.size) {
+    const idx = j.fronteira.values().next().value;
+    j.palpitar(DADOS.municipios[idx].nome + ", SE");
+  }
+  assert.equal(j.encerrado, true);
+  assert.equal(j.pct(), 1);
+});
+
+// ---- Onde estou?: máscara do nome ----
+test("Onde estou?: a máscara mostra a inicial depois do apóstrofo", () => {
+  const sbo = DADOS.buscar("Santa Bárbara d'Oeste").municipios[0];
+  const j = new MODOS.JogoOndeEstou({ minPop: 0, secreto: sbo });
+  j.dica(); j.dica();
+  assert.equal(j.dica().mascara, "S____ B______ d'O____");
+  const sj = new MODOS.JogoOndeEstou({ minPop: 0, secreto: DADOS.buscar("São José dos Campos").municipios[0] });
+  sj.dica(); sj.dica();
+  assert.equal(sj.dica().mascara, "S__ J___ dos C_____");
+});
