@@ -68,7 +68,17 @@
     </span>
   </a>
   <nav class="header-acoes">
-    <a href="index.html" class="botao-sec">🗺️ Voltar ao quiz</a>
+    <a href="index.html" class="botao-sec" title="Voltar ao quiz de municípios">🗺️<span class="rotulo-topo"> Municípios</span></a>
+    <details class="outros-modos">
+      <summary class="botao-sec">Outros modos <span aria-hidden="true">⌄</span></summary>
+      <div class="outros-modos-links">
+        <a href="rios.html">🌊 Rios do Brasil<small>Acenda os rios da nascente à foz</small></a>
+        <a href="bairros-rio.html">🏘️ Bairros do Rio<small>Descubra a cidade, bairro a bairro</small></a>
+        <a href="censo-areas.html">🧩 Censo 2022 por área de ponderação<small>Mapa da população e da densidade, 14.406 áreas</small></a>
+        <a href="censo-setores.html">🔬 Censo 2022 por setor censitário<small>O recorte mais fino do IBGE, 468 mil setores</small></a>
+        <a href="densidade.html">📍 Densidade de municípios<small>Quantos municípios há num raio de X km</small></a>
+      </div>
+    </details>
   </nav>
 </header>
 
@@ -119,5 +129,6 @@
 <script src="js/dados.js"></script>
 <script src="js/conhecimento.js"></script>
 <script src="js/estatisticas.js"></script>
+<script src="js/navegacao.js"></script>
 </body>
 </html>

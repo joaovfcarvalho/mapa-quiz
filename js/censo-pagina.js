@@ -25,13 +25,56 @@ var CENSO_PAGINA = (function () {
     // ------------------------------------------------------------ carregamento
     // Um <script> por arquivo (e não fetch) porque o site inteiro roda também
     // aberto direto do disco, onde fetch de arquivo local é bloqueado.
+    //
+    // Os pedidos entram numa fila: no modo leve o usuário pode pedir outro
+    // estado enquanto um ainda baixa.
+    var fila = [], ocupado = false;
+    var carregados = Object.create(null);   // arquivo -> true
+    var falhas = [];                        // itens que não vieram
+    var cacheMeia = null;                   // concentracao() até mudar o conjunto
+
+    function carregar(itens, depois) {
+      itens = itens.filter(function (it) { return !carregados[it.arquivo]; });
+      fila.push({ itens: itens, depois: depois });
+      if (!ocupado) rodarFila();
+    }
+
+    function rodarFila() {
+      var pedido = fila.shift();
+      if (!pedido) { ocupado = false; return; }
+      ocupado = true;
+      elCarregando.hidden = false;
+      elCarregando.classList.remove("erro");
+      $("pintando").hidden = false;
+      carregarSequencia(pedido.itens, function (novos) {
+        if (novos) cacheMeia = null;
+        if (mapa.blocos.length) {
+          elCarregando.hidden = true;
+          mapa.recalcular();
+          atualizarPainel();
+        } else {
+          // nada no mapa: o aviso fica por cima, em vez do "Carregando…" eterno
+          elCarregando.classList.add("erro");
+          elCarregandoTexto.textContent = "Não foi possível carregar os dados do mapa. " +
+            "Verifique a conexão e tente de novo.";
+          elBarra.style.width = "0";
+        }
+        mostrarFalhas();
+        if (pedido.depois) pedido.depois();
+        rodarFila();
+      });
+    }
+
     function carregarSequencia(lista, pronto) {
-      var i = 0;
+      var i = 0, novos = 0;
       (function proximo() {
-        if (i >= lista.length) return pronto();
+        if (i >= lista.length) {
+          elBarra.style.width = "100%";
+          return pronto(novos);
+        }
         var item = lista[i];
         elCarregandoTexto.textContent = "Carregando " + item.rotulo +
-          " (" + (i + 1) + " de " + lista.length + ")…";
+          (lista.length > 1 ? " (" + (i + 1) + " de " + lista.length + ")" : "") + "…";
         elBarra.style.width = (100 * i / lista.length) + "%";
         var tag = document.createElement("script");
         tag.src = item.arquivo;
@@ -41,23 +84,119 @@ var CENSO_PAGINA = (function () {
             var bloco = recorte.montarBloco(fonte, item);
             bloco.malha = CENSO_TOPO.decodificar(fonte);
             mapa.adicionarBloco(bloco);
+            carregados[item.arquivo] = true;
+            tirarFalha(item);
+            novos++;
             // a fonte crua chega a 15 MB de texto já virado array; sem soltar
             // aqui, o Brasil inteiro em setores não cabe na memória
             try { delete window[item.variavel]; } catch (erro) { window[item.variavel] = null; }
+            // durante a carga só a escala de cor e a legenda acompanham; o
+            // resumo e o ranking (que ordenam tudo) saem uma vez no fim
+            mapa.recalcular();
+            desenharLegenda();
+            mapa.redesenhar();
+          } else {
+            anotarFalha(item);
           }
+          tag.remove();
           i++;
-          mapa.recalcular();
-          atualizarPainel();
-          mapa.redesenhar();
           setTimeout(proximo, 0);
         };
         tag.onerror = function () {
-          elCarregandoTexto.textContent = "Falhou ao carregar " + item.arquivo;
+          anotarFalha(item);
+          tag.remove();
           i++;
           setTimeout(proximo, 0);
         };
         document.head.appendChild(tag);
       })();
+    }
+
+    function anotarFalha(item) {
+      if (falhas.indexOf(item) < 0) falhas.push(item);
+    }
+    function tirarFalha(item) {
+      var k = falhas.indexOf(item);
+      if (k >= 0) falhas.splice(k, 1);
+    }
+
+    // Aviso que fica até o usuário tentar de novo: lista o que faltou.
+    var elFalhas = $("aviso-falhas");
+    function mostrarFalhas() {
+      if (!falhas.length) { elFalhas.hidden = true; return; }
+      var nomes = falhas.map(function (f) { return f.uf || f.rotulo; });
+      elFalhas.innerHTML = "";
+      var texto = document.createElement("span");
+      texto.textContent = (falhas.length === 1 ? "Não carregou: " :
+        "Não carregaram (" + falhas.length + "): ") + nomes.join(", ") + ".";
+      var botao = document.createElement("button");
+      botao.type = "button";
+      botao.className = "botao-sec";
+      botao.textContent = "↻ Tentar de novo";
+      botao.addEventListener("click", function () {
+        elFalhas.hidden = true;
+        carregar(falhas.slice(), function () { atualizarUFs(); });
+      });
+      elFalhas.append(texto, botao);
+      elFalhas.hidden = false;
+    }
+
+    // --------------------------------------------------------- modo leve
+    // Os setores do Brasil somam 76 MB de malha e passam de 1 GB de memória
+    // depois de decodificados: em celular ou aparelho com pouca memória o
+    // mapa abre só com um estado, e o resto vem a pedido.
+    function aparelhoLeve() {
+      var c = navigator.connection;
+      if (c && c.saveData) return true;
+      if (navigator.deviceMemory && navigator.deviceMemory <= 4) return true;
+      return Math.min(screen.width || 9999, screen.height || 9999) < 768;
+    }
+
+    var lista = recorte.arquivos || [];
+    var porUF = lista.length > 1 && lista.every(function (it) { return it.uf; });
+    var leve = porUF && aparelhoLeve();
+
+    function itemDaUF(uf) {
+      for (var k = 0; k < lista.length; k++) if (lista[k].uf === uf) return lista[k];
+      return null;
+    }
+
+    function atualizarUFs() {
+      if (!leve) return;
+      var no = lista.filter(function (it) { return carregados[it.arquivo]; });
+      $("ufs-carregadas").textContent = no.length
+        ? "No mapa: " + no.map(function (it) { return it.rotulo; }).join(", ") + "."
+        : "Nenhum estado carregado ainda.";
+      var sel = $("sel-uf");
+      var antes = sel.value;
+      sel.innerHTML = "";
+      lista.forEach(function (it) {
+        if (carregados[it.arquivo]) return;
+        var op = document.createElement("option");
+        op.value = it.uf;
+        op.textContent = it.rotulo + (it.n ? " · " + num(Math.max(1, Math.round(it.n / 1000))) + " mil setores" : "");
+        sel.appendChild(op);
+      });
+      if (antes && itemDaUF(antes) && !carregados[itemDaUF(antes).arquivo]) sel.value = antes;
+      var todos = no.length === lista.length;
+      sel.disabled = $("btn-uf").disabled = $("btn-brasil").disabled = todos;
+    }
+
+    if (leve) {
+      $("bloco-ufs").hidden = false;
+      $("nota-peso").innerHTML = "<b>Modo leve:</b> neste aparelho o mapa abre " +
+        "com um estado só. Adicione outros logo abaixo — ou o país inteiro, se " +
+        "o aparelho aguentar.";
+      $("btn-enquadrar").textContent = "⤢ Enquadrar";
+      $("btn-uf").addEventListener("click", function () {
+        var it = itemDaUF($("sel-uf").value);
+        if (it) carregar([it], function () { atualizarUFs(); mapa.enquadrar(); });
+      });
+      $("btn-brasil").addEventListener("click", function () {
+        if (!window.confirm("O Brasil inteiro são cerca de 76 MB de dados e mais de " +
+            "1 GB de memória. Em celular, a página pode travar ou recarregar. Continuar?")) return;
+        carregar(lista, function () { atualizarUFs(); mapa.enquadrar(); });
+      });
     }
 
     // -------------------------------------------------------------- controles
@@ -93,6 +232,7 @@ var CENSO_PAGINA = (function () {
       mapa.modo3d = el3d.checked;
       $("controles-3d").hidden = !mapa.modo3d;
       $("dica-3d").hidden = !mapa.modo3d;
+      $("btn-zoom-girar").hidden = $("btn-zoom-inclinar").hidden = !mapa.modo3d;
       mapa.redesenhar();
     });
     var elAltura = document.getElementsByName("altura");
@@ -116,8 +256,23 @@ var CENSO_PAGINA = (function () {
       mapa.redesenhar();
     });
     $("btn-enquadrar").addEventListener("click", function () { mapa.enquadrar(); });
-    $("btn-girar").addEventListener("click", function () {
+    function girar() {
       mapa.giro += Math.PI / 6;
+      mapa.redesenhar();
+    }
+    $("btn-girar").addEventListener("click", girar);
+
+    // botões sobre o mapa: zoom para quem não tem roda nem pinça, e no 3D
+    // giro e inclinação sem precisar de Shift ou botão direito
+    $("btn-zoom-mais").addEventListener("click", function () { mapa.aproximar(1.6); });
+    $("btn-zoom-menos").addEventListener("click", function () { mapa.aproximar(1 / 1.6); });
+    $("btn-zoom-zerar").addEventListener("click", function () { mapa.enquadrar(); });
+    $("btn-zoom-girar").addEventListener("click", girar);
+    var INCLINACOES = [0.35, 0.62, 0.95, 1.25];
+    $("btn-zoom-inclinar").addEventListener("click", function () {
+      var k = 0;
+      while (k < INCLINACOES.length && INCLINACOES[k] <= mapa.inclinacao + 0.01) k++;
+      mapa.inclinacao = INCLINACOES[k % INCLINACOES.length];
       mapa.redesenhar();
     });
 
@@ -136,7 +291,14 @@ var CENSO_PAGINA = (function () {
       elBuscaResultado.textContent = "→ " + m.nome + " (" + m.uf + ")" +
         (r.status === "ambiguo" ? " — há outros com esse nome" : "");
       // enquadra algo em torno de 25 km de largura
-      mapa.irPara(m.lng, m.lat, Math.max(2200, 900 / 0.25));
+      var ir = function () { mapa.irPara(m.lng, m.lat, Math.max(2200, 900 / 0.25)); };
+      var it = leve ? itemDaUF(m.uf) : null;
+      if (it && !carregados[it.arquivo]) {
+        elBuscaResultado.textContent += " — carregando " + it.rotulo + "…";
+        carregar([it], function () { atualizarUFs(); ir(); });
+      } else {
+        ir();
+      }
     });
 
     // -------------------------------------------------------------- tooltip
@@ -228,7 +390,8 @@ var CENSO_PAGINA = (function () {
         for (i = 0; i < bl.n; i++) { pop += bl.pop[i]; area += bl.aream2[i]; }
       }
       area /= 1e6;
-      var meia = concentracao(pop);
+      if (!cacheMeia) cacheMeia = { r: concentracao(pop) };
+      var meia = cacheMeia.r;
       $("stats").innerHTML =
         '<dl>' +
         '<dt>' + recorte.plural + '</dt><dd>' + num(unidades) + '</dd>' +
@@ -315,13 +478,19 @@ var CENSO_PAGINA = (function () {
     });
 
     // ------------------------------------------------------------------ vai
-    $("pintando").hidden = false;
-    carregarSequencia(recorte.arquivos, function () {
-      elCarregando.hidden = true;
-      mapa.recalcular();
-      atualizarPainel();
-      mapa.enquadrar();
-    });
+    if (!lista.length) {
+      // o índice dos arquivos não veio (data/censo_setores_indice.js)
+      elCarregando.classList.add("erro");
+      elCarregandoTexto.textContent = "Não foi possível carregar o índice dos dados. " +
+        "Recarregue a página para tentar de novo.";
+    } else if (leve) {
+      var pedida = (/[?&]uf=([a-z]{2})/i.exec(location.search) || [])[1];
+      var inicial = itemDaUF((pedida || recorte.ufInicial || "RJ").toUpperCase()) || lista[0];
+      atualizarUFs();
+      carregar([inicial], function () { atualizarUFs(); mapa.enquadrar(); });
+    } else {
+      carregar(lista, function () { mapa.enquadrar(); });
+    }
 
     // enquanto pinta, avisa
     var relogio = setInterval(function () {

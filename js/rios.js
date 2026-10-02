@@ -546,6 +546,8 @@
       pinca = null;
       return;
     }
+    // três dedos e um sai: os dois que ficam retomam a pinça
+    if (ponteiros.length === 2) { pinca = medidaPinca(); return; }
     if (ponteiros.length > 0) return;
     svg.classList.remove("arrastando");
     var moveu = arrasto ? Math.abs(ev.clientX - arrasto.x) + Math.abs(ev.clientY - arrasto.y) : 99;

@@ -272,7 +272,7 @@ def construir_ap(args, basico):
         nome.append(texto(linha.nm_apond))
         pop.append(pop_ap.get(c, 0))
         # A área da malha é a oficial da unidade; a soma dos setores confere,
-        # mas arredonda pior. Guardamos em km², com 4 casas.
+        # mas arredonda pior. Guardamos em m², inteiro (km² × 10⁶).
         area.append(int(round(float(linha.AREA_KM2 or area_ap.get(c, 0.0)) * 1e6)))
         nsetores.append(int(linha.Qt_SetCensit or 0))
         cm = str(linha.CD_MUN)
@@ -407,12 +407,31 @@ def construir_setores(args, basico):
             "variavel": "CENSO_SETORES_%s" % sigla,
         })
 
-    if not args.uf:
-        destino = os.path.join(args.out, "censo_setores_indice.js")
-        escrever_js(destino, "CENSO_SETORES_INDICE", {"ufs": indice}, """
-            Índice dos arquivos por UF dos setores censitários.
-        """)
-        print("  %s" % destino)
+    destino = os.path.join(args.out, "censo_setores_indice.js")
+    if args.uf:
+        # Só uma UF refeita: atualiza a entrada dela no índice que já existe,
+        # senão o n e a pop do índice ficam velhos.
+        anterior = ler_indice(destino)
+        novas = {e["uf"]: e for e in indice}
+        ordem_ufs = [s for _, s, _ in UFS]
+        juntas = {e["uf"]: e for e in anterior}
+        juntas.update(novas)
+        indice = sorted(juntas.values(), key=lambda e: ordem_ufs.index(e["uf"]))
+    escrever_js(destino, "CENSO_SETORES_INDICE", {"ufs": indice}, """
+        Índice dos arquivos por UF dos setores censitários.
+    """)
+    print("  %s" % destino)
+
+
+def ler_indice(caminho):
+    """Lê as entradas de um censo_setores_indice.js já gerado ([] se não houver)."""
+    if not os.path.exists(caminho):
+        return []
+    with open(caminho, encoding="utf-8") as f:
+        linhas = [l for l in f if not l.startswith("//")]
+    corpo = "".join(linhas).strip()
+    corpo = corpo[corpo.index("{"):corpo.rindex("}") + 1]
+    return json.loads(corpo)["ufs"]
 
 
 def main():
@@ -425,6 +444,8 @@ def main():
     p.add_argument("--so", choices=["ap", "setores"], help="gerar só um recorte")
     p.add_argument("--uf", help="só uma UF dos setores (para testar)")
     args = p.parse_args()
+    if args.uf:
+        args.uf = args.uf.upper()
 
     os.makedirs(args.cache, exist_ok=True)
     os.makedirs(args.out, exist_ok=True)
