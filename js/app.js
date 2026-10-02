@@ -596,6 +596,16 @@
     }
     return seq;
   }
+  // registro de um dia vindo de backup/Drive: só entra com o formato certo
+  function diaValido(d) {
+    function numeros(a) { return Array.isArray(a) && a.length <= 50 && a.every(function (x) { return typeof x === "number" && isFinite(x); }); }
+    return !!d && typeof d === "object" && !Array.isArray(d) &&
+      numeros(d.ids) && numeros(d.dists) && d.ids.length === d.dists.length &&
+      (d.dicas === undefined || (Number.isInteger(d.dicas) && d.dicas >= 0 && d.dicas <= 10)) &&
+      typeof d.venceu === "boolean" &&
+      (d.emAndamento === undefined || typeof d.emAndamento === "boolean") &&
+      (d.n === undefined || Number.isInteger(d.n));
+  }
   function emojisDiario(res) {
     var s = "";
     (res.dists || []).forEach(function (km) {
@@ -704,6 +714,8 @@
     var atual = dados.dias[diarioAtual.chave];
     if (atual && !atual.emAndamento) return; // já terminou (em outra aba)
     var reg = registroDiario();
+    // outro aparelho (via sincronização) já foi mais longe: não encolhe
+    if (atual && Array.isArray(atual.ids) && atual.ids.length > reg.ids.length) return;
     reg.emAndamento = true;
     dados.dias[diarioAtual.chave] = reg;
     salvarDiario(dados);
@@ -1327,6 +1339,7 @@
     } else if (jogoModo === "topn") {
       montarListaTopN(jogo);
     } else if (jogoModo === "maratona") {
+      maratonaIniciadaEm = new Date().toISOString();
       // repinta o que já foi achado em sessões anteriores (sem rótulos: podem
       // ser milhares de cidades)
       jogo.universo.forEach(function (m) {
@@ -1950,8 +1963,22 @@
   // que já está gravado (nunca troca os achados da outra aba pelos desta)
   // e só grava quando algo mudou.
   var maratonaSalvaEm = 0; // Date.now() do último salvamento
+  var maratonaIniciadaEm = ""; // ISO do início desta partida
+  // a maratona em jogo foi zerada (em outra aba, ou por sincronização) depois
+  // que esta partida começou: acaba aqui sem gravar de volta o progresso antigo
+  function maratonaZeradaFora() {
+    if (jogoModo !== "maratona" || !jogo || jogo.encerrado) return false;
+    var z = lerMaratonas()[MARATONA_ZERADOS];
+    var em = z && typeof z === "object" ? z[chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo)] : null;
+    if (typeof em !== "string" || em <= maratonaIniciadaEm) return false;
+    jogo.encerrado = true;
+    maratonaUltimos = [];
+    voltarParaConfig();
+    return true;
+  }
   function salvarProgressoMaratona() {
     if (jogoModo !== "maratona" || !jogo) return;
+    if (maratonaZeradaFora()) return;
     maratonaSalvaEm = Date.now();
     var chave = chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo);
     var salvo = carregarMaratona(chave);
@@ -1990,6 +2017,7 @@
   // a outra aba avançou a mesma maratona: os achados dela entram aqui
   window.addEventListener("storage", function (ev) {
     if (ev.key !== LS_MARATONA || jogoModo !== "maratona" || !jogo || jogo.encerrado) return;
+    if (maratonaZeradaFora()) return;
     var salvo = carregarMaratona(chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo));
     if (!salvo) return;
     if (jogo.absorverTermos(MODOS.JogoMaratona.termosSalvos(salvo))) atualizarTermosMaratona();
@@ -4315,7 +4343,7 @@
       var novosDias = 0;
       Object.keys(obj.diario.dias).forEach(function (k) {
         if (k === "__proto__" || k === "constructor" || k === "prototype") return;
-        if (!objeto(obj.diario.dias[k])) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !diaValido(obj.diario.dias[k])) return;
         var dele = obj.diario.dias[k], meuDia = tem(meu.dias, k) ? meu.dias[k] : null;
         // partida terminada vence a em andamento; entre duas em andamento, a mais avançada
         var avancou = meuDia && meuDia.emAndamento && (!dele.emAndamento ||
