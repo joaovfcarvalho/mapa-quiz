@@ -56,6 +56,31 @@
   background: var(--painel-3);
   overflow: hidden;
 }
+/* nada carregou: o aviso fica no lugar do "Carregando…" */
+#carregando.erro #barra-fora { display: none; }
+#carregando.erro #carregando-texto { max-width: 320px; text-align: center; line-height: 1.5; color: #ffb4a8; }
+
+/* falha parcial: fica até o usuário tentar de novo */
+#aviso-falhas {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  padding: 7px 8px 7px 12px;
+  border-radius: 10px;
+  background: rgba(120, 28, 20, .92);
+  color: #fff;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+#aviso-falhas[hidden] { display: none; }
+#aviso-falhas .botao-sec { flex-shrink: 0; font-size: 12px; padding: 6px 10px; }
+
 #barra-progresso {
   height: 100%;
   width: 0;
@@ -123,6 +148,23 @@
 #linha-botoes { display: flex; gap: 6px; }
 #linha-botoes .botao-sec { flex: 1; font-size: 12.5px; padding: 8px 6px; }
 
+/* modo leve: um estado por vez */
+#bloco-ufs { display: flex; flex-direction: column; gap: 8px; }
+#bloco-ufs[hidden] { display: none; }
+#bloco-ufs label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 650; color: var(--texto-suave); }
+#bloco-ufs select {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  color: var(--texto);
+  background: #0d1824;
+}
+#bloco-ufs .botao-sec { font-size: 12.5px; padding: 8px 10px; }
+
 #busca-resultado { font-size: 12px; color: var(--texto-suave); min-height: 16px; }
 
 /* ---------- blocos de números ---------- */
@@ -173,4 +215,6 @@
 @media (max-width: 900px) {
   #painel { width: 100%; }
   #mapa-wrap { min-height: 60vh; }
+  /* 16 px: o iOS não dá zoom na página ao focar o campo */
+  #bloco-ufs select { font-size: 16px; }
 }

@@ -4,7 +4,7 @@
   var $ = function (id) { return document.getElementById(id); };
   function normalizar(s) { return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, ''); }
   function fmtTempo(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
-  var alvos = BAIRROS_RIO.map(function (b) { return Object.assign({}, b); });
+  var alvos = BAIRROS_RIO.map(function (b) { return Object.assign({}, b, { ra: BAIRROS_RA.formatar(b.ra) }); });
   var metricas = BAIRROS_METRICAS.criar(alvos, BAIRROS_RIO_META);
   var objetivos = { bairros: 'Bairros', populacao: 'População', area: 'Área' };
   function numero(n, casas) { return n.toLocaleString('pt-BR', { maximumFractionDigits: casas || 0 }); }
@@ -47,12 +47,13 @@
   function aplicarViewBox() { svg.setAttribute('viewBox', [vb.x, vb.y, vb.w, vb.h].join(' ')); }
   aplicarViewBox();
   var tooltip = $('tooltip');
+  var porEl = new Map();
   function mostrarNome(b) { if (b.achado || (jogo && jogo.encerrado)) feedback(b.nome + ' · ' + info(b) + ' · RA ' + b.ra, 'ok'); }
   alvos.forEach(function (b) {
     var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', b.aneis.map(function (r) { return r.map(function (p, i) { return (i ? 'L' : 'M') + proj.x(p[0]).toFixed(2) + ' ' + proj.y(p[1]).toFixed(2); }).join('') + 'Z'; }).join(''));
     path.setAttribute('class', 'bairro');
-    path.addEventListener('click', function () { mostrarNome(b); });
+    porEl.set(path, b);
     path.addEventListener('focus', function () { mostrarNome(b); });
     path.addEventListener('mouseenter', function () {
       if (!b.achado && !(jogo && jogo.encerrado)) return;
@@ -216,6 +217,17 @@
   var ponteiros = [];
   var pinca = null;
   var ultimoToque = null;
+  var arrastou = false;   // o gesto já passou do limiar de arrasto: não é toque
+
+  // Toque/clique num bairro revelado. Fica no svg e não em cada path porque,
+  // depois de um arrasto com captura de ponteiro, o click chega no svg; o alvo
+  // então sai do ponto de toque.
+  svg.addEventListener('click', function (ev) {
+    if (arrastou) { arrastou = false; return; }
+    var el = ev.target;
+    if (!porEl.has(el)) el = document.elementFromPoint(ev.clientX, ev.clientY);
+    if (porEl.has(el)) mostrarNome(porEl.get(el));
+  });
 
   function acharPonteiro(id) {
     for (var i = 0; i < ponteiros.length; i++) if (ponteiros[i].id === id) return i;
@@ -233,9 +245,10 @@
 
   svg.addEventListener("pointerdown", function (ev) {
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
-    if (svg.setPointerCapture) {
-      try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
-    }
+    // a captura do ponteiro só vem quando o gesto vira arrasto (pointermove):
+    // capturar já no pointerdown redireciona o click para o svg e o toque num
+    // bairro revelado não mostraria nada
+    if (!ponteiros.length) arrastou = false;
     if (acharPonteiro(ev.pointerId) === -1) {
       ponteiros.push({ id: ev.pointerId, x: ev.clientX, y: ev.clientY });
     }
@@ -256,6 +269,13 @@
     if (i === -1) return;
     ponteiros[i].x = ev.clientX;
     ponteiros[i].y = ev.clientY;
+    if (ponteiros.length > 1 ||
+        (arrasto && Math.abs(ev.clientX - arrasto.x) + Math.abs(ev.clientY - arrasto.y) > 6)) {
+      if (!arrastou && svg.setPointerCapture) {
+        ponteiros.forEach(function (p) { try { svg.setPointerCapture(p.id); } catch (e) {} });
+      }
+      arrastou = true;
+    }
     if (ponteiros.length === 2 && pinca) {
       var agora = medidaPinca();
       var p = pontoDoMapa(agora.cx, agora.cy);
@@ -284,6 +304,8 @@
       pinca = null;
       return;
     }
+    // três dedos e um sai: os dois que ficam retomam a pinça
+    if (ponteiros.length === 2) { pinca = medidaPinca(); return; }
     if (ponteiros.length > 0) return;
     svg.classList.remove("arrastando");
     var moveu = arrasto ? Math.abs(ev.clientX - arrasto.x) + Math.abs(ev.clientY - arrasto.y) : 99;

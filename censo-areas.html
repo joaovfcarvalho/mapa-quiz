@@ -14,6 +14,7 @@
 <meta property="og:image" content="https://mapaquiz.com.br/img/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="https://mapaquiz.com.br/censo-areas.html">
+<meta property="og:url" content="https://mapaquiz.com.br/censo-areas.html">
 <link rel="icon" href="img/icone.svg" type="image/svg+xml">
 <link rel="stylesheet" href="fonts/sora.css">
 <link rel="stylesheet" href="css/style.css">
@@ -29,8 +30,17 @@
     </span>
   </a>
   <nav class="header-acoes">
-    <a href="censo-setores.html" class="botao-sec">🔬 Por setor censitário</a>
-    <a href="index.html" class="botao-sec">🗺️ Voltar ao quiz</a>
+    <a href="index.html" class="botao-sec" title="Voltar ao quiz de municípios">🗺️<span class="rotulo-topo"> Municípios</span></a>
+    <details class="outros-modos">
+      <summary class="botao-sec">Outros modos <span aria-hidden="true">⌄</span></summary>
+      <div class="outros-modos-links">
+        <a href="rios.html">🌊 Rios do Brasil<small>Acenda os rios da nascente à foz</small></a>
+        <a href="bairros-rio.html">🏘️ Bairros do Rio<small>Descubra a cidade, bairro a bairro</small></a>
+        <a href="censo-areas.html">🧩 Censo 2022 por área de ponderação<small>Mapa da população e da densidade, 14.406 áreas</small></a>
+        <a href="censo-setores.html">🔬 Censo 2022 por setor censitário<small>O recorte mais fino do IBGE, 468 mil setores</small></a>
+        <a href="densidade.html">📍 Densidade de municípios<small>Quantos municípios há num raio de X km</small></a>
+      </div>
+    </details>
   </nav>
 </header>
 
@@ -113,7 +123,15 @@
     <div class="pilha">
       <canvas id="mapa"></canvas>
       <div id="pintando" hidden>Desenhando…</div>
-      <div id="dica-3d" hidden>Arraste para mover · Shift + arraste (ou botão direito) para girar</div>
+      <div id="botoes-zoom">
+        <button id="btn-zoom-mais" type="button" title="Aproximar" aria-label="Aproximar">+</button>
+        <button id="btn-zoom-menos" type="button" title="Afastar" aria-label="Afastar">−</button>
+        <button id="btn-zoom-zerar" type="button" title="Enquadrar o mapa" aria-label="Enquadrar o mapa">⌂</button>
+        <button id="btn-zoom-girar" type="button" title="Girar 30°" aria-label="Girar o mapa 30 graus" hidden>⟳</button>
+        <button id="btn-zoom-inclinar" type="button" title="Mudar a inclinação" aria-label="Mudar a inclinação do mapa" hidden>◢</button>
+      </div>
+      <div id="aviso-falhas" role="alert" hidden></div>
+      <div id="dica-3d" hidden>Arraste para mover · Shift + arraste, botão direito ou dois dedos torcendo para girar · ◢ inclina</div>
       <div id="carregando">
         <div id="carregando-texto">Carregando…</div>
         <div id="barra-fora"><div id="barra-progresso"></div></div>
@@ -165,5 +183,6 @@ CENSO_PAGINA.iniciar({
   },
 });
 </script>
+<script src="js/navegacao.js"></script>
 </body>
 </html>

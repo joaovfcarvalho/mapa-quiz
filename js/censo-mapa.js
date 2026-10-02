@@ -418,8 +418,7 @@ var CENSO_MAPA = (function () {
     // -------------------------------------------- coroplético (o chão do 3D)
     function pintarChao(prazo) {
       var lim = pintura.limites, T = pintura.T, esc = camera.escala;
-      var contorno = mapa.bordas && esc * mapa.blocos[pintura.bloco].larguraTipica > 6;
-      var wx, wy;
+      var contorno, wx, wy;
       var abrir = function (p) { ctx.moveTo(T.a * wx[p] + T.b * wy[p] + T.e, T.c * wx[p] + T.d * wy[p] + T.f); };
       var seguir = function (p) { ctx.lineTo(T.a * wx[p] + T.b * wy[p] + T.e, T.c * wx[p] + T.d * wy[p] + T.f); };
 
@@ -427,6 +426,9 @@ var CENSO_MAPA = (function () {
         var bl = mapa.blocos[pintura.bloco];
         var m = bl.malha;
         wx = m.arcoX; wy = bl.arcoWY;
+        // limiar por bloco: cada UF tem o seu tamanho típico de setor (os do
+        // Amazonas são muito maiores que os de São Paulo)
+        contorno = mapa.bordas && esc * bl.larguraTipica > 6;
         var i = pintura.i;
         var baldeAtual = -2;
         ctx.beginPath();
@@ -594,38 +596,104 @@ var CENSO_MAPA = (function () {
       return null;
     }
 
-    var arrastando = false, girando = false, ultimo = null, moveu = false;
+    // Ponteiros ativos por id: um arrasta (ou gira, no 3D com Shift/botão
+    // direito), dois fazem pinça — zoom e deslocamento pelo ponto médio e, no
+    // 3D, giro pela torção dos dedos. Um ponteiro só nunca é confundido com o
+    // outro: cada um anda a partir da sua última posição.
+    var ponteiros = new Map();
+    var girando = false, moveu = false, pinca = null;
+
+    function pontoNaTela(e) {
+      var caixa = tela.getBoundingClientRect();
+      return { x: e.clientX - caixa.left, y: e.clientY - caixa.top };
+    }
+
+    function medidaPinca() {
+      var it = ponteiros.values();
+      var a = it.next().value, b = it.next().value;
+      var dx = b.x - a.x, dy = b.y - a.y;
+      return {
+        d: Math.max(20, Math.sqrt(dx * dx + dy * dy)),
+        ang: Math.atan2(dy, dx),
+        cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2,
+      };
+    }
+
+    // desloca o mapa em pixels da tela, também no 3D
+    function moverTela(dx, dy) {
+      if (mapa.modo3d) {
+        var c3 = camera3d();
+        var vy = dy / c3.achata;
+        camera.cx -= (dx * c3.cos + vy * c3.sen) / camera.escala;
+        camera.cy -= (-dx * c3.sen + vy * c3.cos) / camera.escala;
+      } else {
+        camera.cx -= dx / camera.escala;
+        camera.cy -= dy / camera.escala;
+      }
+    }
+
+    // zoom por um fator k mantendo parado o ponto (px, py) da tela
+    function zoomEm(px, py, k) {
+      var antes = desprojetar(px, py);
+      camera.escala = Math.max(3, Math.min(6e6, camera.escala * k));
+      var depois = desprojetar(px, py);
+      camera.cx += mundoX(antes.lng) - mundoX(depois.lng);
+      camera.cy += mundoY(antes.lat) - mundoY(depois.lat);
+    }
 
     tela.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 2) return;
       try { tela.setPointerCapture(e.pointerId); } catch (erro) { /* sem captura */ }
-      ultimo = { x: e.clientX, y: e.clientY };
-      moveu = false;
-      girando = mapa.modo3d && (e.button === 2 || e.shiftKey);
-      arrastando = !girando;
+      var p = pontoNaTela(e);
+      ponteiros.set(e.pointerId, { x: p.x, y: p.y });
+      if (ponteiros.size === 1) {
+        moveu = false;
+        girando = mapa.modo3d && (e.button === 2 || e.shiftKey);
+        pinca = null;
+      } else {
+        // segundo dedo: vira pinça (e nunca mais um toque de seleção)
+        moveu = true;
+        girando = false;
+        pinca = medidaPinca();
+        mapa.sobre = null;
+        mapa.aoPassar(null);
+      }
     });
 
     tela.addEventListener("pointermove", function (e) {
-      if (ultimo && (arrastando || girando)) {
-        var dx = e.clientX - ultimo.x, dy = e.clientY - ultimo.y;
+      var atual = ponteiros.get(e.pointerId);
+      if (atual) {
+        var p = pontoNaTela(e);
+        var dx = p.x - atual.x, dy = p.y - atual.y;
+        atual.x = p.x; atual.y = p.y;
+        if (ponteiros.size >= 2) {
+          if (!pinca) { pinca = medidaPinca(); return; }
+          var agora = medidaPinca();
+          if (mapa.modo3d) {
+            var torcao = agora.ang - pinca.ang;
+            if (torcao > Math.PI) torcao -= 2 * Math.PI;
+            if (torcao < -Math.PI) torcao += 2 * Math.PI;
+            mapa.giro += torcao;
+          }
+          moverTela(agora.cx - pinca.cx, agora.cy - pinca.cy);
+          zoomEm(agora.cx, agora.cy, agora.d / pinca.d);
+          pinca = agora;
+          invalidar();
+          return;
+        }
         if (Math.abs(dx) + Math.abs(dy) > 2) moveu = true;
-        ultimo = { x: e.clientX, y: e.clientY };
         if (girando) {
           mapa.giro += dx * 0.006;
           mapa.inclinacao = Math.max(0.10, Math.min(1.45, mapa.inclinacao + dy * 0.005));
-        } else if (mapa.modo3d) {
-          var c3 = camera3d();
-          var vy = dy / c3.achata;
-          camera.cx -= (dx * c3.cos + vy * c3.sen) / camera.escala;
-          camera.cy -= (-dx * c3.sen + vy * c3.cos) / camera.escala;
         } else {
-          camera.cx -= dx / camera.escala;
-          camera.cy -= dy / camera.escala;
+          moverTela(dx, dy);
         }
         invalidar();
         return;
       }
-      var caixa = tela.getBoundingClientRect();
-      var alvo = unidadeNaTela(e.clientX - caixa.left, e.clientY - caixa.top);
+      if (e.pointerType === "touch") return;
+      var q = pontoNaTela(e);
+      var alvo = unidadeNaTela(q.x, q.y);
       var mudou = (alvo && mapa.sobre)
         ? (alvo.bloco !== mapa.sobre.bloco || alvo.i !== mapa.sobre.i)
         : (!!alvo !== !!mapa.sobre);
@@ -635,13 +703,17 @@ var CENSO_MAPA = (function () {
     });
 
     function soltar(e) {
+      if (!ponteiros.has(e.pointerId)) return;
       try { tela.releasePointerCapture(e.pointerId); } catch (erro) { /* já solto */ }
-      var eraClique = (arrastando || girando) && !moveu;
-      arrastando = girando = false;
-      ultimo = null;
+      ponteiros.delete(e.pointerId);
+      if (ponteiros.size >= 2) { pinca = medidaPinca(); return; }
+      pinca = null;
+      if (ponteiros.size === 1) return;   // o dedo que fica segue arrastando
+      var eraClique = !moveu && e.type === "pointerup";
+      girando = false;
       if (eraClique) {
-        var caixa = tela.getBoundingClientRect();
-        mapa.selecionada = unidadeNaTela(e.clientX - caixa.left, e.clientY - caixa.top);
+        var p = pontoNaTela(e);
+        mapa.selecionada = unidadeNaTela(p.x, p.y);
         mapa.aoSelecionar(mapa.selecionada);
         if (!pintura) copiar();
       }
@@ -650,7 +722,7 @@ var CENSO_MAPA = (function () {
     tela.addEventListener("pointercancel", soltar);
     tela.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     tela.addEventListener("pointerleave", function () {
-      if (arrastando || girando) return;
+      if (ponteiros.size) return;
       mapa.sobre = null;
       mapa.aoPassar(null);
       if (!pintura) copiar();
@@ -658,14 +730,8 @@ var CENSO_MAPA = (function () {
 
     tela.addEventListener("wheel", function (e) {
       e.preventDefault();
-      var caixa = tela.getBoundingClientRect();
-      var px = e.clientX - caixa.left, py = e.clientY - caixa.top;
-      var antes = desprojetar(px, py);
-      var k = Math.pow(1.0016, -e.deltaY * (e.deltaMode === 1 ? 16 : 1));
-      camera.escala = Math.max(3, Math.min(6e6, camera.escala * k));
-      var depois = desprojetar(px, py);
-      camera.cx += mundoX(antes.lng) - mundoX(depois.lng);
-      camera.cy += mundoY(antes.lat) - mundoY(depois.lat);
+      var p = pontoNaTela(e);
+      zoomEm(p.x, p.y, Math.pow(1.0016, -e.deltaY * (e.deltaMode === 1 ? 16 : 1)));
       invalidar();
     }, { passive: false });
 
@@ -732,6 +798,12 @@ var CENSO_MAPA = (function () {
     mapa.cores = CORES;
     mapa.corVazio = COR_VAZIO;
     mapa.pintando = function () { return !!pintura; };
+
+    // botões de zoom: aproxima/afasta em torno do centro da tela
+    mapa.aproximar = function (k) {
+      zoomEm(W / 2, H / 2, k);
+      invalidar();
+    };
 
     mapa.irPara = function (lng, lat, escala) {
       camera.cx = mundoX(lng);
