@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://mapaquiz.com.br/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
-  <url><loc>https://mapaquiz.com.br/rios.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://mapaquiz.com.br/estatisticas.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
-  <url><loc>https://mapaquiz.com.br/densidade.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://mapaquiz.com.br/censo-areas.html</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://mapaquiz.com.br/censo-setores.html</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://mapaquiz.com.br/privacidade.html</loc><changefreq>yearly</changefreq><priority>0.2</priority></url>
-  <url><loc>https://mapaquiz.com.br/bairros-rio.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://mapaquiz.com.br/</loc><lastmod>2026-10-02</lastmod><priority>1.0</priority></url>
+  <url><loc>https://mapaquiz.com.br/rios.html</loc><lastmod>2026-09-18</lastmod><priority>0.7</priority></url>
+  <url><loc>https://mapaquiz.com.br/bairros-rio.html</loc><lastmod>2026-09-18</lastmod><priority>0.7</priority></url>
+  <url><loc>https://mapaquiz.com.br/censo-areas.html</loc><lastmod>2026-09-18</lastmod><priority>0.6</priority></url>
+  <url><loc>https://mapaquiz.com.br/censo-setores.html</loc><lastmod>2026-09-18</lastmod><priority>0.6</priority></url>
+  <url><loc>https://mapaquiz.com.br/estatisticas.html</loc><lastmod>2026-10-02</lastmod><priority>0.5</priority></url>
+  <url><loc>https://mapaquiz.com.br/densidade.html</loc><lastmod>2026-10-02</lastmod><priority>0.3</priority></url>
 </urlset>
