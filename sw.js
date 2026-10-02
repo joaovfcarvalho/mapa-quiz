@@ -35,6 +35,7 @@ var PACOTE = [
   "js/conhecimento.js",
   "js/conta.js",
   "js/modos.js",
+  "js/diario.js",
   "js/app.js",
   "js/tutorial.js",
   "js/navegacao.js",
