@@ -48,7 +48,7 @@
 <main class="texto">
   <article class="artigo">
     <h1>Política de privacidade</h1>
-    <p class="data">Última atualização: 11 de setembro de 2026</p>
+    <p class="data">Última atualização: 2 de outubro de 2026</p>
 
     <p>O <b>Mapa Quiz</b> (mapaquiz.com.br) é um jogo de geografia do Brasil
     feito por uma pessoa só. Ele não pede cadastro para jogar e, por padrão,
@@ -59,8 +59,9 @@
 
     <h2>O que fica só no seu navegador</h2>
     <p>Tudo que o jogo guarda sobre as suas partidas fica no
-    <code>localStorage</code> do seu navegador e <b>nunca é enviado a um
-    servidor</b>:</p>
+    <code>localStorage</code> do seu navegador e <b>não é enviado a nenhum
+    servidor do jogo</b> (só vai para o seu próprio Google Drive se você
+    entrar com Google — veja abaixo):</p>
     <ul>
       <li>seus recordes por configuração de jogo;</li>
       <li>o progresso e o relógio da maratona;</li>
@@ -88,15 +89,18 @@
         é gravado nessa pasta, no <b>seu</b> Drive. Não existe servidor do Mapa
         Quiz no meio: o navegador fala direto com o Google;</li>
       <li>em cada aparelho ligado à mesma conta, o jogo baixa esse arquivo e
-        <b>mescla</b> com o que já está lá (melhor recorde, união da maratona),
-        nunca apagando nada;</li>
+        <b>mescla</b> com o que já está lá (melhor recorde, união da maratona);
+        só some o que você apagou ou zerou de propósito em algum dos aparelhos;</li>
       <li>nós não recebemos, guardamos nem vemos seu e-mail ou seus dados —
         eles ficam no seu navegador e no seu Drive.</li>
     </ul>
-    <p>Para desligar, use “Sair” em 🏆 Recordes (o acesso é revogado) ou remova
-    o Mapa Quiz em
-    <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Apps com acesso à sua conta Google</a>.
-    O arquivo pode ser apagado em Google Drive → Configurações → Gerenciar
+    <p>Para desligar, use “Sair” em 🏆 Recordes: o jogo esquece a conta neste
+    aparelho e pede ao Google para revogar o acesso. Se a sessão do Google já
+    tiver vencido (ela dura cerca de 1 hora) ou a revogação falhar, o jogo
+    avisa — aí remova o Mapa Quiz em
+    <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Apps com acesso à sua conta Google</a>
+    (o que também vale a qualquer momento). Sair não apaga o arquivo do
+    Drive; ele pode ser apagado em Google Drive → Configurações → Gerenciar
     apps.</p>
 
     <h2>Estatísticas de uso</h2>
@@ -104,8 +108,10 @@
     pode usar o <b>Google Analytics 4</b>. Ele só é carregado <b>depois que
     você aceita</b> o aviso exibido na primeira visita; escolhendo “Só o
     essencial”, nada é carregado. O Analytics registra páginas vistas e
-    eventos como “partida iniciada” e “resultado compartilhado”, com o
-    endereço IP anonimizado. Os dados são tratados pelo Google conforme a
+    eventos como “partida iniciada” e “resultado compartilhado”. Segundo o
+    Google, o Analytics 4 não registra nem armazena endereços IP: o IP é
+    usado só para estimar a localização aproximada (país/cidade) e
+    descartado em seguida. Os dados são tratados pelo Google conforme a
     <a href="https://policies.google.com/privacy?hl=pt-BR" target="_blank" rel="noopener">política de privacidade do Google</a>.</p>
 
     <h2>Anúncios</h2>
@@ -140,6 +146,10 @@
     o fundo de satélite, da NASA (domínio público).</p>
 
     <h2>Contato</h2>
+    <!-- TODO(LGPD): identificar o controlador dos dados (nome do responsável
+         pelo site) e um canal de contato do encarregado, conforme o art. 9º
+         e o art. 41 da LGPD. Preencher à mão aqui e/ou em
+         js/config.js → contatoEmail. NÃO inventar nome nem e-mail. -->
     <p id="contato">Dúvidas sobre esta política: abra uma issue no
     <a href="https://github.com/joaovfcarvalho/mapa-quiz" target="_blank" rel="noopener">repositório do projeto</a>.</p>
   </article>

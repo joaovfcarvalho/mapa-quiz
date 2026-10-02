@@ -304,9 +304,15 @@
     try { localStorage.setItem(LS_MARATONA, JSON.stringify(tudo)); } catch (e) {}
     avisarDados("maratona");
   }
+  // Zerar deixa uma marca de "zerado em" (em "_zerados", que vai no backup):
+  // na sincronização, progresso de outro aparelho anterior à marca não volta.
+  var MARATONA_ZERADOS = "_zerados";
   function zerarMaratona(regiao) {
     var tudo = lerMaratonas();
     delete tudo[regiao];
+    var z = tudo[MARATONA_ZERADOS] && typeof tudo[MARATONA_ZERADOS] === "object" ? tudo[MARATONA_ZERADOS] : {};
+    z[regiao] = new Date().toISOString();
+    tudo[MARATONA_ZERADOS] = z;
     try { localStorage.setItem(LS_MARATONA, JSON.stringify(tudo)); } catch (e) {}
     avisarDados("maratona");
   }
@@ -1037,9 +1043,9 @@
       el.innerHTML = "🏅 Você ainda não jogou nesta configuração.";
     } else {
       el.innerHTML = "🏅 Seu recorde nesta configuração: <b>" + fmtPct(rec.pct) + "</b>" +
-        (rec.placar ? " (" + rec.placar + ")" : "") +
+        (rec.placar ? " (" + RECORDES.escaparHtml(rec.placar) + ")" : "") +
         " · tempo " + fmtTempo(rec.tempoSeg) +
-        " · " + rec.jogos + (rec.jogos === 1 ? " jogo" : " jogos") +
+        " · " + RECORDES.escaparHtml(rec.jogos) + (rec.jogos === 1 ? " jogo" : " jogos") +
         (RECORDES.ehAtual(rec) ? "" : " · 📐 versão antiga das regras/dados");
     }
   }
@@ -3329,10 +3335,11 @@
         // recorde de regras/dados de outra versão: fica marcado (o próximo
         // resultado nessa configuração o substitui, sem comparar)
         var antigo = !RECORDES.ehAtual(r);
-        item.innerHTML = "<div class='info'><b>" + fmtPct(r.pct) + "</b> — " + (r.placar || "") +
+        var esc = RECORDES.escaparHtml;
+        item.innerHTML = "<div class='info'><b>" + fmtPct(r.pct) + "</b> — " + esc(r.placar || "") +
           " em " + fmtTempo(r.tempoSeg) +
-          "<small>" + (r.rotulo || par.chave) + "</small>" +
-          "<small>" + data + " · " + r.jogos + (r.jogos === 1 ? " jogo" : " jogos") +
+          "<small>" + esc(r.rotulo || par.chave) + "</small>" +
+          "<small>" + esc(data) + " · " + esc(r.jogos) + (r.jogos === 1 ? " jogo" : " jogos") +
           (antigo ? " · <span class='recorde-antigo' title='Feito com outra versão das regras ou dos dados: o próximo resultado substitui esta marca'>📐 versão antiga</span>" : "") +
           "</small></div>";
         var btn = document.createElement("button");
@@ -3866,12 +3873,14 @@
       texto = "<b>☁️ Leve seu progresso para todos os seus aparelhos.</b><br>" +
         "Entre com a conta Google: recordes, maratona, pontos cegos e Desafio do dia passam a ser " +
         "sincronizados. O arquivo fica na pasta de dados de aplicativo do <b>seu</b> Google Drive " +
-        "(invisível para você e para outros apps) — nada passa por servidor do jogo.";
+        "(invisível para você e para outros apps) — nada passa por servidor do jogo." +
+        (s.avisoRevogar ? "<br>⚠️ Não deu para revogar o acesso do jogo automaticamente: remova-o em " +
+          "<a href='https://myaccount.google.com/permissions' target='_blank' rel='noopener'>Apps com acesso à sua conta Google</a>." : "");
     } else {
       var quando = CONTA.tempoDesde(s.ultimaSync);
-      texto = "<b>☁️ Conectado" + (s.email ? " como " + s.email : "") + ".</b><br>" +
+      texto = "<b>☁️ Conectado" + (s.email ? " como " + RECORDES.escaparHtml(s.email) : "") + ".</b><br>" +
         (s.ocupado ? "Sincronizando…"
-          : s.erro ? "⚠️ " + s.erro
+          : s.erro ? "⚠️ " + RECORDES.escaparHtml(s.erro)
           : s.pendente && !s.tokenValido ? "⚠️ Há mudanças para enviar — toque em Sincronizar agora (a sessão do Google venceu)."
           : s.pendente ? "Mudanças a enviar em instantes…"
           : quando ? "Sincronizado " + quando + "." : "Ainda não sincronizado.");
@@ -4040,43 +4049,83 @@
   }
   // Mescla um backup: recordes pelo critério de melhor; maratona por união
   // dos municípios (e o maior tempo); conhecimento (pontos cegos) pelo maior
-  // contador de cada dimensão; diário por união dos dias. Nunca apaga nada
-  // do que já está aqui. Vale para o arquivo importado à mão e para o que
-  // vem do Drive na sincronização da conta.
+  // contador de cada dimensão; diário por união dos dias. Só some daqui o
+  // que foi apagado/zerado de propósito em outro aparelho (marcas "zerado
+  // em" que viajam no backup). Vale para o arquivo importado à mão e para
+  // o que vem do Drive na sincronização da conta. Chaves estranhas
+  // ("__proto__", códigos que não são do IBGE…) são ignoradas.
   function importarBackup(texto) {
     var obj;
     try { obj = JSON.parse(texto); } catch (e) { return { ok: false, msg: "Arquivo inválido: não é um JSON." }; }
     if (!obj || typeof obj !== "object") return { ok: false, msg: "Arquivo não parece um backup deste jogo." };
     var r = RECORDES.importarJson(JSON.stringify({ recordes: obj.recordes || {} }));
     if (!r.ok) return r;
-    var partes = [r.msg.replace(/\.$/, "")];
+    var partes = [r.msg.replace(/^Backup importado: /, "").replace(/\.$/, "")];
     var novosPorRegiao = {};
-    if (obj.maratona && typeof obj.maratona === "object") {
+    var tem =function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+    var objeto = function (v) { return v && typeof v === "object" && !Array.isArray(v) ? v : null; };
+    var ehMarca = function (v) { return typeof v === "string" && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(v); };
+    var regiaoValida = function (reg) { return /^[A-Z]{2}(:[a-z]+)?$/.test(reg); };
+    var idValido = function (id) { return typeof id === "number" && id % 1 === 0 && id >= 1000000 && id <= 9999999; };
+    if (objeto(obj.maratona)) {
       var minhas = lerMaratonas();
       var novosMar = 0;
+      // zerados: vale a marca mais recente; o progresso daqui anterior a uma
+      // marca nova de lá sai, e o de lá anterior à nossa marca não entra
+      var zMeus = objeto(minhas[MARATONA_ZERADOS]) || {};
+      var zDeles = objeto(obj.maratona[MARATONA_ZERADOS]) || {};
+      var zeradasAgora = {};
+      Object.keys(zDeles).forEach(function (reg) {
+        if (!regiaoValida(reg) || !ehMarca(zDeles[reg])) return;
+        if (zDeles[reg] > (tem(zMeus, reg) ? zMeus[reg] : "")) {
+          zMeus[reg] = zDeles[reg];
+          if (tem(minhas, reg)) { delete minhas[reg]; zeradasAgora[reg] = true; }
+        }
+      });
+      if (Object.keys(zMeus).length) minhas[MARATONA_ZERADOS] = zMeus;
       Object.keys(obj.maratona).forEach(function (reg) {
+        if (!regiaoValida(reg)) return;
         var deles = obj.maratona[reg];
         if (!deles || !Array.isArray(deles.ids)) return;
-        var minha = minhas[reg] || { ids: [], tempoSeg: 0 };
-        var ids = new Set(minha.ids);
+        var marcaDeles = tem(zDeles, reg) && ehMarca(zDeles[reg]) ? zDeles[reg] : "";
+        if (marcaDeles < (tem(zMeus, reg) ? zMeus[reg] : "")) return;
+        var minha = (tem(minhas, reg) && objeto(minhas[reg])) || { ids: [], tempoSeg: 0 };
+        var ids = new Set(Array.isArray(minha.ids) ? minha.ids : []);
         var novosReg = [];
-        deles.ids.forEach(function (id) { if (!ids.has(id)) { ids.add(id); novosReg.push(id); } });
+        deles.ids.forEach(function (id) {
+          if (idValido(id) && !ids.has(id)) { ids.add(id); novosReg.push(id); }
+        });
         novosMar += novosReg.length;
         if (novosReg.length) novosPorRegiao[reg] = novosReg;
         var parcial = historicoTermosParcial(minha) || historicoTermosParcial(deles);
         minha.ids = Array.from(ids);
         var termos = new Set(MODOS.JogoMaratona.termosSalvos(minha));
-        MODOS.JogoMaratona.termosSalvos(deles).forEach(function (t) { if (typeof t === "string") termos.add(t); });
+        MODOS.JogoMaratona.termosSalvos(deles).forEach(function (t) {
+          if (typeof t === "string" && t.length <= 200) termos.add(t);
+        });
         minha.historicoTermosParcial = parcial;
         minha.termos = Array.from(termos);
-        minha.tempoSeg = Math.max(minha.tempoSeg || 0, deles.tempoSeg || 0);
-        if (!minha.ultimos && Array.isArray(deles.ultimos)) minha.ultimos = deles.ultimos;
+        var tempoDeles = typeof deles.tempoSeg === "number" && isFinite(deles.tempoSeg) ? deles.tempoSeg : 0;
+        minha.tempoSeg = Math.max(minha.tempoSeg || 0, tempoDeles);
+        if (!minha.ultimos && Array.isArray(deles.ultimos)) {
+          minha.ultimos = deles.ultimos.filter(function (u) {
+            return u && typeof u.t === "string" && Array.isArray(u.ids);
+          }).slice(0, 8);
+        }
         minhas[reg] = minha;
       });
       try { localStorage.setItem(LS_MARATONA, JSON.stringify(minhas)); } catch (e) {}
       if (novosMar) partes.push(novosMar + " município(s) a mais na maratona");
+      if (Object.keys(zeradasAgora).length) partes.push("maratona zerada em outro aparelho");
       // maratona em andamento nesta região: os achados do outro aparelho
-      // entram na partida agora, sem reiniciar
+      // entram na partida agora, sem reiniciar — ou, se ela foi zerada lá,
+      // a partida acaba aqui sem salvar de volta o progresso antigo
+      if (jogo && jogoModo === "maratona" && !jogo.encerrado &&
+          zeradasAgora[chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo)]) {
+        jogo.encerrado = true;
+        maratonaUltimos = [];
+        voltarParaConfig();
+      }
       if (jogo && jogoModo === "maratona" && !jogo.encerrado) {
         var regAtual = chaveMaratona(jogo.cfg.uf, jogo.cfg.palavra, jogo.cfg.prefixo);
         if (minhas[regAtual]) {
@@ -4091,11 +4140,13 @@
         (obj.citadas && typeof obj.citadas === "object")) {
       if (CONHECIMENTO.mesclar(obj.conhecimento, obj.citadas)) partes.push("pontos cegos mesclados");
     }
-    if (obj.diario && obj.diario.dias) {
+    if (obj.diario && objeto(obj.diario.dias)) {
       var meu = lerDiario();
       var novosDias = 0;
       Object.keys(obj.diario.dias).forEach(function (k) {
-        if (!meu.dias[k]) { meu.dias[k] = obj.diario.dias[k]; novosDias++; }
+        if (k === "__proto__" || k === "constructor" || k === "prototype") return;
+        if (!objeto(obj.diario.dias[k])) return;
+        if (!tem(meu.dias, k)) { meu.dias[k] = obj.diario.dias[k]; novosDias++; }
       });
       if (novosDias) {
         salvarDiario(meu);
