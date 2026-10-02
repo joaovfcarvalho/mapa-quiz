@@ -453,6 +453,7 @@ var MODOS = (function () {
     this.alvos = ordenado.slice(0, Math.min(cfg.n, ordenado.length));
     this.alvosTotal = this.alvos.length;
     this.achados = new Set();
+    this.chutados = new Set();    // idx de todo município já nomeado
     this.rankPorAlvo = new Map(); // idx do município -> posição (1..N)
     var self = this;
     this.alvos.forEach(function (m, i) { self.rankPorAlvo.set(m.idx, i + 1); });
@@ -482,9 +483,13 @@ var MODOS = (function () {
       self.achadosTotal++;
       revelados.push({ mun: m, rank: rank });
     });
-    // repetir uma cidade já acertada é engano de digitação, não jogada: não
-    // gasta palpite (nome fora da região ou inexistente também não gasta)
-    if (revelados.length === 0 && jaTinha) return { tipo: "repetido", mun: cand[0] };
+    // repetir uma cidade já nomeada (acertada ou não) é engano de digitação,
+    // não jogada: não gasta palpite (nome fora da região ou inexistente
+    // também não gasta)
+    var chutados = this.chutados;
+    var todosChutados = cand.every(function (m) { return chutados.has(m.idx); });
+    if (revelados.length === 0 && (jaTinha || todosChutados)) return { tipo: "repetido", mun: cand[0] };
+    cand.forEach(function (m) { chutados.add(m.idx); });
 
     this.palpitesGastos++;
     var semPalpites = !!this.cfg.palpites && this.palpitesGastos >= this.cfg.palpites;
@@ -579,8 +584,11 @@ var MODOS = (function () {
   function mascaraNome(nome) {
     return nome.split(" ").map(function (palavra) {
       if (CONECTIVOS.test(palavra)) return palavra;
+      // a letra depois do apóstrofo também é inicial: "d'Oeste" → "d'O____"
       return palavra.split("-").map(function (parte) {
-        return parte.charAt(0) + parte.slice(1).replace(/[^'’]/g, "_");
+        return parte.replace(/[^'’]/g, function (c, i) {
+          return i === 0 || /['’]/.test(parte.charAt(i - 1)) ? c : "_";
+        });
       }).join("-");
     }).join(" ");
   }
@@ -736,22 +744,40 @@ var MODOS = (function () {
   };
   var siglasUF = null;
   // As duas variantes aceitam um sufixo de UF e a mesma normalização.
+  // Devolve as leituras possíveis do texto, na ordem em que valem: com
+  // vírgula ("ita, sp") a sigla final é sempre filtro de UF; sem vírgula o
+  // texto inteiro vale primeiro ("Sento Sé", "são pe" de São Pedro) e a
+  // sigla só filtra se ele não achar nada ("ita sp").
   function termoMaratona(texto) {
     var t = DADOS.normalizar(texto);
     var partes = t ? t.split(" ") : [];
     if (!siglasUF) {
       siglasUF = new Set(municipios.map(function (m) { return m.uf.toLowerCase(); }));
     }
-    var uf = null;
-    if (partes.length >= 2 && siglasUF.has(partes[partes.length - 1])) {
-      uf = partes.pop().toUpperCase();
+    var inteiro = { texto: t, partes: partes, termo: partes.join(" "), uf: null };
+    if (partes.length < 2 || !siglasUF.has(partes[partes.length - 1])) return [inteiro];
+    var semSigla = partes.slice(0, -1);
+    var comUF = { texto: t, partes: semSigla, termo: semSigla.join(" "),
+      uf: partes[partes.length - 1].toUpperCase() };
+    return /,\s*[A-Za-z]{2}\s*$/.test(String(texto)) ? [comUF] : [inteiro, comUF];
+  }
+  // Tenta cada leitura do texto; fica com a primeira que acha algo (ou com
+  // a resposta da última, para explicar o erro).
+  function buscarLeituras(texto, busca) {
+    var leituras = termoMaratona(texto);
+    var r;
+    for (var i = 0; i < leituras.length; i++) {
+      r = busca(leituras[i]);
+      if (r.status === "ok" || r.status === "vazio") return r;
     }
-    return { texto: t, partes: partes, termo: partes.join(" "), uf: uf };
+    return r;
   }
   // Municípios da região cujo nome contém, como palavras inteiras e em
-  // sequência, o que foi digitado. Aceita "nome uf" para restringir à UF.
+  // sequência, o que foi digitado. Aceita "nome, uf" para restringir à UF.
   JogoMaratona.prototype.buscarPorPalavra = function (texto) {
-    var entrada = termoMaratona(texto);
+    return buscarLeituras(texto, this.buscarPalavraEm.bind(this));
+  };
+  JogoMaratona.prototype.buscarPalavraEm = function (entrada) {
     var t = entrada.texto;
     if (!t) return { status: "vazio" };
     var partes = entrada.partes;
@@ -773,7 +799,9 @@ var MODOS = (function () {
     return { status: lista.length ? "ok" : "nao_encontrado", municipios: lista, termo: partes.join(" ") };
   };
   JogoMaratona.prototype.buscarPorPrefixo = function (texto) {
-    var entrada = termoMaratona(texto);
+    return buscarLeituras(texto, this.buscarPrefixoEm.bind(this));
+  };
+  JogoMaratona.prototype.buscarPrefixoEm = function (entrada) {
     if (!entrada.texto) return { status: "vazio" };
     var termo = entrada.termo;
     if (termo.replace(/[^a-z]/g, "").length < 3) {
@@ -904,6 +932,7 @@ var MODOS = (function () {
       self.achados.add(m.idx);
       self.popAchada += m.pop;
       self.pibAchado += m.pib;
+      self.areaAchada += m.area;
       novos.push(m);
     });
     if (this.achados.size >= this.alvosTotal) this.encerrado = true;
@@ -1207,7 +1236,17 @@ var MODOS = (function () {
     var u = universoDe(cfg);
     this.universo = u.lista;
     this.uniPop = u.pop;
-    this.alvosTotal = this.universo.length;
+    // só conta quem a mancha alcança: ilhas sem divisa na região (Ilhabela,
+    // Fernando de Noronha, Boa Esperança do Norte; o DF inteiro) ficam de
+    // fora, senão os 100% seriam inalcançáveis
+    var uf = cfg.uf;
+    this.alvosTotal = this.universo.filter(function (m) {
+      return grafo()[m.idx].some(function (v) { return !uf || v.uf === uf; });
+    }).length;
+    if (this.alvosTotal === 0) {
+      this.erroInicial = "Nenhum município da região faz divisa com outro dentro dela — escolha outra região.";
+      return;
+    }
     this.mancha = new Set();    // idx dos municípios da mancha
     this.popMancha = 0;
     this.fronteira = new Set(); // idx dos vizinhos da mancha ainda fora dela
@@ -1498,6 +1537,9 @@ var MODOS = (function () {
     this.encerrado = false;
     this.atual = null;
     this.proximoPar();
+    if (!this.atual) {
+      this.erroInicial = "Não achei um par desse porte que dê para comparar nesta região — escolha um porte menor ou outra métrica.";
+    }
   }
   // A dificuldade é a razão entre os dois valores, não a distância no
   // ranking (seis posições entre cidades de 50 mil habitantes são 2% de
@@ -1513,8 +1555,16 @@ var MODOS = (function () {
       return { min: Math.max(0.25, graus / 1.5), max: graus * 1.5, geo: true };
     }
     var razao = Math.exp(Math.log(4) * (1 - p) + Math.log(1.25) * p);
-    return { min: Math.max(1.08, razao / 1.35), max: razao * 1.35, geo: false };
+    return { min: Math.max(PISO_RAZAO, razao / 1.35), max: razao * 1.35, geo: false };
   };
+  // Diferença mínima de um par, mesmo com a faixa aberta: 8% (ou 0,25°).
+  var PISO_RAZAO = 1.08;
+  var PISO_GRAUS = 0.25;
+  function parComparavel(va, vb, geo) {
+    return geo
+      ? Math.abs(va - vb) >= PISO_GRAUS
+      : Math.max(va, vb) >= PISO_RAZAO * Math.min(va, vb);
+  }
   // primeiro índice do pool com valor >= v (o pool está em ordem crescente)
   function limiteInferior(pool, v) {
     var lo = 0, hi = pool.length;
@@ -1528,17 +1578,21 @@ var MODOS = (function () {
     var n = this.pool.length;
     var self = this;
     var alvo = this.alvoDificuldade();
-    for (var tent = 0; tent < 300; tent++) {
-      // depois de muitas tentativas a faixa abre (pool pequeno, extremos)
+    for (var tent = 0; tent < 600; tent++) {
+      // depois de muitas tentativas a faixa abre (pool pequeno, extremos) —
+      // só para cima: a diferença mínima do par (8% ou 0,25°) não cede
       var folga = 1 + Math.floor(tent / 60) * 0.5;
       var i = Math.floor(self.rnd() * n);
       var a = self.pool[i];
       if (self.usados.has(a.m.idx)) continue;
       // candidatos: valores acima (v·min..v·max) ou abaixo (v/max..v/min)
+      var perto = alvo.geo
+        ? Math.max(PISO_GRAUS, alvo.min / folga)
+        : Math.max(PISO_RAZAO, 1 + (alvo.min - 1) / folga);
       var faixas = alvo.geo
-        ? [[a.v + alvo.min / folga, a.v + alvo.max * folga], [a.v - alvo.max * folga, a.v - alvo.min / folga]]
-        : [[a.v * (1 + (alvo.min - 1) / folga), a.v * alvo.max * folga],
-           [a.v / (alvo.max * folga), a.v / (1 + (alvo.min - 1) / folga)]];
+        ? [[a.v + perto, a.v + alvo.max * folga], [a.v - alvo.max * folga, a.v - perto]]
+        : [[a.v * perto, a.v * alvo.max * folga],
+           [a.v / (alvo.max * folga), a.v / perto]];
       var f = faixas[self.rnd() < 0.5 ? 0 : 1];
       var ini = limiteInferior(self.pool, f[0]);
       var fim = limiteInferior(self.pool, f[1] + 1e-12); // exclusivo
@@ -1546,17 +1600,41 @@ var MODOS = (function () {
       if (fim <= ini) continue;
       var j = ini + Math.floor(self.rnd() * (fim - ini));
       var b = self.pool[j];
-      if (j === i || a.v === b.v || self.usados.has(b.m.idx)) continue;
-      // a esquerda/direita também é sorteada: a posição não entrega a resposta
-      if (self.rnd() < 0.5) { var t = a; a = b; b = t; }
-      self.usados.add(a.m.idx);
-      self.usados.add(b.m.idx);
-      self.atual = { a: a.m, b: b.m, va: a.v, vb: b.v };
-      return self.atual;
+      if (j === i || !parComparavel(a.v, b.v, alvo.geo) || self.usados.has(b.m.idx)) continue;
+      return this.mostrarPar(a, b);
     }
     // pool pequeno: libera os já usados e tenta de novo
     if (this.usados.size > 0) { this.usados = new Set(); return this.proximoPar(); }
+    // última chance: qualquer par com a diferença mínima, longe da faixa-alvo
+    var par = this.parQualquer(alvo.geo);
+    if (par) return this.mostrarPar(par[0], par[1]);
+    // nada a comparar: a partida acaba aqui e vale pelas rodadas jogadas
+    this.rodadas = this.resultados.length;
     this.encerrado = true;
+    return null;
+  };
+  JogoMaiorMenor.prototype.mostrarPar = function (a, b) {
+    // a esquerda/direita também é sorteada: a posição não entrega a resposta
+    if (this.rnd() < 0.5) { var t = a; a = b; b = t; }
+    this.usados.add(a.m.idx);
+    this.usados.add(b.m.idx);
+    this.atual = { a: a.m, b: b.m, va: a.v, vb: b.v };
+    return this.atual;
+  };
+  // Varre o pool atrás de um par comparável (a ordem dos primeiros é sorteada).
+  JogoMaiorMenor.prototype.parQualquer = function (geo) {
+    var pool = this.pool;
+    var ordem = embaralhar(pool, this.rnd);
+    for (var k = 0; k < ordem.length; k++) {
+      var a = ordem[k];
+      // o pool está em ordem crescente: os comparáveis ficam nas pontas
+      var abaixo = limiteInferior(pool, geo ? a.v - PISO_GRAUS + 1e-12 : a.v / PISO_RAZAO + 1e-12);
+      var acima = limiteInferior(pool, geo ? a.v + PISO_GRAUS : a.v * PISO_RAZAO);
+      var cands = pool.slice(0, abaixo).concat(pool.slice(acima)).filter(function (b) {
+        return parComparavel(a.v, b.v, geo);
+      });
+      if (cands.length) return [a, cands[Math.floor(this.rnd() * cands.length)]];
+    }
     return null;
   };
   // escolha: 'a' ou 'b'
@@ -1580,6 +1658,7 @@ var MODOS = (function () {
     else this.proximoPar();
     return r;
   };
+  // Se o pool acabou no meio, rodadas já foi reduzido às jogadas.
   JogoMaiorMenor.prototype.pct = function () {
     return this.rodadas === 0 ? 0 : this.acertos / this.rodadas;
   };
@@ -1608,36 +1687,77 @@ var MODOS = (function () {
     this.encerrado = false;
     this.atual = null;      // {itens: [{m, v}] embaralhados}
     this.proximaRodada();
+    if (!this.atual) {
+      this.erroInicial = "Não achei cidades desse porte que dê para ordenar nesta região — escolha um porte menor ou outra métrica.";
+    }
   }
   // Sorteia N cidades de uma janela do ranking que encolhe com o avanço da
   // partida (mesma ideia do duelo): no começo espalhadas, no fim vizinhas.
+  // Se a janela não rende uma rodada, a exigência afrouxa aos poucos: primeiro
+  // o ranking inteiro, depois um espalhamento menor entre o menor e o maior.
+  var ESTAGIOS_ORDENE = [
+    { janela: true, razao: 1.5, graus: 1 },
+    { janela: false, razao: 1.5, graus: 1 },
+    { janela: false, razao: 1.25, graus: 0.5 },
+  ];
   JogoOrdene.prototype.proximaRodada = function () {
     var n = this.pool.length;
     var r = this.resultados.length;
     var frac = this.rodadas <= 1 ? 0.3 : 0.6 - 0.4 * (r / (this.rodadas - 1));
-    var janela = Math.max(this.tamanho * 2, Math.round(n * frac));
     var geo = this.cfg.metrica === "lat" || this.cfg.metrica === "lng";
     var self = this;
-    for (var tent = 0; tent < 100; tent++) {
-      var ini = Math.floor(self.rnd() * Math.max(1, n - janela));
-      var cand = self.pool.slice(ini, ini + janela).filter(function (p) { return !self.usados.has(p.m.idx); });
-      if (cand.length < self.tamanho) continue;
-      var escolhidos = embaralhar(cand, self.rnd).slice(0, self.tamanho);
-      // valores empatados não têm ordem certa: descarta a tentativa
-      var vals = escolhidos.map(function (p) { return p.v; }).sort(function (a, b) { return a - b; });
-      var empate = false;
-      for (var k = 1; k < vals.length; k++) if (vals[k] === vals[k - 1]) empate = true;
-      if (empate) continue;
-      // cinco cidades quase iguais não são um jogo de ordenar: o maior
-      // precisa ser pelo menos 1,5× o menor (ou 1° de distância no mapa)
-      if (geo ? vals[vals.length - 1] - vals[0] < 1 : vals[vals.length - 1] / Math.max(1e-9, vals[0]) < 1.5) continue;
-      escolhidos.forEach(function (p) { self.usados.add(p.m.idx); });
-      self.atual = { itens: embaralhar(escolhidos, self.rnd) };
-      return self.atual;
+    for (var e = 0; e < ESTAGIOS_ORDENE.length; e++) {
+      var est = ESTAGIOS_ORDENE[e];
+      var janela = est.janela ? Math.max(this.tamanho * 2, Math.round(n * frac)) : n;
+      for (var tent = 0; tent < 100; tent++) {
+        // o +1 deixa a janela encostar no topo do ranking
+        var ini = Math.floor(self.rnd() * (Math.max(0, n - janela) + 1));
+        var cand = self.pool.slice(ini, ini + janela).filter(function (p) { return !self.usados.has(p.m.idx); });
+        if (cand.length < self.tamanho) continue;
+        var escolhidos = embaralhar(cand, self.rnd).slice(0, self.tamanho);
+        if (!this.ordenavel(escolhidos, geo, est)) continue;
+        return this.mostrarRodada(escolhidos);
+      }
     }
     if (this.usados.size > 0) { this.usados = new Set(); return this.proximaRodada(); }
+    // última chance: cidades espalhadas por todo o ranking, sem repetir valor
+    var espalhados = this.espalhados();
+    if (espalhados && this.ordenavel(espalhados, geo, ESTAGIOS_ORDENE[ESTAGIOS_ORDENE.length - 1])) {
+      return this.mostrarRodada(espalhados);
+    }
+    // nada a ordenar: a partida acaba aqui e vale pelas rodadas jogadas
+    this.rodadas = this.resultados.length;
     this.encerrado = true;
     return null;
+  };
+  // Valores empatados não têm ordem certa; e cinco cidades quase iguais não
+  // são um jogo de ordenar: o maior precisa ser ao menos est.razao× o menor
+  // (ou est.graus de distância no mapa).
+  JogoOrdene.prototype.ordenavel = function (escolhidos, geo, est) {
+    var vals = escolhidos.map(function (p) { return p.v; }).sort(function (a, b) { return a - b; });
+    for (var k = 1; k < vals.length; k++) if (vals[k] === vals[k - 1]) return false;
+    var ult = vals[vals.length - 1];
+    return geo ? ult - vals[0] >= est.graus : ult / Math.max(1e-9, vals[0]) >= est.razao;
+  };
+  JogoOrdene.prototype.mostrarRodada = function (escolhidos) {
+    var self = this;
+    escolhidos.forEach(function (p) { self.usados.add(p.m.idx); });
+    this.atual = { itens: embaralhar(escolhidos, this.rnd) };
+    return this.atual;
+  };
+  // N cidades de valores distintos, igualmente espaçadas do menor ao maior
+  // valor do pool — o maior espalhamento possível.
+  JogoOrdene.prototype.espalhados = function () {
+    var unicos = [];
+    this.pool.forEach(function (p) {
+      if (!unicos.length || unicos[unicos.length - 1].v !== p.v) unicos.push(p);
+    });
+    if (unicos.length < this.tamanho) return null;
+    var lista = [];
+    for (var k = 0; k < this.tamanho; k++) {
+      lista.push(unicos[Math.round(k * (unicos.length - 1) / (this.tamanho - 1))]);
+    }
+    return lista;
   };
   // ordem: lista de idx dos municípios, do menor para o maior segundo o jogador
   JogoOrdene.prototype.responder = function (ordem) {
@@ -1646,6 +1766,7 @@ var MODOS = (function () {
     var porIdx = new Map();
     itens.forEach(function (p) { porIdx.set(p.m.idx, p); });
     if (ordem.length !== itens.length) return null;
+    if (new Set(ordem).size !== ordem.length) return null; // cidade repetida
     for (var i = 0; i < ordem.length; i++) if (!porIdx.has(ordem[i])) return null;
     // fração de pares (i<j) em que o jogador pôs o menor antes do maior
     var certos = 0, pares = 0;
@@ -1666,6 +1787,7 @@ var MODOS = (function () {
     else this.proximaRodada();
     return r;
   };
+  // Se o pool acabou no meio, rodadas já foi reduzido às jogadas.
   JogoOrdene.prototype.pct = function () {
     return this.rodadas === 0 ? 0 : this.somaScore / this.rodadas;
   };

@@ -216,6 +216,38 @@ test("Maratona por 3 letras: respeita região, sufixo de UF e prefixos maiores",
   assert.equal(especifico.palpitar("ji-p").tipo, "repetido");
 });
 
+test("Maratona: sigla final sem vírgula só filtra UF se o texto inteiro não achar nada", () => {
+  // "Sento Sé" termina em "se" (Sergipe), mas é nome de município
+  for (const cfg of [{ palavra: true }, { prefixo: true }]) {
+    const jogo = new MODOS.JogoMaratona(cfg);
+    const r = jogo.palpitar("Sento Sé");
+    assert.equal(r.tipo, "ok", JSON.stringify(cfg));
+    assert.ok(r.revelados.some(p => p.mun.nome === "Sento Sé" && p.mun.uf === "BA"));
+  }
+  // "sao pe" é o começo de São Pedro, não "São*" em Pernambuco
+  const pedro = new MODOS.JogoMaratona({ prefixo: true }).palpitar("sao pe");
+  assert.ok(pedro.revelados.length > 1);
+  assert.ok(pedro.revelados.every(p => p.mun.chave.indexOf("sao pe") === 0));
+  assert.ok(pedro.revelados.some(p => p.mun.uf !== "PE"));
+  // com vírgula a sigla é filtro; sem vírgula também, quando o texto inteiro não acha nada
+  for (const texto of ["ita, sp", "ita sp"]) {
+    const r = new MODOS.JogoMaratona({ prefixo: true }).palpitar(texto);
+    assert.equal(r.tipo, "ok", texto);
+    assert.ok(r.revelados.every(p => p.mun.uf === "SP"), texto);
+  }
+  const sp = new MODOS.JogoMaratona({ palavra: true }).palpitar("são paulo sp");
+  assert.equal(sp.revelados.map(p => p.mun.uf).join(), "SP");
+});
+
+test("Maratona: absorver soma população, PIB e área", () => {
+  const j = new MODOS.JogoMaratona({ uf: "RJ" });
+  const rio = DADOS.buscar("Rio de Janeiro").municipios[0];
+  j.absorver([rio.id]);
+  assert.equal(j.popAchada, rio.pop);
+  assert.equal(j.pibAchado, rio.pib);
+  assert.equal(j.areaAchada, rio.area);
+});
+
 test("Maratona por 3 letras: retoma progresso e completa todos os 5.571 municípios", () => {
   const anterior = new MODOS.JogoMaratona({ prefixo: true });
   anterior.palpitar("ita mg");

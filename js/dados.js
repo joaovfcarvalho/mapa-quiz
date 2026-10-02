@@ -56,34 +56,46 @@ var DADOS = (function () {
     var t = normalizar(texto);
     if (!t) return { status: "vazio", municipios: [] };
 
-    // 1) o texto inteiro é um nome de município conhecido
-    var exato = porChave.get(t) || porChaveJunta.get(t.replace(/ /g, ""));
-    if (exato) {
-      return exato.length === 1
-        ? { status: "ok", municipios: exato }
-        : { status: "ambiguo", municipios: exato };
-    }
+    // 1) o texto inteiro é, com os espaços digitados, um nome conhecido
+    var exato = porChave.get(t);
+    if (exato) return resultado(exato);
 
-    // 2) o texto termina com uma sigla de UF ("campinas sp" / "bom jesus, pi")
+    // 2) o texto termina com uma sigla de UF ("campinas sp" / "bom jesus, pi").
+    // Vem antes do índice sem espaços: senão "aracatu ba" vira "aracatuba"
+    // (Araçatuba/SP) e "itagi ba" vira Itagibá. O nome com os espaços
+    // digitados tem prioridade; o sem espaços completa ("santa luz ba" acha
+    // Santaluz/BA, já que Santa Luz é do PI).
+    var junta = t.replace(/ /g, "");
+    var ufErrada = false;
     var partes = t.split(" ");
     if (partes.length >= 2) {
       var sigla = partes[partes.length - 1];
       if (sigla.length === 2 && siglasUF.has(sigla)) {
         var nome = partes.slice(0, -1).join(" ");
-        var lista = porChave.get(nome) || porChaveJunta.get(nome.replace(/ /g, "")) || [];
-        var candidatos = lista.filter(function (m) {
-          return m.uf.toLowerCase() === sigla;
-        });
+        var daUF = function (m) { return m.uf.toLowerCase() === sigla; };
+        var comEspacos = porChave.get(nome) || [];
+        var semEspacos = porChaveJunta.get(nome.replace(/ /g, "")) || [];
+        var candidatos = comEspacos.filter(daUF);
+        if (candidatos.length === 0) candidatos = semEspacos.filter(daUF);
         if (candidatos.length >= 1) {
           return { status: "ok", municipios: [candidatos[0]] };
         }
-        if (lista.length > 0) {
-          return { status: "nao_encontrado", municipios: [], ufErrada: true };
-        }
+        ufErrada = comEspacos.length > 0 || semEspacos.length > 0;
       }
     }
 
-    return { status: "nao_encontrado", municipios: [] };
+    // 3) sem espaços: "riodejaneiro" vale por "rio de janeiro"
+    var semEspaco = porChaveJunta.get(junta);
+    if (semEspaco) return resultado(semEspaco);
+
+    return ufErrada
+      ? { status: "nao_encontrado", municipios: [], ufErrada: true }
+      : { status: "nao_encontrado", municipios: [] };
+  }
+  function resultado(lista) {
+    return lista.length === 1
+      ? { status: "ok", municipios: lista }
+      : { status: "ambiguo", municipios: lista };
   }
 
   return {

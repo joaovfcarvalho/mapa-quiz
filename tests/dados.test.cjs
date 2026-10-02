@@ -57,6 +57,31 @@ test("buscar: homônimos são ambíguos e a UF resolve", () => {
   assert.equal(errada.ufErrada, true);
 });
 
+function umMunicipio(t) {
+  const r = DADOS.buscar(t);
+  assert.equal(r.status, "ok", t);
+  return r.municipios[0].nome + "/" + r.municipios[0].uf;
+}
+
+test("buscar: sufixo de UF vale antes do nome sem espaços", () => {
+  assert.equal(umMunicipio("Aracatu, BA"), "Aracatu/BA");
+  assert.equal(umMunicipio("aracatu ba"), "Aracatu/BA");
+  assert.equal(umMunicipio("Itagi, BA"), "Itagi/BA");
+  // sem UF, o índice sem espaços continua valendo
+  assert.equal(umMunicipio("aracatuba"), "Araçatuba/SP");
+  assert.equal(umMunicipio("itagiba"), "Itagibá/BA");
+});
+
+test("buscar: com UF, junta os índices com e sem espaços", () => {
+  assert.equal(umMunicipio("santa luz ba"), "Santaluz/BA");
+  assert.equal(umMunicipio("santa luz pi"), "Santa Luz/PI");
+  assert.equal(umMunicipio("montenegro ro"), "Monte Negro/RO");
+  assert.equal(umMunicipio("monte negro rs"), "Montenegro/RS");
+  assert.equal(umMunicipio("montenegro rs"), "Montenegro/RS");
+  assert.equal(umMunicipio("Sento Sé"), "Sento Sé/BA");
+  assert.equal(DADOS.buscar("santa luz sp").ufErrada, true);
+});
+
 test("buscar: vazio e desconhecido", () => {
   assert.equal(DADOS.buscar("   ").status, "vazio");
   assert.equal(DADOS.buscar("cidade que nao existe").status, "nao_encontrado");
