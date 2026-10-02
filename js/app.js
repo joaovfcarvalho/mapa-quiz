@@ -4316,7 +4316,11 @@
       Object.keys(obj.diario.dias).forEach(function (k) {
         if (k === "__proto__" || k === "constructor" || k === "prototype") return;
         if (!objeto(obj.diario.dias[k])) return;
-        if (!tem(meu.dias, k)) { meu.dias[k] = obj.diario.dias[k]; novosDias++; }
+        var dele = obj.diario.dias[k], meuDia = tem(meu.dias, k) ? meu.dias[k] : null;
+        // partida terminada vence a em andamento; entre duas em andamento, a mais avançada
+        var avancou = meuDia && meuDia.emAndamento && (!dele.emAndamento ||
+          (Array.isArray(dele.ids) ? dele.ids.length : 0) > (Array.isArray(meuDia.ids) ? meuDia.ids.length : 0));
+        if (!meuDia || avancou) { meu.dias[k] = dele; novosDias++; }
       });
       if (novosDias) {
         salvarDiario(meu);
