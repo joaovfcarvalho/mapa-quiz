@@ -520,10 +520,19 @@
 
   // O painel alterna entre três telas: escolha do modo, configuração e partida.
   var TELAS = { modos: "tela-modos", config: "tela-config", jogo: "area-jogo" };
+  // Foco ao trocar de tela: leitores de tela e teclado seguem para o início
+  // da tela nova (o título; na lista de modos, o Desafio do dia). Na partida
+  // o iniciar() ainda leva o foco ao campo de palpite logo depois.
+  var FOCO_TELA = { modos: "card-diario", config: "config-titulo", jogo: "jogo-titulo" };
   function mostrarTela(nome) {
+    var mudou = $(TELAS[nome]).hidden;
     Object.keys(TELAS).forEach(function (t) {
       $(TELAS[t]).hidden = t !== nome;
     });
+    if (mudou) {
+      var alvoFoco = $(FOCO_TELA[nome]);
+      if (alvoFoco) alvoFoco.focus({ preventScroll: true });
+    }
     if (nome !== "jogo") $("recentes-maratona").hidden = true;
     if (nome === "modos") {
       atualizarCardDiario();
@@ -1877,16 +1886,20 @@
       ol.innerHTML = "<li class='vazio'>nenhum ainda</li>";
       return;
     }
+    // cada item é um botão: alcançável pelo teclado (Tab + Enter/Espaço)
     maratonaUltimos.forEach(function (u, i) {
       var li = document.createElement("li");
-      li.textContent = u.t;
-      li.dataset.i = i;
-      li.title = "Clique: mostra no mapa";
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = u.t;
+      btn.dataset.i = i;
+      btn.title = "Clique: mostra no mapa";
+      li.appendChild(btn);
       ol.appendChild(li);
     });
   }
   $("recentes-maratona").addEventListener("click", function (ev) {
-    var li = ev.target.closest("li[data-i]");
+    var li = ev.target.closest("button[data-i]");
     if (!li || !jogo || jogoModo !== "maratona") return;
     var u = maratonaUltimos[+li.dataset.i];
     if (!u || !u.ids) return;
@@ -3023,6 +3036,10 @@
     }
     mostrarSeguinte();
     SITE.mostrarAnuncios("resultado");
+    // teclado e leitor de tela seguem para a ação seguinte (o resultado é
+    // anunciado pela região viva #fim-jogo)
+    var proxFoco = $("btn-jogar-novo").hidden ? $("btn-compartilhar") : $("btn-jogar-novo");
+    if (!proxFoco.hidden) proxFoco.focus({ preventScroll: true });
   }
 
   // "Próximo passo" no fim da partida: a sugestão vem do preset que trouxe
@@ -3354,7 +3371,18 @@
         alvo.appendChild(item);
       });
     }
-    $("modal-recordes").hidden = false;
+    // <dialog> nativo: showModal() prende o foco dentro e o Esc fecha;
+    // o atributo hidden acompanha o estado (outros trechos o consultam)
+    var modal = $("modal-recordes");
+    modal.hidden = false;
+    if (!modal.open) {
+      if (modal.showModal) modal.showModal(); else modal.setAttribute("open", "");
+    }
+  }
+  function fecharRecordes() {
+    var modal = $("modal-recordes");
+    if (modal.open && modal.close) modal.close(); // o evento "close" esconde
+    else { modal.removeAttribute("open"); modal.hidden = true; }
   }
 
   // ------------------------------------------------------------------
@@ -4198,11 +4226,14 @@
     leitor.readAsText(arq);
   });
 
-  $("btn-recordes").addEventListener("click", abrirRecordes);
-  $("btn-fechar-recordes").addEventListener("click", function () { $("modal-recordes").hidden = true; });
+  $("btn-recordes").addEventListener("click", function () { abrirRecordes(); });
+  $("btn-fechar-recordes").addEventListener("click", fecharRecordes);
+  // clique no fundo escurecido (fora da caixa) fecha
   $("modal-recordes").addEventListener("click", function (ev) {
-    if (ev.target === $("modal-recordes")) $("modal-recordes").hidden = true;
+    if (ev.target === $("modal-recordes")) fecharRecordes();
   });
+  // Esc (ou qualquer outro fechamento nativo) mantém o hidden em sincronia
+  $("modal-recordes").addEventListener("close", function () { $("modal-recordes").hidden = true; });
   $("btn-limpar-recordes").addEventListener("click", function () {
     if (confirm("Apagar todos os recordes salvos neste navegador?")) {
       RECORDES.limparTudo();

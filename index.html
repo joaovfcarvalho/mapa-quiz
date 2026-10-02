@@ -27,6 +27,23 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="fonts/sora.css">
 <link rel="stylesheet" href="css/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": ["WebApplication", "VideoGame"],
+  "name": "Mapa Quiz",
+  "url": "https://mapaquiz.com.br/",
+  "description": "Treze modos de jogo sobre o mapa do Brasil e seus 5.571 municípios, mais um Desafio do dia. Grátis, sem cadastro.",
+  "image": "https://mapaquiz.com.br/img/og.png",
+  "inLanguage": "pt-BR",
+  "isAccessibleForFree": true,
+  "applicationCategory": "GameApplication",
+  "genre": ["Quiz", "Geografia", "Educacional"],
+  "operatingSystem": "Qualquer (navegador)",
+  "gamePlatform": "Navegador web",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BRL" }
+}
+</script>
 </head>
 <body>
 <header>
@@ -38,7 +55,7 @@
     </span>
   </a>
   <nav class="header-acoes">
-    <button id="btn-tutorial" class="botao-sec" type="button" title="Como jogar">❔<span class="rotulo-topo"> Como jogar</span></button>
+    <button id="btn-tutorial" class="botao-sec" type="button" title="Como jogar" aria-label="Como jogar"><span aria-hidden="true">❔</span><span class="rotulo-topo"> Como jogar</span></button>
     <details class="outros-modos">
       <summary class="botao-sec">Outros modos <span aria-hidden="true">⌄</span></summary>
       <div class="outros-modos-links">
@@ -48,10 +65,10 @@
         <a href="censo-setores.html">🔬 Censo 2022 por setor censitário<small>O recorte mais fino do IBGE, 468 mil setores</small></a>
       </div>
     </details>
-    <a href="estatisticas.html" class="botao-sec" title="Pontos cegos">📊<span class="rotulo-topo"> Pontos cegos</span></a>
-    <button id="btn-recordes" class="botao-sec" type="button" title="Recordes">🏆<span class="rotulo-topo"> Recordes</span></button>
-    <button id="btn-conta" class="botao-sec conta-topo" type="button" title="Conta Google" hidden>☁️<span class="rotulo-topo" id="rotulo-conta"> Entrar</span></button>
-    <button id="btn-apoiar" class="botao-sec apoiar" type="button" title="Apoie o jogo" hidden>☕<span class="rotulo-topo"> Apoiar</span></button>
+    <a href="estatisticas.html" class="botao-sec" title="Pontos cegos" aria-label="Pontos cegos"><span aria-hidden="true">📊</span><span class="rotulo-topo"> Pontos cegos</span></a>
+    <button id="btn-recordes" class="botao-sec" type="button" title="Recordes" aria-label="Recordes"><span aria-hidden="true">🏆</span><span class="rotulo-topo"> Recordes</span></button>
+    <button id="btn-conta" class="botao-sec conta-topo" type="button" title="Conta Google" hidden><span aria-hidden="true">☁️</span><span class="rotulo-topo" id="rotulo-conta"> Entrar</span></button>
+    <button id="btn-apoiar" class="botao-sec apoiar" type="button" title="Apoie o jogo" aria-label="Apoiar" hidden><span aria-hidden="true">☕</span><span class="rotulo-topo"> Apoiar</span></button>
   </nav>
 </header>
 
@@ -215,7 +232,7 @@
       <div class="modo-cabecalho">
         <span id="config-icone" class="carta-icone">🎯</span>
         <div>
-          <h2 id="config-titulo">Círculos por distância</h2>
+          <h2 id="config-titulo" tabindex="-1">Círculos por distância</h2>
           <p id="descricao-modo"></p>
         </div>
       </div>
@@ -360,7 +377,7 @@
             <input type="number" id="cfg-faixas-topn" value="3" min="1" max="10">
           </label>
           <label id="rotulo-centro" hidden>Centro dos anéis (cidade)
-            <input type="text" id="cfg-faixas-centro" value="Brasília, DF">
+            <input type="text" id="cfg-faixas-centro" autocorrect="off" autocapitalize="none" spellcheck="false" value="Brasília, DF">
           </label>
           <label>Limite de tempo
             <select id="cfg-faixas-limite" class="sel-limite">
@@ -464,10 +481,10 @@
 
         <div class="config-modo" data-modo="caminho" hidden>
           <label>Saindo de (cidade)
-            <input type="text" id="cfg-caminho-origem" value="Chuí, RS">
+            <input type="text" id="cfg-caminho-origem" autocorrect="off" autocapitalize="none" spellcheck="false" value="Chuí, RS">
           </label>
           <label>Chegando em (cidade)
-            <input type="text" id="cfg-caminho-destino" value="Oiapoque, AP">
+            <input type="text" id="cfg-caminho-destino" autocorrect="off" autocapitalize="none" spellcheck="false" value="Oiapoque, AP">
           </label>
           <p class="nota-config">Uma viagem digitada de memória: cada palpite
           precisa fazer <b>divisa</b> com o último município citado. Quanto menos
@@ -477,7 +494,7 @@
 
         <div class="config-modo" data-modo="cerco" hidden>
           <label>Município cercado (vazio = sorteio)
-            <input type="text" id="cfg-cerco-alvo" placeholder="ex.: Rio de Janeiro, RJ">
+            <input type="text" id="cfg-cerco-alvo" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="ex.: Rio de Janeiro, RJ">
           </label>
           <label>Porte do sorteio
             <select id="cfg-cerco-pool">
@@ -531,22 +548,23 @@
     <section id="area-jogo" hidden>
       <div id="jogo-topo">
         <button id="btn-config-jogo" class="botao-voltar" type="button"
-          title="Voltar à configuração (encerra a partida; a maratona fica salva)">‹</button>
+          title="Voltar à configuração (encerra a partida; a maratona fica salva)"
+          aria-label="Voltar à configuração">‹</button>
         <div id="jogo-titulos">
-          <b id="jogo-titulo"></b>
+          <b id="jogo-titulo" tabindex="-1"></b>
           <small id="jogo-sub"></small>
         </div>
       </div>
       <div class="barra"><div id="barra-progresso"></div></div>
       <div id="placar-linhas"></div>
       <div id="alvo-clique" hidden></div>
-      <div id="comparar" hidden></div>
+      <div id="comparar" aria-live="polite" hidden></div>
       <div id="linha-palpite">
-        <input type="text" id="input-palpite" placeholder="Digite uma cidade… (ex.: Campinas ou Bom Jesus, RS)" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="none" enterkeyhint="go">
+        <input type="text" id="input-palpite" aria-label="Palpite: nome do município" placeholder="Digite uma cidade… (ex.: Campinas ou Bom Jesus, RS)" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="none" enterkeyhint="go">
         <button id="btn-palpitar" class="botao-pri" type="button">OK</button>
       </div>
-      <div id="feedback"></div>
-      <div id="dica-atual" hidden></div>
+      <div id="feedback" role="status" aria-live="polite"></div>
+      <div id="dica-atual" role="status" aria-live="polite" hidden></div>
       <button id="btn-dica" class="botao-sec" type="button" hidden>💡 Dica</button>
       <div id="maratona-termos" class="item-faixa" hidden>
         <label class="maratona-conectivos" id="rotulo-jogo-conectivos" hidden>
@@ -562,7 +580,7 @@
           <p class="nota-config" id="maratona-historico-parcial" hidden>Seu progresso de cidades foi mantido. O histórico antigo só permite recuperar os últimos termos salvos; os novos acertos ficam todos registrados.</p>
         </div>
       </div>
-      <div id="fim-jogo" hidden></div>
+      <div id="fim-jogo" aria-live="polite" hidden></div>
       <button id="btn-seguinte" class="botao-pri seguinte" type="button" hidden></button>
       <div id="fim-acoes" hidden>
         <button id="btn-jogar-novo" class="botao-pri" type="button">↺ Jogar de novo</button>
@@ -590,9 +608,9 @@
         title="Contornos mais detalhados para quem dá zoom: malha intermediária do IBGE, ~9,5 MB (2,5 MB comprimidos), baixada só na primeira vez. No mapa inteiro a diferença não aparece.">✦ Alta definição</button>
     </div>
     <div id="botoes-zoom">
-      <button id="btn-zoom-mais" type="button" title="Aproximar">+</button>
-      <button id="btn-zoom-menos" type="button" title="Afastar">−</button>
-      <button id="btn-zoom-zerar" type="button" title="Restaurar o mapa inteiro">⌂</button>
+      <button id="btn-zoom-mais" type="button" title="Aproximar" aria-label="Aproximar">+</button>
+      <button id="btn-zoom-menos" type="button" title="Afastar" aria-label="Afastar">−</button>
+      <button id="btn-zoom-zerar" type="button" title="Restaurar o mapa inteiro" aria-label="Restaurar o mapa inteiro">⌂</button>
     </div>
     <div id="legenda-pop" hidden>
       <span>1 mil</span>
@@ -613,11 +631,11 @@
   </div>
 </main>
 
-<div id="modal-recordes" class="modal" hidden>
+<dialog id="modal-recordes" class="modal" aria-labelledby="titulo-recordes" hidden>
   <div class="modal-caixa">
     <div class="modal-topo">
-      <h2>🏆 Recordes pessoais</h2>
-      <button id="btn-fechar-recordes" class="botao-sec" type="button">✕</button>
+      <h2 id="titulo-recordes">🏆 Recordes pessoais</h2>
+      <button id="btn-fechar-recordes" class="botao-sec" type="button" aria-label="Fechar">✕</button>
     </div>
     <div id="bloco-conta" class="bloco conta" hidden>
       <div id="conta-texto" class="conta-texto"></div>
@@ -637,20 +655,29 @@
     </div>
     <button id="btn-limpar-recordes" class="botao-sec perigo" type="button">Apagar todos os recordes</button>
   </div>
-</div>
+</dialog>
 
-<script src="js/config.js"></script>
-<script src="js/site.js"></script>
-<script src="data/municipios.js"></script>
-<script src="data/brasil_uf.js"></script>
-<script src="js/geo.js"></script>
-<script src="js/dados.js"></script>
-<script src="js/recordes.js"></script>
-<script src="js/conhecimento.js"></script>
-<script src="js/conta.js"></script>
-<script src="js/modos.js"></script>
-<script src="js/app.js"></script>
-<script src="js/tutorial.js"></script>
-<script src="js/navegacao.js"></script>
+<script src="js/config.js" defer></script>
+<script src="js/site.js" defer></script>
+<script src="data/municipios.js" defer></script>
+<script src="data/brasil_uf.js" defer></script>
+<script src="js/geo.js" defer></script>
+<script src="js/dados.js" defer></script>
+<script src="js/recordes.js" defer></script>
+<script src="js/conhecimento.js" defer></script>
+<script src="js/conta.js" defer></script>
+<script src="js/modos.js" defer></script>
+<script src="js/app.js" defer></script>
+<script src="js/tutorial.js" defer></script>
+<script src="js/navegacao.js" defer></script>
+<script>
+  // service worker (sw.js): abre o jogo offline; só em https ou localhost
+  if ("serviceWorker" in navigator &&
+      (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    });
+  }
+</script>
 </body>
 </html>

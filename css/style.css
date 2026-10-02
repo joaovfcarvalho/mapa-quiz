@@ -352,7 +352,8 @@ main {
   box-shadow: 0 0 0 3px rgba(245, 185, 66, .18);
 }
 #input-palpite:disabled { opacity: .5; }
-#input-palpite::placeholder { color: #5f7488; }
+/* contraste 5,4:1 sobre o fundo #0d1824 (WCAG AA pede 4,5:1) */
+#input-palpite::placeholder { color: #7a8fa3; }
 
 #feedback { font-size: 13px; line-height: 1.45; min-height: 17px; color: var(--texto-suave); }
 #feedback.ok { color: var(--ok); font-weight: 600; }
@@ -602,6 +603,11 @@ main {
 #botoes-mapa button.ativo { background: #14528a; border-color: #14528a; color: #fff; }
 /* opção subordinada (✦ Alta definição só aparece com ⬡ Formas ligado) */
 #botoes-mapa button.sub { font-size: 11.5px; padding: 4px 10px; font-weight: 600; }
+@media (pointer: coarse) {
+  /* alvos de toque de 44px (WCAG 2.5.5) nos controles sobre o mapa */
+  #botoes-mapa button, #botoes-mapa button.sub { min-height: 44px; }
+  #botoes-zoom button, #btn-config-jogo { min-width: 44px; min-height: 44px; }
+}
 
 #botoes-zoom {
   position: absolute;
@@ -684,8 +690,18 @@ main {
 }
 #recentes-maratona .titulo { font-weight: 700; font-size: 10.5px; color: #3d566d; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
 #recentes-maratona ol { list-style: none; margin: 0; padding: 0; }
-#recentes-maratona li { padding: 1.5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-#recentes-maratona li:hover { color: var(--azul-escuro); }
+#recentes-maratona li { padding: 1.5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* cada palpite é um botão (alcançável pelo teclado) com cara de item de lista */
+#recentes-maratona li button {
+  all: unset;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+#recentes-maratona li button:hover { color: var(--azul-escuro); }
+#recentes-maratona li button:focus-visible { outline: 2px solid var(--azul-escuro); outline-offset: 1px; border-radius: 3px; }
 #recentes-maratona li:first-child { font-weight: 700; color: #a30d54; }
 #recentes-maratona li.vazio { color: #7a8a99; font-style: italic; cursor: default; }
 
@@ -714,7 +730,16 @@ main {
 .cidade.coberta { fill: var(--verde); opacity: .95; pointer-events: auto; r: calc(1.6px * var(--zoom, 1)); }
 .cidade.centro-palpite { fill: var(--azul-escuro); opacity: 1; pointer-events: auto; r: calc(2.4px * var(--zoom, 1)); }
 .cidade.achada { fill: var(--verde); opacity: 1; pointer-events: auto; r: calc(2.4px * var(--zoom, 1)); }
-.cidade.faltante { fill: var(--vermelho); opacity: 1; pointer-events: auto; r: calc(2.4px * var(--zoom, 1)); }
+/* faltante não depende só da cor (vermelho × verde some para quem tem
+   daltonismo): é um anel vazado, enquanto o acerto é um ponto cheio */
+.cidade.faltante {
+  fill: #fff;
+  stroke: var(--vermelho);
+  stroke-width: calc(1.3px * var(--zoom, 1));
+  opacity: 1;
+  pointer-events: auto;
+  r: calc(2.6px * var(--zoom, 1));
+}
 .cidade.coberta, .cidade.centro-palpite, .cidade.achada {
   stroke: rgba(0, 0, 0, .35);
   stroke-width: calc(.4px * var(--zoom, 1));
@@ -738,7 +763,8 @@ main {
 .municipio.fora { display: none; } /* município fora da região do jogo */
 .municipio.coberta, .municipio.achada { fill: var(--verde); }
 .municipio.centro-palpite { fill: var(--azul-escuro); }
-.municipio.faltante { fill: var(--vermelho); }
+/* território que faltou: contorno tracejado, além da cor */
+.municipio.faltante { fill: var(--vermelho); stroke: var(--vermelho); stroke-width: 1.2; stroke-dasharray: 3 2; }
 
 /* sobre uma cidade marcada o cursor vira seta: mira mais fina que a mãozinha
    de arrastar para ler o tooltip (a mãozinha volta durante o arrasto) */
@@ -812,14 +838,14 @@ main {
 #mapa.satelite .cidade.coberta { fill: #67e88c; }
 #mapa.satelite .cidade.centro-palpite { fill: #ffcf4d; }
 #mapa.satelite .cidade.achada { fill: #67e88c; }
-#mapa.satelite .cidade.faltante { fill: #ff7a70; }
+#mapa.satelite .cidade.faltante { fill: #fff; stroke: #ff7a70; }
 #mapa.satelite .cidade.coberta, #mapa.satelite .cidade.centro-palpite, #mapa.satelite .cidade.achada {
   stroke: rgba(255, 255, 255, .55);
 }
 #mapa.satelite .municipio { stroke: rgba(255, 255, 255, .5); }
 #mapa.satelite .municipio.coberta, #mapa.satelite .municipio.achada { fill: #67e88c; }
 #mapa.satelite .municipio.centro-palpite { fill: #ffcf4d; }
-#mapa.satelite .municipio.faltante { fill: #ff7a70; }
+#mapa.satelite .municipio.faltante { fill: #ff7a70; stroke: #ff7a70; }
 #mapa.satelite .cidade.recente { fill: #ff64ab !important; stroke: #ff64ab; }
 #mapa.satelite .municipio.recente { fill: #ff64ab !important; stroke: #ffb1d4; }
 #mapa.satelite .rotulo-cidade.recente { fill: #ffc2dd; }
@@ -849,6 +875,20 @@ main {
   z-index: 20;
   backdrop-filter: blur(2px);
 }
+/* o modal de recordes é um <dialog> nativo (showModal): ocupa a tela inteira
+   como o .modal de sempre — o clique fora da caixa cai no próprio dialog */
+dialog.modal {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+}
+dialog.modal:not([open]) { display: none; }
+dialog.modal::backdrop { background: transparent; }
 .modal-caixa {
   width: min(680px, 92vw);
   max-height: 84vh;
@@ -925,9 +965,9 @@ main {
   #config input, #config select, #input-palpite { font-size: 16px; }
 
   /* alvos de toque maiores para os controles sobre o mapa */
-  #botoes-zoom button { width: 42px; height: 42px; font-size: 20px; }
-  #botoes-mapa button { padding: 8px 12px; font-size: 13px; }
-  #btn-config-jogo { width: 40px; height: 40px; font-size: 22px; }
+  #botoes-zoom button { width: 44px; height: 44px; font-size: 20px; }
+  #botoes-mapa button { padding: 8px 12px; font-size: 13px; min-height: 44px; }
+  #btn-config-jogo { width: 44px; height: 44px; font-size: 22px; }
 
   /* Partida em andamento (classe posta pelo js): o mapa sobe para o topo —
      como num app — e o painel embaixo fica só com o jogo (pergunta, campo
@@ -965,7 +1005,7 @@ main {
 @media (max-width: 520px) {
   .rotulo-topo { display: none; }
   .header-acoes { width: auto; }
-  .header-acoes .botao-sec { font-size: 15px; padding: 6px 9px; }
+  .header-acoes .botao-sec { font-size: 15px; padding: 6px 9px; min-height: 44px; min-width: 44px; }
 }
 
 /* =====================================================================
@@ -1348,4 +1388,17 @@ button.carta-comp:focus-visible { outline: 2px solid rgba(245, 185, 66, .8); out
 @media (max-width: 520px) {
   .comparar-cartas { grid-template-columns: 1fr; }
   .carta-comp { min-height: 0; }
+}
+
+/* títulos que recebem foco por script (troca de tela): sem anel de foco */
+[tabindex="-1"]:focus { outline: none; }
+
+/* quem pede menos movimento no sistema não vê animações nem transições */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
