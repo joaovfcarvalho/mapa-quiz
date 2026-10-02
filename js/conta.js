@@ -10,13 +10,18 @@
 // fala direto com o Drive do próprio jogador.
 //
 // Ciclo de sincronização (sincronizar):
-//   1. garante o arquivo no Drive (cria na primeira vez);
+//   1. garante o arquivo no Drive (cria na primeira vez; se achar mais de
+//      um — dois aparelhos criaram ao mesmo tempo —, mescla todos e fica
+//      com o mais antigo);
 //   2. se o arquivo mudou desde a última vez que este aparelho o leu
 //      (modifiedTime diferente), baixa e MESCLA no local — a mesclagem é a
 //      mesma do importar backup: melhor recorde, união da maratona, maior
-//      contador dos pontos cegos, união dos dias do Desafio. Nunca apaga;
-//   3. se o local (já mesclado) difere do último enviado, envia.
+//      contador dos pontos cegos, união dos dias do Desafio. Só some o que
+//      foi apagado/zerado de propósito (as marcas de apagado viajam junto);
+//   3. se o local (já mesclado) difere do último enviado, confere de novo o
+//      modifiedTime (mudou? volta ao 2) e envia.
 // Dois aparelhos podem escrever em qualquer ordem: o resultado converge.
+// Um arquivo ilegível no Drive nunca é sobrescrito (vira aviso de erro).
 //
 // O token de acesso dura ~1 h e só pode ser pedido dentro de um gesto do
 // usuário (senão o navegador bloqueia a janela do Google). Por isso: o
@@ -33,14 +38,21 @@ var CONTA = (function () {
   var NOME_ARQUIVO = "mapaquiz-backup.json";
   var API = "https://www.googleapis.com/drive/v3/files";
   var UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+  var REVOGAR = "https://oauth2.googleapis.com/revoke";
   var ATRASO_ENVIO_MS = 5000;
+  // fetch com keepalive (o único que sobrevive ao fechar a aba) tem limite
+  // de 64 KB no corpo; acima disso o envio de saída vai por fetch comum
+  var LIMITE_KEEPALIVE = 60 * 1024;
+  var MAX_REMESCLAS = 3; // o arquivo mudou entre ler e gravar: lê de novo até 3x
 
   var estado = {
     ligado: false, email: null, nome: null,
     arquivoId: null, modificadoEm: null, ultimaSync: null,
     token: null, expira: 0,
     ocupado: false, pendente: false, erro: null, ultimoMotivo: null,
+    avisoRevogar: false, // saiu sem conseguir revogar: mostrar o caminho manual
   };
+  var perfilDoToken = null; // token cujo dono (e-mail) já foi conferido
   var backup = null;        // {exportar, importar, aoImportar} — injetado pela interface
   var ouvintes = [];
   var ultimoEnviado = null; // texto do último backup enviado (sem a data)
@@ -103,6 +115,7 @@ var CONTA = (function () {
       pendente: estado.pendente,
       erro: estado.erro,
       ultimaSync: estado.ultimaSync,
+      avisoRevogar: estado.avisoRevogar,
     };
   }
   function tokenValido() {
@@ -218,28 +231,71 @@ var CONTA = (function () {
       return r;
     });
   }
+  // Confere de quem é o token (a cada token novo: o navegador pode ter
+  // entrado com outra conta Google). Conta diferente da ligada: esquece o
+  // arquivo da anterior e só segue — mesclando o progresso deste aparelho
+  // na conta nova — se o jogador confirmar.
   function lerPerfil() {
-    if (estado.email) return Promise.resolve();
+    if (estado.token && perfilDoToken === estado.token) return Promise.resolve();
+    var token = estado.token;
     return chamar("https://www.googleapis.com/oauth2/v3/userinfo").then(function (r) { return r.json(); })
       .then(function (p) {
-        estado.email = p.email || null;
-        estado.nome = p.name || null;
+        var email = p && typeof p.email === "string" ? p.email : null;
+        if (email && estado.email && email !== estado.email) {
+          var ok = typeof confirm === "function" && confirm(
+            "Você entrou como " + email + ", mas este aparelho estava ligado a " + estado.email +
+            ".\n\nJuntar o progresso deste aparelho ao da conta " + email + "?\n" +
+            "(Cancelar desconecta a conta; o progresso continua salvo neste aparelho.)");
+          if (!ok) throw new Error("troca-recusada");
+          estado.arquivoId = null;
+          estado.modificadoEm = null;
+          estado.ultimaSync = null;
+          ultimoEnviado = null;
+        }
+        if (email) estado.email = email;
+        estado.nome = (p && typeof p.name === "string" ? p.name : null) || estado.nome;
+        perfilDoToken = token;
         gravar();
-      }).catch(function () {});
+      }).catch(function (e) {
+        var msg = String(e && e.message || e);
+        if (msg === "troca-recusada" || msg === "token") throw e;
+        // sem o perfil (rede?): segue; confere de novo no próximo ciclo
+      });
   }
-  function acharArquivo() {
-    if (estado.arquivoId) return Promise.resolve(estado.arquivoId);
-    var url = API + "?spaces=appDataFolder&pageSize=10&fields=files(id,name,modifiedTime)" +
+  // Acha o arquivo do jogo. Mais de um (dois aparelhos criaram ao mesmo
+  // tempo): fica o mais antigo; os outros são mesclados no local e apagados.
+  // Lista de novo nos ciclos "grandes" (entrar/início/manual) para pegar
+  // duplicatas criadas depois.
+  function acharArquivo(motivo) {
+    var conferir = motivo === "entrar" || motivo === "inicio" || motivo === "manual";
+    if (estado.arquivoId && !conferir) return Promise.resolve(estado.arquivoId);
+    var url = API + "?spaces=appDataFolder&pageSize=10&orderBy=createdTime" +
+      "&fields=files(id,name,modifiedTime,createdTime)" +
       "&q=" + encodeURIComponent("name = '" + NOME_ARQUIVO + "' and trashed = false");
     return chamar(url).then(function (r) { return r.json(); }).then(function (lista) {
-      var arq = (lista.files || [])[0];
-      if (arq) {
-        estado.arquivoId = arq.id;
+      var arqs = (lista && lista.files) || [];
+      if (!arqs.length) {
+        estado.arquivoId = null;
+        estado.modificadoEm = null;
+        return null;
+      }
+      var principal = arqs[0];
+      if (principal.id !== estado.arquivoId) {
+        estado.arquivoId = principal.id;
         estado.modificadoEm = null; // força a leitura do que está lá
         gravar();
-        return arq.id;
       }
-      return null;
+      return arqs.slice(1).reduce(function (p, arq) {
+        return p.then(function () {
+          return baixar(arq.id).then(function (texto) {
+            var r = importarTexto(texto);
+            // ilegível: não apaga (pode ser o único lugar com aqueles dados)
+            if (!r || !r.ok) return;
+            ultimoEnviado = null; // o principal precisa receber a mescla
+            return chamar(API + "/" + arq.id, { method: "DELETE" }).catch(function () {});
+          });
+        });
+      }, Promise.resolve()).then(function () { return principal.id; });
     });
   }
   function criarArquivo(texto) {
@@ -269,9 +325,34 @@ var CONTA = (function () {
     }).then(function (r) { return r.json(); });
   }
 
+  // mescla um texto vindo do Drive sem disparar novo envio a cada mudança
+  var mesclouAlgo = false;
+  function importarTexto(texto) {
+    importando = true;
+    var r;
+    try { r = backup.importar(texto); } finally { importando = false; }
+    if (r && r.ok) {
+      mesclouAlgo = true;
+      if (backup.aoImportar) backup.aoImportar(r);
+    }
+    return r;
+  }
+
   // o carimbo de data do export muda a cada chamada: fora da comparação
   function semData(texto) {
     return String(texto).replace(/"exportadoEm":\s*"[^"]*",?/, "");
+  }
+  // JSON sem espaços: o export é indentado, e a maratona inteira indentada
+  // passa dos 64 KB que o keepalive aceita
+  function compactar(texto) {
+    try { return JSON.stringify(JSON.parse(texto)); } catch (e) { return texto; }
+  }
+  function bytes(texto) {
+    if (typeof TextEncoder === "function") return new TextEncoder().encode(texto).length;
+    return texto.length * 3;
+  }
+  function exportarCompacto() {
+    return compactar(backup.exportar());
   }
 
   // ---------------- o ciclo ----------------
@@ -290,54 +371,82 @@ var CONTA = (function () {
     estado.erro = null;
     estado.ultimoMotivo = motivo;
     avisar();
-    var mesclou = false;
+    mesclouAlgo = false;
     var enviou = false;
-    lerPerfil()
-      .then(acharArquivo)
-      .then(function (id) {
-        if (!id) {
-          var texto0 = backup.exportar();
-          return criarArquivo(texto0).then(function (meta) {
-            estado.arquivoId = meta.id;
-            estado.modificadoEm = meta.modifiedTime || null;
-            ultimoEnviado = semData(texto0);
-            enviou = true;
-          });
-        }
-        return lerMetadados(id).then(function (meta) {
-          if (meta.modifiedTime === estado.modificadoEm) return; // nada novo lá
-          return baixar(id).then(function (texto) {
-            importando = true;
-            var r;
-            try { r = backup.importar(texto); } finally { importando = false; }
-            estado.modificadoEm = meta.modifiedTime || null;
-            if (r && r.ok) {
-              mesclou = true;
-              if (backup.aoImportar) backup.aoImportar(r);
-            }
-          });
-        }).then(function () {
-          var texto = backup.exportar();
-          var chave = semData(texto);
-          if (chave === ultimoEnviado) return;
-          return enviar(id, texto, motivo === "saida").then(function (meta) {
-            ultimoEnviado = chave;
-            estado.modificadoEm = meta.modifiedTime || estado.modificadoEm;
-            enviou = true;
-          });
+    var saida = motivo === "saida";
+    var trocaRecusada = false;
+
+    // envia o local, se ele mudou desde o último envio
+    function enviarSePreciso(id) {
+      var texto = exportarCompacto();
+      var chave = semData(texto);
+      if (chave === ultimoEnviado) return Promise.resolve();
+      // na saída a página pode morrer a qualquer instante: keepalive se couber
+      return enviar(id, texto, saida && bytes(texto) <= LIMITE_KEEPALIVE).then(function (meta) {
+        ultimoEnviado = chave;
+        estado.modificadoEm = meta.modifiedTime || estado.modificadoEm;
+        enviou = true;
+      });
+    }
+    // Lê o modifiedTime logo antes de gravar. Mudou desde a última leitura?
+    // Baixa, mescla e confere de novo (até MAX_REMESCLAS vezes) — assim o
+    // envio não atropela o que outro aparelho acabou de gravar.
+    function ciclo(id, rodada) {
+      return lerMetadados(id).then(function (meta) {
+        if (meta.modifiedTime === estado.modificadoEm) return enviarSePreciso(id);
+        return baixar(id).then(function (texto) {
+          var r = importarTexto(texto);
+          // arquivo ilegível no Drive: não sobrescreve
+          if (!r || !r.ok) throw new Error("ilegivel");
+          estado.modificadoEm = meta.modifiedTime || null;
+          if (rodada + 1 >= MAX_REMESCLAS) return enviarSePreciso(id);
+          return ciclo(id, rodada + 1);
         });
-      })
+      });
+    }
+
+    var feito;
+    if (saida) {
+      // saindo: nada de esperar leituras antes do envio — o PATCH sai já (a
+      // mesclagem é por união: o outro aparelho recupera o que tiver de mais
+      // novo no próximo ciclo dele)
+      feito = estado.arquivoId && perfilDoToken === estado.token
+        ? enviarSePreciso(estado.arquivoId)
+        : Promise.resolve();
+    } else {
+      feito = lerPerfil()
+        .then(function () { return acharArquivo(motivo); })
+        .then(function (id) {
+          if (!id) {
+            var texto0 = exportarCompacto();
+            return criarArquivo(texto0).then(function (meta) {
+              estado.arquivoId = meta.id;
+              estado.modificadoEm = meta.modifiedTime || null;
+              ultimoEnviado = semData(texto0);
+              enviou = true;
+            });
+          }
+          return ciclo(id, 0);
+        });
+    }
+    feito
       .then(function () {
         estado.ultimaSync = new Date().toISOString();
         estado.pendente = false;
         gravar();
-        cb({ ok: true, mesclou: mesclou, enviou: enviou });
+        cb({ ok: true, mesclou: mesclouAlgo, enviou: enviou });
       })
       .catch(function (e) {
         var msg = String(e && e.message || e);
         if (msg === "token") {
           estado.pendente = true;
           estado.erro = null;
+        } else if (msg === "troca-recusada") {
+          trocaRecusada = true;
+        } else if (msg === "ilegivel") {
+          estado.erro = "O arquivo de progresso no seu Drive está ilegível e não foi sobrescrito. " +
+            "Exporte um backup deste aparelho por segurança.";
+          estado.pendente = true;
         } else if (/http 403/.test(msg)) {
           estado.erro = "O Google recusou o acesso à pasta do jogo (403).";
           estado.pendente = true;
@@ -355,6 +464,7 @@ var CONTA = (function () {
       })
       .then(function () {
         estado.ocupado = false;
+        if (trocaRecusada) { refazer = false; sair(); return; }
         avisar();
         if (refazer) { refazer = false; agendarEnvio(); }
       });
@@ -393,6 +503,7 @@ var CONTA = (function () {
     cb = cb || function () {};
     if (!disponivel()) { cb(false); return; }
     estado.erro = null;
+    estado.avisoRevogar = false;
     pedirToken(!estado.ligado, function (ok) {
       if (!ok) { cb(false); return; }
       estado.ligado = true;
@@ -402,11 +513,30 @@ var CONTA = (function () {
       sincronizar("entrar", function (r) { cb(!!r.ok); });
     });
   }
+  // Sair revoga a autorização no Google (direto no endpoint de revogação —
+  // não depende do script do Google ter carregado). Sem token em mãos (a
+  // sessão venceu) ou se a revogação falhar, o aviso manda o jogador
+  // remover o acesso em myaccount.google.com/permissions.
   function sair() {
     var token = estado.token;
-    if (token && window.google && google.accounts && google.accounts.oauth2) {
-      try { google.accounts.oauth2.revoke(token, function () {}); } catch (e) {}
+    estado.avisoRevogar = !token;
+    if (token) {
+      try {
+        fetch(REVOGAR + "?token=" + encodeURIComponent(token), {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        }).then(function (r) {
+          if (!r.ok) throw new Error("http " + r.status);
+        }).catch(function () {
+          if (estado.ligado) return; // entrou de novo nesse meio-tempo
+          estado.avisoRevogar = true;
+          avisar();
+        });
+      } catch (e) {
+        estado.avisoRevogar = true;
+      }
     }
+    perfilDoToken = null;
     estado.ligado = false;
     estado.email = null;
     estado.nome = null;
@@ -430,7 +560,10 @@ var CONTA = (function () {
     carregar();
     if (!disponivel()) { estado.ligado = false; }
     document.addEventListener("mapaquiz:dados", function () { agendarEnvio(); });
-    // fechar a aba/app no meio da partida: manda o que der com keepalive
+    // Fechar a aba/app no meio da partida: manda o que der. O envio sai já
+    // no visibilitychange (que vem antes do pagehide e com a página ainda
+    // viva) — com keepalive se o JSON couber nos 64 KB, por fetch comum
+    // se não couber; o pagehide fica só de reserva.
     var despedida = function () {
       if (!estado.ligado || !estado.pendente || !tokenValido() || estado.ocupado) return;
       clearTimeout(timerEnvio);
@@ -445,6 +578,10 @@ var CONTA = (function () {
     // busca o que pode ter mudado no outro aparelho
     if (estado.ligado && tokenValido()) sincronizar("inicio");
     else if (estado.ligado) estado.pendente = true;
+    // conta ligada: o script do Google já vem carregado, para que o pedido
+    // de token rode dentro do próprio clique (no iOS, esperar o script
+    // carregar depois do toque faz o Safari bloquear a janela do Google)
+    if (estado.ligado) carregarGIS(function () {});
     avisar();
   }
   function ouvir(f) { ouvintes.push(f); }
