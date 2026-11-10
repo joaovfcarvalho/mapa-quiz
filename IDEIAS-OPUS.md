@@ -13,6 +13,7 @@
 
 - [Parte 1 — Avaliação técnica](#parte-1--avaliação-técnica)
 - [Parte 2 — O jogo em si: o que fazer a seguir](#parte-2--o-jogo-em-si-o-que-fazer-a-seguir)
+- [Parte 3 — Novos modos (rodada de ideias de novembro/2026)](#parte-3--novos-modos-rodada-de-ideias-de-novembro2026)
 - [Apêndice: medições](#apêndice-medições)
 
 ---
@@ -447,6 +448,138 @@ celular, e é o primeiro degrau que está faltando.
 **Se eu tivesse um mês:** o grafo de adjacência e a *Mancha*. É a coisa mais
 original desta lista inteira, é totalmente offline, custa 91 KB, e é a única
 ideia aqui que ninguém consegue lançar sem antes fazer a mesma lição de casa.
+
+---
+
+# Parte 3 — Novos modos (rodada de ideias de novembro/2026)
+
+> Nenhum destes modos foi implementado: o objetivo aqui é só registrar as ideias.
+> Nenhum repete os 13 modos que já estão no README.
+
+## Meio a meio (corte 50/50)
+
+Um círculo aleatório aparece no mapa. O jogador gira uma linha que passa pelo
+centro (um diâmetro) até achar que ela divide a **população** do círculo em
+50/50. Cada rodada tem X círculos e a pontuação soma a precisão de cada corte.
+
+**Por que funciona**
+
+- **Sempre existe resposta.** Se o corte gira 180°, os dois lados trocam de
+  lugar. Então em algum ângulo a divisão passa por 50/50, e nenhuma rodada fica
+  impossível.
+- **Pontue pela divisão alcançada, não pelo ângulo.** Pode haver mais de um
+  corte que dá ~50/50. Medir pelo desvio (o jogador deixou 47/53, então 3
+  pontos de erro) é justo e fácil de entender.
+
+**Armadilhas**
+
+1. **Cidade dominante.** Num círculo em volta de São Paulo, a capital tem mais
+   de 50% da população. Se cada município é um ponto, o lado dela sempre ganha.
+   Duas saídas:
+   - sortear só círculos em que nenhum município passe de uns 35% do total. É a
+     opção mais simples;
+   - distribuir a população pelos setores censitários (esses dados já estão no
+     repositório). A divisão fica suave e realista, mas são arquivos pesados,
+     um por UF.
+2. **Área não serve como métrica.** Qualquer diâmetro divide a área do círculo
+   em 50/50. Só tem sentido com população, PIB ou número de municípios.
+3. **Círculo no litoral.** O pedaço no mar fica vazio, e isso deixa o jogo mais
+   interessante, não é defeito. Só vale exigir uma parte mínima do círculo em
+   terra.
+
+**Implementação**
+
+- Para cada município dentro do círculo, calcule o azimute a partir do centro.
+  O lado de cada um sai do sinal de `sin(azimute − θ)`.
+- Para achar o corte ótimo, ordene os azimutes e faça uma varredura. Isso é
+  O(n log n) e roda instantâneo.
+- **Interação:** arrastar para girar a linha, com Pointer Events, para
+  funcionar no celular. Enquanto gira, não mostre a porcentagem, senão o jogo
+  perde a graça.
+- **Revelação:** mostre o corte ideal sobre o do jogador. Um gráfico circular
+  pequeno de "% de um lado × ângulo" deixa claro onde estavam os 50/50.
+- **Sorteio:** centro sorteado com peso por população, raio ajustado para o
+  círculo ter umas 15 a 40 cidades, e semente fixa para o link de desafio e uma
+  versão diária.
+
+**Variações**
+
+- **PIB em vez de população**, ou os dois na mesma rodada.
+- **Corte livre (modo difícil):** a linha não precisa passar pelo centro, e o
+  objetivo é dividir população e PIB em 50/50 ao mesmo tempo. Pelo teorema do
+  sanduíche de presunto, esse corte sempre existe.
+- **Pizza:** três cortes radiais para dividir em terços.
+- **Cronômetro:** 10 círculos, e a pontuação soma precisão e tempo.
+
+## Campo minado
+
+O jogador clica em regiões (municípios, regiões imediatas ou intermediárias)
+com população acima de X. Se clicar numa abaixo, o jogo acaba.
+
+- Use a mesma lógica nos três níveis. Para os municípios a malha já existe. Para
+  as regiões é preciso agregar os polígonos.
+- Escolha o limite X pela mediana, para dar uns 50% de "minas". Se forem 90%
+  seguras não há tensão, e se forem 10% o jogo vira chute.
+- **Variação com dedução:** ao clicar numa casa segura, o jogo mostra quantos
+  vizinhos dela são minas (`vizinhos.js`), como no campo minado clássico. Aí
+  deixa de ser só conhecimento e passa a ter dedução.
+- Também dá para minar com PIB per capita, área ou densidade.
+- **Campo minado diário:** o mesmo tabuleiro para todo mundo, com resultado em
+  emojis, reaproveitando a semente do Desafio do dia.
+
+## Municípios com característica
+
+O jogador digita todos os municípios com uma característica, por exemplo
+"todos em que o Lula ganhou".
+
+- A eleição precisa de um dado que ainda não existe no repositório: o resultado
+  do TSE por município, a entrar no `tools/build_data.py`. Feito isso, cabem
+  2018, 2022, 1º e 2º turno etc.
+- Há categorias baratas com dados do próprio IBGE: litoral, faixa de fronteira,
+  Amazônia Legal, Semiárido, bioma, região metropolitana, municípios criados
+  depois de 1988.
+- **Com vidas:** um município que não tem a característica custa uma vida.
+  Assim não vira só uma lista para digitar.
+
+## Outras ideias
+
+**Só com os dados que já estão no repositório**
+
+- **Homônimos:** o jogo dá um nome ("Bom Jesus", "Santa Rita", "São Domingos") e
+  o jogador aponta todas as UFs que têm um município com ele. Também dá para
+  fazer o contrário: cite nomes que se repetem em 3 ou mais UFs.
+- **Vinte e um (blackjack):** escolha cidades cuja população some o mais perto
+  possível de 1 milhão, sem passar. Ganha quem chegar mais perto usando menos
+  cidades. Também funciona com PIB.
+- **Linha reta:** o jogo traça um segmento de A até B e o jogador nomeia todos
+  os municípios que ele atravessa. É o "Caminho por divisas" com um percurso
+  fixo.
+- **Rio abaixo:** aproveita o `rios.js`. Nomeie os municípios que um rio banha,
+  da nascente à foz.
+- **Chute o número:** o jogo mostra uma cidade e o jogador estima a população.
+  A pontuação é pelo erro em escala logarítmica. Seria mais uma rampa de
+  entrada, ao lado do "Maior ou menor?".
+- **Adedonha / Stop:** sorteia uma letra e o jogador tem 60 segundos para citar
+  municípios que começam com ela. Outra versão é a corrente, em que a última
+  letra de um nome vira a primeira do próximo.
+- **Extremos:** diga o município mais ao norte, sul, leste e oeste de cada UF.
+
+**Social / competitivo**
+
+- **Território (dois jogadores no mesmo aparelho):** cada um toma um município
+  vizinho de algo que já é seu. Quem cercar mais população ganha. Usa o grafo de
+  adjacência.
+
+## Prioridade sugerida
+
+1. **Campo minado com contagem de vizinhos:** a dedução é uma camada que nenhum
+   outro modo tem.
+2. **Meio a meio:** reaproveita o desenho de círculos e pede um raciocínio novo,
+   que é estimar onde a população está concentrada.
+3. **Homônimos:** dá para fazer em uma tarde só com `municipios.js`, e o
+   resultado surpreende quem joga.
+4. **Característica + vidas:** começando por litoral, fronteira e Amazônia
+   Legal. A eleição fica para quando o dado do TSE estiver no repositório.
 
 ---
 
